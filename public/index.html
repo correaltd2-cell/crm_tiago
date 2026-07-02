@@ -172,6 +172,7 @@ input,textarea,select{font-family:inherit;font-size:13.5px;color:var(--ink)}
     <div class="stat"><b id="statNew">0</b> aguardando 1º contato</div>
     <div class="stat"><b id="statHuman">0</b> precisam de humano</div>
     <div class="stat"><b id="statTotal">0</b> leads no funil</div>
+    <button class="btn-ghost" style="border-color:var(--viridian);color:var(--viridian)" onclick="openNewLead()">+ Novo Lead</button>
     <button class="btn-ghost" onclick="openConfig()">Config IA</button>
     <button class="btn-ghost" onclick="logout()">Sair</button>
   </div>
@@ -216,6 +217,28 @@ input,textarea,select{font-family:inherit;font-size:13.5px;color:var(--ink)}
     </div>
   </div>
 </aside>
+
+<!-- ===================== MODAL: novo lead manual ===================== -->
+<div class="modal-veil" id="newLeadModal">
+  <div class="modal" style="width:min(440px,92vw)">
+    <h3>Cadastrar lead</h3>
+    <div class="field"><label>Nome</label><input id="nlName" placeholder="Nome do paciente" /></div>
+    <div class="field"><label>WhatsApp (com DDD)</label><input id="nlPhone" placeholder="54 99999-9999" inputmode="tel" /></div>
+    <div class="field"><label>Cidade</label><input id="nlCity" /></div>
+    <div class="field"><label>Procedimento de interesse</label><input id="nlProc" value="Blefaroplastia" /></div>
+    <div class="field"><label>Origem</label>
+      <select id="nlSource">
+        <option>Indicação</option><option>Telefone / consultório</option><option>Instagram</option>
+        <option>Site</option><option>Outro</option>
+      </select>
+    </div>
+    <div class="login-err" id="nlErr"></div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="document.getElementById('newLeadModal').classList.remove('open')">Cancelar</button>
+      <button class="btn-primary" onclick="createLead()">Cadastrar</button>
+    </div>
+  </div>
+</div>
 
 <!-- ===================== MODAL: motivo de perda ===================== -->
 <div class="modal-veil" id="lossModal">
@@ -475,6 +498,37 @@ async function sendHuman(){
 async function sendReopen(){
   const r = await authed('/api/send',{ leadId: currentLead.id, useReopenTemplate:true });
   toast(r.ok?'Template de retomada enviado':'Falha: '+(r.data.error||r.data.message||'erro'));
+}
+
+/* ================= NOVO LEAD MANUAL ================= */
+function openNewLead(){
+  ['nlName','nlPhone','nlCity'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('nlProc').value='Blefaroplastia';
+  document.getElementById('nlErr').textContent='';
+  document.getElementById('newLeadModal').classList.add('open');
+}
+async function createLead(){
+  const err = document.getElementById('nlErr');
+  const name = document.getElementById('nlName').value.trim();
+  let phone = document.getElementById('nlPhone').value.replace(/\D/g,'');
+  if(!name){ err.textContent='Informe o nome.'; return; }
+  if(phone.length===10 || phone.length===11) phone = '55'+phone;       // DDD + número → adiciona 55
+  if(!/^55\d{10,11}$/.test(phone)){ err.textContent='WhatsApp inválido — use DDD + número.'; return; }
+  const { data, error } = await sb.from('crm_leads').insert({
+    wa_id: phone,
+    name,
+    city: document.getElementById('nlCity').value.trim() || null,
+    procedure_interest: document.getElementById('nlProc').value.trim() || 'Blefaroplastia',
+    source: document.getElementById('nlSource').value,
+    unread: false
+  }).select().single();
+  if(error){
+    err.textContent = error.code==='23505' ? 'Já existe um lead com esse WhatsApp.' : 'Erro ao cadastrar: '+error.message;
+    return;
+  }
+  document.getElementById('newLeadModal').classList.remove('open');
+  toast('Lead cadastrado no funil');
+  if(!leads.find(l=>l.id===data.id)){ leads.unshift(data); render(); }
 }
 
 /* ================= CONFIG IA ================= */
