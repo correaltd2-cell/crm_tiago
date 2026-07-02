@@ -21,6 +21,7 @@ export async function getConfig() {
     zapiToken: map.zapi_token || '',
     zapiClientToken: map.zapi_client_token || '',
     secretaryPhone: map.secretary_phone || '',
+    reportPhone: map.report_phone || '',
     geminiKey: map.gemini_api_key || '',
     geminiModel: map.gemini_model || 'gemini-2.5-flash',
     agentName: map.agent_name || 'Maia',

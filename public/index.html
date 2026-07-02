@@ -343,6 +343,7 @@ input,textarea,select{font-family:inherit;font-size:13.5px;color:var(--ink)}
     <div class="field"><label>Z-API · Token da instância</label><input id="cfgZapiToken" type="password" placeholder="F2C9..." autocomplete="off" /></div>
     <div class="field"><label>Z-API · Client-Token (Segurança da conta)</label><input id="cfgZapiClient" type="password" placeholder="Fa1b..." autocomplete="off" /></div>
     <div class="field"><label>WhatsApp da secretária (55DDDNÚMERO)</label><input id="cfgSecretary" placeholder="5554999999999" /></div>
+    <div class="field"><label>WhatsApp p/ relatório semanal (número principal)</label><input id="cfgReport" placeholder="5554999999999" /></div>
     <div class="field"><label>Gemini · API Key</label><input id="cfgGeminiKey" type="password" placeholder="AIza..." autocomplete="off" /></div>
     <div class="field"><label>Gemini · Modelo</label><input id="cfgGeminiModel" placeholder="gemini-2.5-flash" /></div>
     <div class="modal-actions">
@@ -730,6 +731,7 @@ async function openConfig(){
   document.getElementById('cfgZapiToken').value = map.zapi_token||'';
   document.getElementById('cfgZapiClient').value = map.zapi_client_token||'';
   document.getElementById('cfgSecretary').value = map.secretary_phone||'';
+  document.getElementById('cfgReport').value = map.report_phone||'';
   document.getElementById('cfgGeminiKey').value = map.gemini_api_key||'';
   document.getElementById('cfgGeminiModel').value = map.gemini_model||'gemini-2.5-flash';
   document.getElementById('configModal').classList.add('open');
@@ -747,6 +749,7 @@ async function saveConfig(){
     {key:'zapi_token', value:document.getElementById('cfgZapiToken').value.trim()},
     {key:'zapi_client_token', value:document.getElementById('cfgZapiClient').value.trim()},
     {key:'secretary_phone', value:document.getElementById('cfgSecretary').value.replace(/\D/g,'')},
+    {key:'report_phone', value:document.getElementById('cfgReport').value.replace(/\D/g,'')},
     {key:'gemini_api_key', value:document.getElementById('cfgGeminiKey').value.trim()},
     {key:'gemini_model', value:document.getElementById('cfgGeminiModel').value.trim()||'gemini-2.5-flash'},
   ];
