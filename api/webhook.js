@@ -1,152 +1,137 @@
-// Webhook da API oficial do WhatsApp (Meta Cloud API)
-// - GET: verificação do webhook no painel do Meta
-// - POST: mensagens recebidas → cria/atualiza lead, salva mensagem e aciona a IA
-import { db, sendText, saveMessage, getConfig } from './_lib/core.js';
+// Webhook da Z-API — mensagem recebida → cria/atualiza lead, salva e aciona a IA
+// Configurar na Z-API: "Ao receber" → https://SEU-PROJETO.vercel.app/api/webhook
+import { db, sendText, saveMessage } from './_lib/core.js';
 import { runAgent } from './_lib/agent.js';
 import { qualifyLead } from './_lib/actions.js';
 
 export default async function handler(req, res) {
-  // ---- Verificação do webhook (configuração no Meta) ----
-  if (req.method === 'GET') {
-    const { 'hub.mode': mode, 'hub.verify_token': token, 'hub.challenge': challenge } = req.query;
-    const cfg = await getConfig();
-    if (mode === 'subscribe' && token === cfg.verifyToken) {
-      return res.status(200).send(challenge);
-    }
-    return res.status(403).send('forbidden');
-  }
-
+  if (req.method === 'GET') return res.status(200).send('ok'); // ping/health
   if (req.method !== 'POST') return res.status(405).end();
 
   try {
-    const value = req.body?.entry?.[0]?.changes?.[0]?.value;
+    const b = req.body || {};
 
-    // Ignora eventos de status (entregue/lido) nesta versão
-    const incoming = value?.messages;
-    if (!incoming?.length) return res.status(200).json({ ok: true });
+    // Ignora: mensagens enviadas por nós, grupos, status e callbacks sem conteúdo
+    if (b.fromMe || b.isGroup || b.isStatusReply) return res.status(200).json({ ok: true });
 
-    const contactName = value?.contacts?.[0]?.profile?.name || null;
+    const waId = String(b.phone || '').replace(/\D/g, '');
+    const body = extractBody(b);
+    if (!waId || !body) return res.status(200).json({ ok: true });
 
-    for (const msg of incoming) {
-      const waId = msg.from;
-      const body = extractBody(msg);
-      if (!body) continue;
+    const contactName = b.senderName || b.chatName || b.pushName || null;
 
-      // ---- Localiza ou cria o lead ----
-      let { data: lead } = await db.from('crm_leads').select('*').eq('wa_id', waId).single();
+    // ---- Localiza ou cria o lead ----
+    let { data: lead } = await db.from('crm_leads').select('*').eq('wa_id', waId).single();
 
-      if (!lead) {
-        // referral = veio de clique em anúncio (click-to-WhatsApp)
-        const referral = msg.referral || null;
-        const source = referral
-          ? `${referral.headline || referral.body || 'Anúncio Meta'}`
-          : 'Orgânico / direto';
+    if (!lead) {
+      // Origem: referral do anúncio (se a Z-API repassar) ou a 1ª mensagem
+      // Dica: use mensagens pré-preenchidas diferentes por campanha nos anúncios
+      const referral = b.referral || b.externalAdReply || null;
+      const source = referral?.headline || referral?.title
+        ? `Anúncio: ${referral.headline || referral.title}`
+        : `1ª msg: "${body.slice(0, 60)}${body.length > 60 ? '…' : ''}"`;
 
-        const { data: created } = await db
-          .from('crm_leads')
-          .insert({
-            wa_id: waId,
-            name: contactName,
-            source,
-            referral,
-            unread: true,
-            last_inbound_at: new Date().toISOString(),
-          })
-          .select()
-          .single();
-        lead = created;
+      const { data: created } = await db
+        .from('crm_leads')
+        .insert({
+          wa_id: waId,
+          name: contactName,
+          source,
+          referral,
+          unread: true,
+          last_inbound_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
+      lead = created;
 
-        await db.from('crm_stage_events').insert({
-          lead_id: lead.id,
-          to_stage: 'novo_lead',
-          actor: 'system',
+      await db.from('crm_stage_events').insert({
+        lead_id: lead.id,
+        to_stage: 'novo_lead',
+        actor: 'system',
+      });
+    } else {
+      await db
+        .from('crm_leads')
+        .update({
+          unread: true,
+          last_inbound_at: new Date().toISOString(),
+          name: lead.name || contactName,
+        })
+        .eq('id', lead.id);
+      lead = { ...lead, name: lead.name || contactName };
+    }
+
+    await saveMessage(lead.id, {
+      direction: 'in',
+      sender: 'patient',
+      body,
+      waMessageId: b.messageId || null,
+    });
+
+    // ---- IA responde como padrão nas etapas de atendimento ----
+    const aiStages = ['novo_lead', 'em_atendimento'];
+    if (lead.ai_enabled && aiStages.includes(lead.stage_id)) {
+      const result = await runAgent({ ...lead });
+      if (result?.reply) {
+        const sent = await sendText(waId, result.reply);
+        await saveMessage(lead.id, {
+          direction: 'out',
+          sender: 'ai',
+          body: result.reply,
+          waMessageId: sent?.messageId || sent?.id || null,
         });
-      } else {
-        await db
-          .from('crm_leads')
-          .update({
-            unread: true,
-            last_inbound_at: new Date().toISOString(),
-            name: lead.name || contactName,
-          })
-          .eq('id', lead.id);
-        lead = { ...lead, name: lead.name || contactName };
       }
 
-      await saveMessage(lead.id, {
-        direction: 'in',
-        sender: 'patient',
-        body,
-        waMessageId: msg.id,
-      });
+      const updates = {};
+      const ex = result?.extracted || {};
+      if (ex.name && !lead.name) updates.name = ex.name;
+      if (ex.city && !lead.city) updates.city = ex.city;
+      if (ex.complaint) updates.notes = appendNote(lead.notes, `Queixa: ${ex.complaint}`);
 
-      // ---- IA responde como padrão nas etapas de atendimento ----
-      const aiStages = ['novo_lead', 'em_atendimento'];
-      if (lead.ai_enabled && aiStages.includes(lead.stage_id)) {
-        const result = await runAgent({ ...lead });
-        if (result?.reply) {
-          const sent = await sendText(waId, result.reply);
-          await saveMessage(lead.id, {
-            direction: 'out',
-            sender: 'ai',
-            body: result.reply,
-            waMessageId: sent?.messages?.[0]?.id || null,
-          });
-        }
+      if (lead.stage_id === 'novo_lead') {
+        updates.stage_id = 'em_atendimento';
+        await db.from('crm_stage_events').insert({
+          lead_id: lead.id,
+          from_stage: 'novo_lead',
+          to_stage: 'em_atendimento',
+          actor: 'ai',
+        });
+      }
 
-        const updates = {};
-        // Dados extraídos pela IA (nome, cidade, queixa)
-        const ex = result?.extracted || {};
-        if (ex.name && !lead.name) updates.name = ex.name;
-        if (ex.city && !lead.city) updates.city = ex.city;
-        if (ex.complaint) updates.notes = appendNote(lead.notes, `Queixa: ${ex.complaint}`);
+      if (result?.action === 'handoff') {
+        updates.ai_enabled = false;
+        updates.needs_human = true;
+      }
 
-        // Primeiro contato respondido → move de Novo Lead p/ Em Atendimento
-        if (lead.stage_id === 'novo_lead') {
-          updates.stage_id = 'em_atendimento';
-          await db.from('crm_stage_events').insert({
-            lead_id: lead.id,
-            from_stage: 'novo_lead',
-            to_stage: 'em_atendimento',
-            actor: 'ai',
-          });
-        }
+      if (Object.keys(updates).length) {
+        await db.from('crm_leads').update(updates).eq('id', lead.id);
+      }
 
-        if (result?.action === 'handoff') {
-          updates.ai_enabled = false;
-          updates.needs_human = true;
-        }
-
-        if (Object.keys(updates).length) {
-          await db.from('crm_leads').update(updates).eq('id', lead.id);
-        }
-
-        // IA qualificou → move o card sozinha e aciona a secretária
-        // (a resposta da Maia já avisa o paciente, então notifyPatient=false)
-        if (result?.action === 'suggest_qualified') {
-          const fresh = { ...lead, ...updates };
-          await qualifyLead(fresh, 'ai', { notifyPatient: false });
-        }
+      // IA qualificou → move o card sozinha e aciona a secretária
+      // (a resposta da Maia já avisa o paciente, então notifyPatient=false)
+      if (result?.action === 'suggest_qualified') {
+        const fresh = { ...lead, ...updates };
+        await qualifyLead(fresh, 'ai', { notifyPatient: false });
       }
     }
 
     return res.status(200).json({ ok: true });
   } catch (err) {
     console.error('webhook error:', err);
-    // Sempre 200 para o Meta não reenfileirar indefinidamente
     return res.status(200).json({ ok: false });
   }
 }
 
-function extractBody(msg) {
-  if (msg.type === 'text') return msg.text?.body || null;
-  if (msg.type === 'button') return msg.button?.text || null;
-  if (msg.type === 'interactive')
-    return msg.interactive?.button_reply?.title || msg.interactive?.list_reply?.title || null;
-  if (msg.type === 'image') return '[Paciente enviou uma imagem]';
-  if (msg.type === 'audio') return '[Paciente enviou um áudio]';
-  if (msg.type === 'video') return '[Paciente enviou um vídeo]';
-  if (msg.type === 'document') return '[Paciente enviou um documento]';
+function extractBody(b) {
+  if (b.text?.message) return b.text.message;
+  if (b.buttonsResponseMessage?.message) return b.buttonsResponseMessage.message;
+  if (b.listResponseMessage?.message) return b.listResponseMessage.message;
+  if (b.image) return b.image.caption ? `[Imagem] ${b.image.caption}` : '[Paciente enviou uma imagem]';
+  if (b.audio) return '[Paciente enviou um áudio]';
+  if (b.video) return b.video.caption ? `[Vídeo] ${b.video.caption}` : '[Paciente enviou um vídeo]';
+  if (b.document) return '[Paciente enviou um documento]';
+  if (b.sticker) return '[Paciente enviou uma figurinha]';
   return null;
 }
 

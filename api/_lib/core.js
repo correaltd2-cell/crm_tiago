@@ -1,6 +1,5 @@
-// Helpers compartilhados — Supabase (service role), Meta Cloud API e autenticação
-// As credenciais de integração vêm da tabela `settings` (aba Integrações do CRM),
-// com fallback para env vars se existirem.
+// Helpers compartilhados — Supabase (service role), Z-API e autenticação
+// Credenciais vêm da tabela crm_settings (aba Integrações do CRM)
 import { createClient } from '@supabase/supabase-js';
 
 export const db = createClient(
@@ -9,24 +8,21 @@ export const db = createClient(
   { auth: { persistSession: false } }
 );
 
-const GRAPH = 'https://graph.facebook.com/v21.0';
-
 // ---- Configuração dinâmica (settings do banco) ----------------------------
 let _cfgCache = null;
 let _cfgAt = 0;
 
 export async function getConfig() {
-  // cache de 30s para não consultar o banco a cada mensagem
   if (_cfgCache && Date.now() - _cfgAt < 30000) return _cfgCache;
   const { data } = await db.from('crm_settings').select('key,value');
   const map = Object.fromEntries((data || []).map((r) => [r.key, r.value]));
   _cfgCache = {
-    metaToken: map.meta_token || process.env.META_TOKEN || '',
-    phoneNumberId: map.meta_phone_number_id || process.env.META_PHONE_NUMBER_ID || '',
-    verifyToken: map.meta_verify_token || process.env.META_VERIFY_TOKEN || '',
-    secretaryPhone: map.secretary_phone || process.env.SECRETARY_PHONE || '',
-    geminiKey: map.gemini_api_key || process.env.GEMINI_API_KEY || '',
-    geminiModel: map.gemini_model || process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+    zapiInstance: map.zapi_instance_id || '',
+    zapiToken: map.zapi_token || '',
+    zapiClientToken: map.zapi_client_token || '',
+    secretaryPhone: map.secretary_phone || '',
+    geminiKey: map.gemini_api_key || '',
+    geminiModel: map.gemini_model || 'gemini-2.5-flash',
     agentName: map.agent_name || 'Maia',
     systemPrompt: map.system_prompt || '',
     knowledgeBase: map.knowledge_base || '',
@@ -35,54 +31,64 @@ export async function getConfig() {
   return _cfgCache;
 }
 
-// ---- Meta Cloud API -------------------------------------------------------
-async function metaPost(payload) {
+// ---- Z-API -----------------------------------------------------------------
+async function zapiPost(path, payload) {
   const cfg = await getConfig();
-  if (!cfg.metaToken || !cfg.phoneNumberId) {
-    throw new Error('Integração do WhatsApp não configurada — preencha o token e o Phone Number ID na aba Integrações.');
+  if (!cfg.zapiInstance || !cfg.zapiToken) {
+    throw new Error('Z-API não configurada — preencha Instance ID e Token na aba Integrações.');
   }
-  const res = await fetch(`${GRAPH}/${cfg.phoneNumberId}/messages`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${cfg.metaToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  });
-  const data = await res.json();
+  const res = await fetch(
+    `https://api.z-api.io/instances/${cfg.zapiInstance}/token/${cfg.zapiToken}/${path}`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(cfg.zapiClientToken ? { 'Client-Token': cfg.zapiClientToken } : {}),
+      },
+      body: JSON.stringify(payload),
+    }
+  );
+  const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    console.error('Meta API error:', JSON.stringify(data));
-    throw new Error(data?.error?.message || 'Falha ao enviar mensagem via Meta');
+    console.error('Z-API error:', res.status, JSON.stringify(data));
+    throw new Error(data?.error || data?.message || `Falha Z-API (${res.status})`);
   }
   return data;
 }
 
 export function sendText(to, body) {
-  return metaPost({
-    messaging_product: 'whatsapp',
-    to,
-    type: 'text',
-    text: { body, preview_url: false },
-  });
+  return zapiPost('send-text', { phone: String(to), message: body });
 }
 
-// Envia template aprovado. params = array de strings para as variáveis {{1}}, {{2}}...
-export function sendTemplate(to, templateName, params = [], lang = 'pt_BR') {
-  const components = params.length
-    ? [{ type: 'body', parameters: params.map((t) => ({ type: 'text', text: String(t) })) }]
-    : [];
-  return metaPost({
-    messaging_product: 'whatsapp',
-    to,
-    type: 'template',
-    template: { name: templateName, language: { code: lang }, components },
-  });
+// Textos das mensagens automáticas (sem burocracia de template na Z-API).
+// {{1}}, {{2}}, {{3}} são substituídos pelos parâmetros.
+const AUTO_TEXTS = {
+  aviso_secretaria:
+    'Novo paciente qualificado para consulta com o Dr. Tiago 👁️\n\nNome: {{1}}\nWhatsApp: {{2}}\nResumo: {{3}}\n\nPor favor, entre em contato para confirmar o agendamento da avaliação.',
+  retomada_atendimento:
+    'Olá, {{1}}! Aqui é do consultório do Dr. Tiago Franco Martins. Vi que conversamos sobre a sua avaliação e queria saber se posso te ajudar a dar o próximo passo. Posso continuar por aqui?',
+  followup_d2:
+    'Oi, {{1}}! Aqui é do consultório do Dr. Tiago. Passando para saber se ficou alguma dúvida sobre a sua avaliação ou sobre o procedimento. Estou à disposição para te ajudar. 😊',
+  followup_d7:
+    'Olá, {{1}}! Muitas pacientes do Dr. Tiago contam que o que mais mudou depois da blefaroplastia foi se olhar no espelho e ver um olhar descansado de novo. Se quiser, posso te ajudar a organizar a sua avaliação. Faz sentido para você?',
+  followup_d15:
+    'Oi, {{1}}! A agenda de avaliações do Dr. Tiago para as próximas semanas está sendo organizada. Se ainda fizer sentido para você, consigo verificar um horário. Posso pedir para a secretária te enviar as opções?',
+  followup_d30:
+    'Olá, {{1}}! Este é meu último contato por aqui para não te incomodar. 😊 Se em algum momento você quiser retomar a conversa sobre a sua avaliação com o Dr. Tiago, é só me chamar nesta conversa. Será um prazer te atender!',
+};
+
+// Mantém a assinatura antiga (compatível com o resto do código):
+// envia o texto correspondente ao "template" com as variáveis preenchidas
+export function sendTemplate(to, templateName, params = []) {
+  let text = AUTO_TEXTS[templateName];
+  if (!text) throw new Error(`Mensagem automática desconhecida: ${templateName}`);
+  params.forEach((p, i) => { text = text.replaceAll(`{{${i + 1}}}`, String(p)); });
+  return sendText(to, text);
 }
 
-// ---- Janela de 24h da API oficial ----------------------------------------
-export function insideWindow(lastInboundAt) {
-  if (!lastInboundAt) return false;
-  return Date.now() - new Date(lastInboundAt).getTime() < 24 * 60 * 60 * 1000;
+// ---- Janela de 24h: não existe na Z-API ------------------------------------
+export function insideWindow() {
+  return true;
 }
 
 // ---- Autenticação do painel (JWT do Supabase Auth) ------------------------

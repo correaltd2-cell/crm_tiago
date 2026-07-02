@@ -1,6 +1,6 @@
 # CRM — Dr. Tiago Franco Martins (Oculoplástica)
 
-CRM de leads com Kanban, atendimento por IA (padrão) com assunção humana, integração com anúncios click-to-WhatsApp e encaminhamento automático de pacientes qualificados para a secretária do hospital. Stack: **Vercel (front + serverless) + Supabase + WhatsApp Cloud API (oficial) + Google Gemini**.
+CRM de leads com Kanban, atendimento por IA (padrão) com assunção humana, integração com anúncios click-to-WhatsApp e encaminhamento automático de pacientes qualificados para a secretária do hospital. Stack: **Vercel (front + serverless) + Supabase + Z-API (WhatsApp) + Google Gemini**.
 
 ## Fluxo
 1. Paciente clica no anúncio do Meta → cai no WhatsApp oficial → webhook cria o lead em **Novo Lead** (card piscando) com a campanha de origem.
@@ -17,12 +17,16 @@ CRM de leads com Kanban, atendimento por IA (padrão) com assunção humana, int
 2. Authentication → Users → criar os usuários da equipe (e-mail + senha).
 3. Anotar: `Project URL`, `anon key`, `service_role key` (Settings → API).
 
-### 2. WhatsApp Cloud API (Meta)
-1. developers.facebook.com → criar app Business → adicionar produto **WhatsApp**.
-2. Cadastrar/migrar o número comercial do Dr. Tiago (o número NÃO pode estar ativo no app WhatsApp normal — precisa ser dedicado à API).
-3. Anotar `Phone Number ID` e gerar um **token permanente** (System User no Business Manager com permissão whatsapp_business_messaging).
-4. WhatsApp Manager → **Modelos de mensagem** → criar os 6 templates de `templates-meta.md` (nomes idênticos).
-5. Depois do deploy (passo 3): Configuração do Webhook → URL `https://SEU-PROJETO.vercel.app/api/webhook`, verify token = o mesmo `META_VERIFY_TOKEN` das env vars, e assinar o campo **messages**.
+### 2. Z-API (WhatsApp)
+1. Criar conta em z-api.io → criar uma instância.
+2. Conectar o **número novo dedicado aos anúncios** lendo o QR code (não usar o número pessoal/oficial do Dr. Tiago).
+3. Anotar: **Instance ID**, **Token da instância** e o **Client-Token** (menu Segurança da conta).
+4. Na instância → Webhooks → **"Ao receber"** → colar `https://SEU-PROJETO.vercel.app/api/webhook`.
+5. Preencher os três valores no CRM em **Config IA → Integrações**.
+
+⚠️ Estratégia anti-banimento: número dedicado só pros anúncios, volume baixo, conversa sempre iniciada pelo paciente, sem disparo em massa. Lead qualificado é encaminhado para o WhatsApp da secretária (número oficial, fora de risco).
+
+💡 Rastreio de campanha: configure uma mensagem pré-preenchida DIFERENTE em cada anúncio ("Olá! Vi o anúncio sobre olhar descansado…") — o CRM grava a 1ª mensagem como origem do lead.
 
 ### 3. Vercel
 1. Subir esta pasta num repositório GitHub → importar no Vercel.
@@ -40,12 +44,10 @@ CRM de leads com Kanban, atendimento por IA (padrão) com assunção humana, int
 4. Deploy. O cron de follow-ups roda todo dia às 10h (Brasília) — configurado em `vercel.json`.
 
 ### 4. Anúncios
-Nas campanhas click-to-WhatsApp do Meta, apontar para o número da API. O webhook captura o `referral` (título/campanha do anúncio) e grava na origem do lead — dá pra ver qual anúncio converte melhor.
+Nas campanhas click-to-WhatsApp do Meta, apontar para o número conectado na Z-API, com mensagem pré-preenchida diferente por campanha — o CRM grava a 1ª mensagem como origem do lead.
 
-## Regras importantes da API oficial
-- **Janela de 24h**: mensagens livres só até 24h após a última mensagem do paciente. Fora disso, só template aprovado — o CRM já trata isso (banner + botão "template de retomada").
-- Follow-ups são templates de MARKETING (têm custo por envio).
-- O aviso à secretária usa template de UTILIDADE.
+## Mensagens automáticas
+Sem templates pra aprovar: os textos dos follow-ups (D+2/D+7/D+15/D+30), da retomada e do aviso à secretária estão em `api/_lib/core.js` (constante `AUTO_TEXTS`) — edite lá se quiser mudar o tom.
 
 ## Estrutura
 ```
@@ -61,7 +63,7 @@ templates-meta.md     → textos dos templates para aprovar no Meta
 ```
 
 ## Antes de entregar ao Dr. Tiago
-- [ ] Preencher a seção **Integrações** (Config IA no painel): token do Meta, Phone Number ID, WhatsApp da secretária e chave do Gemini.
+- [ ] Preencher a seção **Integrações** (Config IA no painel): Instance ID/Token/Client-Token da Z-API, WhatsApp da secretária e chave do Gemini.
 - [ ] Preencher a base de conhecimento (Config IA no painel): cidade, hospital, particularidades.
 - [ ] Confirmar o nome da agente de IA (padrão: **Maia**) — editável em Config IA.
 - [ ] Testar o fluxo completo com seu próprio número antes de ligar os anúncios.
