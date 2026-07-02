@@ -11,8 +11,33 @@ export default async function handler(req, res) {
   try {
     const b = req.body || {};
 
-    // Ignora: mensagens enviadas por nós, grupos, status e callbacks sem conteúdo
-    if (b.fromMe || b.isGroup || b.isStatusReply) return res.status(200).json({ ok: true });
+    // Ignora grupos e callbacks de status
+    if (b.isGroup || b.isStatusReply) return res.status(200).json({ ok: true });
+
+    // Mensagem enviada POR NÓS (pelo celular ou pelo próprio CRM):
+    // registra no histórico para a conversa ficar completa — com dedupe
+    // para não duplicar as que o CRM já salvou ao enviar
+    if (b.fromMe) {
+      const waIdOut = String(b.phone || '').replace(/\D/g, '');
+      const bodyOut = extractBody(b);
+      if (!waIdOut || !bodyOut) return res.status(200).json({ ok: true });
+
+      const { data: leadOut } = await db.from('crm_leads').select('id').eq('wa_id', waIdOut).single();
+      if (leadOut) {
+        if (b.messageId) {
+          const { data: dup } = await db.from('crm_messages')
+            .select('id').eq('wa_message_id', b.messageId).limit(1);
+          if (dup && dup.length) return res.status(200).json({ ok: true });
+        }
+        await saveMessage(leadOut.id, {
+          direction: 'out',
+          sender: 'human',
+          body: bodyOut,
+          waMessageId: b.messageId || null,
+        });
+      }
+      return res.status(200).json({ ok: true });
+    }
 
     const waId = String(b.phone || '').replace(/\D/g, '');
     const body = extractBody(b);
