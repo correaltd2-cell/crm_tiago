@@ -191,8 +191,10 @@ input,textarea,select{font-family:inherit;font-size:13.5px;color:var(--ink)}
   <div class="login-card">
     <input type="email" id="loginEmail" placeholder="E-mail" autocomplete="email" />
     <input type="password" id="loginPass" placeholder="Senha" autocomplete="current-password" />
+    <input id="loginCode" placeholder="Código de acesso" style="display:none;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:#FBF9F4" />
     <div class="login-err" id="loginErr"></div>
-    <button class="btn-primary" onclick="doLogin()">Entrar</button>
+    <button class="btn-primary" id="loginBtn" onclick="submitLogin()">Entrar</button>
+    <button style="font-size:12.5px;color:var(--ink-soft);text-decoration:underline;margin-top:2px" id="loginToggle" onclick="toggleSignup()">Primeiro acesso? Criar login</button>
   </div>
 </div>
 
@@ -344,6 +346,7 @@ input,textarea,select{font-family:inherit;font-size:13.5px;color:var(--ink)}
     <div class="field"><label>Z-API · Client-Token (Segurança da conta)</label><input id="cfgZapiClient" type="password" placeholder="Fa1b..." autocomplete="off" /></div>
     <div class="field"><label>WhatsApp da secretária (55DDDNÚMERO)</label><input id="cfgSecretary" placeholder="5554999999999" /></div>
     <div class="field"><label>WhatsApp p/ relatório semanal (número principal)</label><input id="cfgReport" placeholder="5554999999999" /></div>
+    <div class="field"><label>Código p/ criar novos logins</label><input id="cfgSignup" placeholder="ex: drtiago2026" /></div>
     <div class="field"><label>Gemini · API Key</label><input id="cfgGeminiKey" type="password" placeholder="AIza..." autocomplete="off" /></div>
     <div class="field"><label>Gemini · Modelo</label><input id="cfgGeminiModel" placeholder="gemini-2.5-flash" /></div>
     <div class="modal-actions">
@@ -365,11 +368,32 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let stages = [], leads = [], currentLead = null, pendingLoss = null, session = null;
 
 /* ================= AUTH ================= */
-async function doLogin(){
+let signupMode = false;
+function toggleSignup(){
+  signupMode = !signupMode;
+  document.getElementById('loginCode').style.display = signupMode ? 'block' : 'none';
+  document.getElementById('loginBtn').textContent = signupMode ? 'Criar acesso' : 'Entrar';
+  document.getElementById('loginToggle').textContent = signupMode ? 'Já tenho login — entrar' : 'Primeiro acesso? Criar login';
+  document.getElementById('loginErr').textContent = '';
+}
+async function submitLogin(){
+  const err = document.getElementById('loginErr');
   const email = document.getElementById('loginEmail').value.trim();
   const password = document.getElementById('loginPass').value;
+  if(!email || !password){ err.textContent='Preencha e-mail e senha.'; return; }
+
+  if(signupMode){
+    const code = document.getElementById('loginCode').value.trim();
+    if(!code){ err.textContent='Informe o código de acesso.'; return; }
+    err.textContent=''; document.getElementById('loginBtn').textContent='Criando…';
+    const r = await fetch('/api/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password,code})});
+    const d = await r.json().catch(()=>({}));
+    document.getElementById('loginBtn').textContent='Criar acesso';
+    if(!r.ok){ err.textContent = d.error||'Não foi possível criar o acesso.'; return; }
+    // criado → entra direto
+  }
   const { data, error } = await sb.auth.signInWithPassword({ email, password });
-  if (error){ document.getElementById('loginErr').textContent = 'E-mail ou senha incorretos.'; return; }
+  if (error){ err.textContent = signupMode ? 'Acesso criado, mas o login falhou — tente entrar.' : 'E-mail ou senha incorretos.'; return; }
   session = data.session; boot();
 }
 async function logout(){ await sb.auth.signOut(); location.reload(); }
@@ -732,6 +756,7 @@ async function openConfig(){
   document.getElementById('cfgZapiClient').value = map.zapi_client_token||'';
   document.getElementById('cfgSecretary').value = map.secretary_phone||'';
   document.getElementById('cfgReport').value = map.report_phone||'';
+  document.getElementById('cfgSignup').value = map.signup_code||'';
   document.getElementById('cfgGeminiKey').value = map.gemini_api_key||'';
   document.getElementById('cfgGeminiModel').value = map.gemini_model||'gemini-2.5-flash';
   document.getElementById('configModal').classList.add('open');
@@ -750,6 +775,7 @@ async function saveConfig(){
     {key:'zapi_client_token', value:document.getElementById('cfgZapiClient').value.trim()},
     {key:'secretary_phone', value:document.getElementById('cfgSecretary').value.replace(/\D/g,'')},
     {key:'report_phone', value:document.getElementById('cfgReport').value.replace(/\D/g,'')},
+    {key:'signup_code', value:document.getElementById('cfgSignup').value.trim()},
     {key:'gemini_api_key', value:document.getElementById('cfgGeminiKey').value.trim()},
     {key:'gemini_model', value:document.getElementById('cfgGeminiModel').value.trim()||'gemini-2.5-flash'},
   ];
