@@ -3,7 +3,8 @@
 // - Follow-up    → agenda a cadência D+2 / D+7 / D+15 / D+30
 // - Perdido      → registra motivo de perda e cancela follow-ups pendentes
 // - Fechado      → cancela follow-ups pendentes
-import { db, sendText, sendTemplate, insideWindow, requireUser, saveMessage, getConfig } from './_lib/core.js';
+import { db, sendTemplate, requireUser } from './_lib/core.js';
+import { qualifyLead } from './_lib/actions.js';
 
 const FOLLOWUP_PLAN = [
   { days: 2, template: 'followup_d2', label: 'D+2' },
@@ -29,43 +30,11 @@ export default async function handler(req, res) {
   const notices = [];
 
   try {
-    // ---------- QUALIFICADO: encaminha p/ secretária do hospital ----------
+    // ---------- QUALIFICADO: mesma rotina usada pela IA ----------
     if (toStage === 'qualificado') {
-      const firstName = (lead.name || 'Paciente').split(' ')[0];
-      const phonePretty = formatPhone(lead.wa_id);
-      const resumo = [
-        lead.procedure_interest || 'Blefaroplastia',
-        lead.city ? `de ${lead.city}` : null,
-        lead.source ? `origem: ${lead.source}` : null,
-      ]
-        .filter(Boolean)
-        .join(' · ');
-
-      // 1) Template p/ a secretária (conversa iniciada pela empresa → precisa de template)
-      const cfg = await getConfig();
-      if (cfg.secretaryPhone) {
-        await sendTemplate(cfg.secretaryPhone, 'aviso_secretaria', [
-          lead.name || 'Paciente sem nome',
-          phonePretty,
-          resumo,
-        ]);
-        updates.secretary_notified_at = new Date().toISOString();
-        notices.push('Secretária avisada no WhatsApp do hospital.');
-        await saveMessage(lead.id, {
-          direction: 'out',
-          sender: 'system',
-          body: `[Sistema] Lead encaminhado à secretária do hospital (${phonePretty}).`,
-        });
-      }
-
-      // 2) Confirmação para o paciente (texto simples se a janela estiver aberta)
-      if (insideWindow(lead.last_inbound_at)) {
-        const msg = `Perfeito, ${firstName}! 😊 Já encaminhei seus dados para a secretária do hospital — ela vai entrar em contato com você por WhatsApp para confirmar a data e o horário da sua consulta de avaliação com o Dr. Tiago.`;
-        await sendText(lead.wa_id, msg);
-        await saveMessage(lead.id, { direction: 'out', sender: 'ai', body: msg });
-      }
-
-      updates.qualify_ready = false;
+      const ns = await qualifyLead(lead, user.email || 'human');
+      ns.forEach((n) => notices.push(n));
+      return res.status(200).json({ ok: true, notices });
     }
 
     // ---------- FOLLOW-UP: agenda a cadência ----------
@@ -106,8 +75,3 @@ export default async function handler(req, res) {
   }
 }
 
-function formatPhone(waId) {
-  // 5549999999999 → +55 (49) 99999-9999 (aproximação amigável)
-  const m = String(waId).match(/^55(\d{2})(\d{4,5})(\d{4})$/);
-  return m ? `+55 (${m[1]}) ${m[2]}-${m[3]}` : `+${waId}`;
-}

@@ -3,6 +3,7 @@
 // - POST: mensagens recebidas → cria/atualiza lead, salva mensagem e aciona a IA
 import { db, sendText, saveMessage, getConfig } from './_lib/core.js';
 import { runAgent } from './_lib/agent.js';
+import { qualifyLead } from './_lib/actions.js';
 
 export default async function handler(req, res) {
   // ---- Verificação do webhook (configuração no Meta) ----
@@ -115,12 +116,16 @@ export default async function handler(req, res) {
           updates.ai_enabled = false;
           updates.needs_human = true;
         }
-        if (result?.action === 'suggest_qualified') {
-          updates.qualify_ready = true;
-        }
 
         if (Object.keys(updates).length) {
           await db.from('crm_leads').update(updates).eq('id', lead.id);
+        }
+
+        // IA qualificou → move o card sozinha e aciona a secretária
+        // (a resposta da Maia já avisa o paciente, então notifyPatient=false)
+        if (result?.action === 'suggest_qualified') {
+          const fresh = { ...lead, ...updates };
+          await qualifyLead(fresh, 'ai', { notifyPatient: false });
         }
       }
     }
