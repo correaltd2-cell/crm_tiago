@@ -141,7 +141,42 @@ input,textarea,select{font-family:inherit;font-size:13.5px;color:var(--ink)}
 .modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:20px}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#F4EFE4;padding:12px 20px;border-radius:999px;font-size:13px;transition:transform .25s;z-index:99;max-width:90vw;box-shadow:var(--shadow)}
 .toast.show{transform:translateX(-50%) translateY(0)}
-@media(max-width:720px){.drawer-info{display:none}}
+/* ===== Shell com sidebar ===== */
+.shell{display:flex;height:calc(100vh - 66px)}
+.sidebar{width:190px;flex-shrink:0;border-right:1px solid var(--hairline);background:rgba(255,255,255,.45);padding:18px 12px;display:flex;flex-direction:column;gap:4px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;font-size:12px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-soft);cursor:pointer;border-left:2px solid transparent;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--gold-soft);color:var(--gold-deep)}
+.nav-item.active{background:#fff;color:var(--ink);border-left-color:var(--gold);box-shadow:0 1px 2px rgba(19,41,46,.05)}
+.nav-dot{width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.65}
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.board{height:auto;flex:1}
+
+/* ===== Relatórios ===== */
+.reports{flex:1;overflow-y:auto;padding:24px 28px}
+.rep-filters{display:flex;gap:12px;align-items:center;margin-bottom:20px;flex-wrap:wrap}
+.rep-filters select{padding:9px 13px;border:1px solid var(--line);border-radius:999px;background:#fff;font-size:12.5px;font-weight:600}
+.rep-filters .rep-title{font-family:'Cormorant Garamond',serif;font-weight:600;font-size:24px;margin-right:auto}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:22px}
+.kpi{background:#fff;border:1px solid var(--line);border-radius:14px;padding:15px 16px}
+.kpi b{display:block;font-family:'Cormorant Garamond',serif;font-weight:600;font-size:30px;line-height:1}
+.kpi span{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft)}
+.kpi.gold b{color:var(--gold-deep)} .kpi.green b{color:#2F7A46} .kpi.red b{color:var(--alert)}
+.rep-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:14px}
+@media(max-width:900px){.rep-grid{grid-template-columns:1fr}}
+.panel{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px}
+.panel h4{font-size:10.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--gold-deep);margin-bottom:14px}
+.chart{display:flex;align-items:flex-end;gap:3px;height:150px}
+.chart .bar{flex:1;background:var(--viridian);border-radius:4px 4px 0 0;min-height:2px;opacity:.85;transition:opacity .15s}
+.chart .bar:hover{opacity:1}
+.chart-labels{display:flex;gap:3px;margin-top:6px}
+.chart-labels span{flex:1;text-align:center;font-family:'Spline Sans Mono',monospace;font-size:8.5px;color:var(--ink-soft)}
+.hbar-row{display:flex;align-items:center;gap:10px;margin-bottom:9px;font-size:12.5px}
+.hbar-label{width:44%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)}
+.hbar-track{flex:1;height:9px;background:var(--ivory);border-radius:6px;overflow:hidden}
+.hbar-fill{height:100%;background:var(--gold);border-radius:6px}
+.hbar-n{font-family:'Spline Sans Mono',monospace;font-size:11px;color:var(--ink-soft);width:26px;text-align:right}
+.panel .empty{color:#A9A492;font-style:italic;font-family:'Cormorant Garamond',serif;font-size:15px}
+@media(max-width:720px){.drawer-info{display:none}.sidebar{width:56px;padding:18px 8px}.nav-item span.nav-txt{display:none}}
 
 </style>
 </head>
@@ -176,7 +211,41 @@ input,textarea,select{font-family:inherit;font-size:13.5px;color:var(--ink)}
     <button class="btn-ghost" onclick="openConfig()">Config IA</button>
     <button class="btn-ghost" onclick="logout()">Sair</button>
   </div>
-  <div class="board" id="board"></div>
+  <div class="shell">
+    <nav class="sidebar">
+      <div class="nav-item active" id="navFunil" onclick="switchView('funil')"><span class="nav-dot"></span><span class="nav-txt">Funil</span></div>
+      <div class="nav-item" id="navRel" onclick="switchView('relatorios')"><span class="nav-dot"></span><span class="nav-txt">Relatórios</span></div>
+    </nav>
+    <main class="main">
+      <div class="board" id="board"></div>
+      <div class="reports" id="reports" style="display:none">
+        <div class="rep-filters">
+          <span class="rep-title">Relatórios</span>
+          <select id="repMonth" onchange="renderReports()"></select>
+          <select id="repProc" onchange="renderReports()"></select>
+          <select id="repSource" onchange="renderReports()"></select>
+        </div>
+        <div class="kpis" id="repKpis"></div>
+        <div class="rep-grid">
+          <div class="panel">
+            <h4 id="chartTitle">Novos leads</h4>
+            <div class="chart" id="repChart"></div>
+            <div class="chart-labels" id="repChartLabels"></div>
+          </div>
+          <div>
+            <div class="panel" style="margin-bottom:14px">
+              <h4>Origem dos leads</h4>
+              <div id="repSources"></div>
+            </div>
+            <div class="panel">
+              <h4>Motivos de perda</h4>
+              <div id="repLoss"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
 </div>
 
 <!-- ===================== DRAWER ===================== -->
@@ -502,6 +571,117 @@ async function sendHuman(){
 async function sendReopen(){
   const r = await authed('/api/send',{ leadId: currentLead.id, useReopenTemplate:true });
   toast(r.ok?'Template de retomada enviado':'Falha: '+(r.data.error||r.data.message||'erro'));
+}
+
+/* ================= RELATÓRIOS ================= */
+let stageEvents = null;
+const MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+
+async function switchView(v){
+  document.getElementById('navFunil').classList.toggle('active', v==='funil');
+  document.getElementById('navRel').classList.toggle('active', v==='relatorios');
+  document.getElementById('board').style.display = v==='funil'?'flex':'none';
+  document.getElementById('reports').style.display = v==='relatorios'?'block':'none';
+  if(v==='relatorios'){
+    if(!stageEvents){
+      const { data } = await sb.from('crm_stage_events').select('lead_id,to_stage,created_at');
+      stageEvents = data||[];
+    }
+    buildReportFilters();
+    renderReports();
+  }
+}
+
+function monthKey(d){ const x=new Date(d); return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0'); }
+function monthLabel(k){ const [y,m]=k.split('-'); return MESES[+m-1]+'/'+y.slice(2); }
+
+function buildReportFilters(){
+  const mSel = document.getElementById('repMonth');
+  const keep = mSel.value;
+  const months = [...new Set(leads.map(l=>monthKey(l.created_at)))].sort().reverse();
+  const cur = monthKey(new Date().toISOString());
+  if(!months.includes(cur)) months.unshift(cur);
+  mSel.innerHTML = '<option value="all">Todos os meses</option>' + months.map(k=>`<option value="${k}">${monthLabel(k)}</option>`).join('');
+  mSel.value = keep && [...mSel.options].some(o=>o.value===keep) ? keep : cur;
+
+  const pSel = document.getElementById('repProc'); const keepP = pSel.value;
+  const procs = [...new Set(leads.map(l=>l.procedure_interest).filter(Boolean))].sort();
+  pSel.innerHTML = '<option value="all">Todos os procedimentos</option>' + procs.map(x=>`<option>${esc(x)}</option>`).join('');
+  if(keepP && [...pSel.options].some(o=>o.value===keepP)) pSel.value=keepP;
+
+  const sSel = document.getElementById('repSource'); const keepS = sSel.value;
+  const srcs = [...new Set(leads.map(l=>l.source).filter(Boolean))].sort();
+  sSel.innerHTML = '<option value="all">Todas as origens</option>' + srcs.map(x=>`<option>${esc(x)}</option>`).join('');
+  if(keepS && [...sSel.options].some(o=>o.value===keepS)) sSel.value=keepS;
+}
+
+function renderReports(){
+  const month = document.getElementById('repMonth').value;
+  const proc = document.getElementById('repProc').value;
+  const src = document.getElementById('repSource').value;
+
+  const leadOk = l => (proc==='all' || l.procedure_interest===proc) && (src==='all' || l.source===src);
+  const inPeriod = d => month==='all' || monthKey(d)===month;
+  const leadById = Object.fromEntries(leads.map(l=>[l.id,l]));
+
+  const novos = leads.filter(l=>leadOk(l) && inPeriod(l.created_at));
+  const ev = (stageEvents||[]).filter(e=>{
+    const l = leadById[e.lead_id];
+    return l && leadOk(l) && inPeriod(e.created_at);
+  });
+  const count = st => ev.filter(e=>e.to_stage===st).length;
+  const qualificados = count('qualificado');
+  const agendadas = count('consulta_agendada');
+  const fechados = count('fechado');
+  const perdidos = count('perdido');
+  const conv = novos.length ? Math.round(fechados/novos.length*100) : 0;
+
+  document.getElementById('repKpis').innerHTML = `
+    <div class="kpi"><b>${novos.length}</b><span>Novos leads</span></div>
+    <div class="kpi gold"><b>${qualificados}</b><span>Qualificados</span></div>
+    <div class="kpi"><b>${agendadas}</b><span>Consultas agendadas</span></div>
+    <div class="kpi green"><b>${fechados}</b><span>Cirurgias fechadas</span></div>
+    <div class="kpi red"><b>${perdidos}</b><span>Perdidos</span></div>
+    <div class="kpi"><b>${conv}%</b><span>Conversão lead→cirurgia</span></div>`;
+
+  // Gráfico: por dia (mês selecionado) ou por mês (todos)
+  const chart = document.getElementById('repChart');
+  const labels = document.getElementById('repChartLabels');
+  let buckets=[], lbls=[];
+  if(month==='all'){
+    document.getElementById('chartTitle').textContent='Novos leads por mês';
+    const keys=[...new Set(novos.map(l=>monthKey(l.created_at)))].sort();
+    buckets = keys.map(k=>novos.filter(l=>monthKey(l.created_at)===k).length);
+    lbls = keys.map(monthLabel);
+  } else {
+    document.getElementById('chartTitle').textContent='Novos leads por dia';
+    const [y,m]=month.split('-').map(Number);
+    const days=new Date(y,m,0).getDate();
+    for(let d=1;d<=days;d++){
+      buckets.push(novos.filter(l=>{const x=new Date(l.created_at);return x.getDate()===d;}).length);
+      lbls.push(d%5===0||d===1?String(d):'');
+    }
+  }
+  const max=Math.max(1,...buckets);
+  chart.innerHTML = buckets.map((n,i)=>`<div class="bar" style="height:${Math.round(n/max*100)}%" title="${lbls[i]||''}: ${n}"></div>`).join('') || '<div class="empty">Sem dados no período</div>';
+  labels.innerHTML = lbls.map(x=>`<span>${x}</span>`).join('');
+
+  // Origem
+  const bySrc={}; novos.forEach(l=>{const s=l.source||'Sem origem';bySrc[s]=(bySrc[s]||0)+1;});
+  const srcRows=Object.entries(bySrc).sort((a,b)=>b[1]-a[1]).slice(0,7);
+  const smax=Math.max(1,...srcRows.map(r=>r[1]));
+  document.getElementById('repSources').innerHTML = srcRows.length
+    ? srcRows.map(([s,n])=>`<div class="hbar-row"><div class="hbar-label" title="${esc(s)}">${esc(s)}</div><div class="hbar-track"><div class="hbar-fill" style="width:${Math.round(n/smax*100)}%"></div></div><div class="hbar-n">${n}</div></div>`).join('')
+    : '<div class="empty">Sem leads no período</div>';
+
+  // Motivos de perda
+  const lostIds = new Set(ev.filter(e=>e.to_stage==='perdido').map(e=>e.lead_id));
+  const byReason={}; [...lostIds].forEach(id=>{const l=leadById[id];const r=(l&&l.loss_reason)||'Não informado';byReason[r]=(byReason[r]||0)+1;});
+  const lr=Object.entries(byReason).sort((a,b)=>b[1]-a[1]);
+  const lmax=Math.max(1,...lr.map(r=>r[1]));
+  document.getElementById('repLoss').innerHTML = lr.length
+    ? lr.map(([s,n])=>`<div class="hbar-row"><div class="hbar-label">${esc(s)}</div><div class="hbar-track"><div class="hbar-fill" style="width:${Math.round(n/lmax*100)}%;background:var(--alert)"></div></div><div class="hbar-n">${n}</div></div>`).join('')
+    : '<div class="empty">Nenhuma perda no período 🎉</div>';
 }
 
 /* ================= NOVO LEAD MANUAL ================= */
