@@ -264,6 +264,11 @@ input,textarea,select{font-family:inherit;font-size:13.5px;color:var(--ink)}
     <div class="field"><label>Nome da agente</label><input id="cfgName" /></div>
     <div class="field"><label>Instruções (system prompt)</label><textarea id="cfgPrompt" style="min-height:180px"></textarea></div>
     <div class="field"><label>Base de conhecimento</label><textarea id="cfgKb" style="min-height:180px"></textarea></div>
+    <div class="d-section" style="border-top:1px solid var(--hairline)">Follow-ups — instruções para a IA por etapa</div>
+    <div class="field"><label>D+2 (2 dias após entrar no follow-up)</label><textarea id="cfgFuD2" style="min-height:70px"></textarea></div>
+    <div class="field"><label>D+7</label><textarea id="cfgFuD7" style="min-height:70px"></textarea></div>
+    <div class="field"><label>D+15</label><textarea id="cfgFuD15" style="min-height:70px"></textarea></div>
+    <div class="field"><label>D+30 (despedida)</label><textarea id="cfgFuD30" style="min-height:70px"></textarea></div>
     <div class="d-section" style="border-top:1px solid var(--hairline)">Integrações</div>
     <div class="field"><label>Z-API · Instance ID</label><input id="cfgZapiInstance" placeholder="3D0A..." autocomplete="off" /></div>
     <div class="field"><label>Z-API · Token da instância</label><input id="cfgZapiToken" type="password" placeholder="F2C9..." autocomplete="off" /></div>
@@ -537,6 +542,10 @@ async function openConfig(){
   document.getElementById('cfgName').value = map.agent_name||'';
   document.getElementById('cfgPrompt').value = map.system_prompt||'';
   document.getElementById('cfgKb').value = map.knowledge_base||'';
+  document.getElementById('cfgFuD2').value = map.followup_d2_prompt||'';
+  document.getElementById('cfgFuD7').value = map.followup_d7_prompt||'';
+  document.getElementById('cfgFuD15').value = map.followup_d15_prompt||'';
+  document.getElementById('cfgFuD30').value = map.followup_d30_prompt||'';
   document.getElementById('cfgZapiInstance').value = map.zapi_instance_id||'';
   document.getElementById('cfgZapiToken').value = map.zapi_token||'';
   document.getElementById('cfgZapiClient').value = map.zapi_client_token||'';
@@ -550,6 +559,10 @@ async function saveConfig(){
     {key:'agent_name', value:document.getElementById('cfgName').value},
     {key:'system_prompt', value:document.getElementById('cfgPrompt').value},
     {key:'knowledge_base', value:document.getElementById('cfgKb').value},
+    {key:'followup_d2_prompt', value:document.getElementById('cfgFuD2').value},
+    {key:'followup_d7_prompt', value:document.getElementById('cfgFuD7').value},
+    {key:'followup_d15_prompt', value:document.getElementById('cfgFuD15').value},
+    {key:'followup_d30_prompt', value:document.getElementById('cfgFuD30').value},
     {key:'zapi_instance_id', value:document.getElementById('cfgZapiInstance').value.trim()},
     {key:'zapi_token', value:document.getElementById('cfgZapiToken').value.trim()},
     {key:'zapi_client_token', value:document.getElementById('cfgZapiClient').value.trim()},
