@@ -6,10 +6,11 @@ export default async function handler(req, res) {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
   // decodifica só o payload do JWT p/ ver a role (anon vs service_role)
-  let keyRole = null;
+  let keyRole = null, keyRef = null;
   try {
     const payload = JSON.parse(Buffer.from(key.split('.')[1], 'base64').toString());
     keyRole = payload.role || null;
+    keyRef = payload.ref || null;
   } catch { keyRole = key ? 'nao_e_jwt' : null; }
 
   let settingsRead = null, verifyTokenLen = null, dbError = null;
@@ -25,6 +26,8 @@ export default async function handler(req, res) {
     supabase_url_host: url ? url.replace(/^https?:\/\//,'').split('/')[0] : null,
     has_service_key: !!key,
     key_role: keyRole,
+    key_project_ref: keyRef,
+    expected_ref: url.includes('jztvtfpinnudavccoxgh') ? 'jztvtfpinnudavccoxgh' : null,
     has_cron_secret: !!process.env.CRON_SECRET,
     settings_read_ok: settingsRead,
     verify_token_length: verifyTokenLen,
