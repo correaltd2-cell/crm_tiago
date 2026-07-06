@@ -80,6 +80,19 @@ export default async function handler(req, res) {
     });
   }
 
+  // Lembrete de gestão: cards parados nas etapas manuais há mais de 7 dias
+  const manualStages = ['qualificado', 'consulta_agendada', 'consulta_realizada', 'orcamento_apresentado'];
+  const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const stuck = (leads || []).filter((l) => manualStages.includes(l.stage_id) && (l.updated_at || l.created_at) < cutoff);
+  if (stuck.length) {
+    lines.push('');
+    lines.push(`📌 *Lembrete:* ${stuck.length} paciente${stuck.length > 1 ? 's' : ''} sem movimentação há mais de 7 dias — vale conferir com a secretária e atualizar o funil:`);
+    stuck.slice(0, 12).forEach((l) => {
+      lines.push(`• ${l.name || 'Sem nome'} — parado em ${STAGE_LABEL[l.stage_id] || l.stage_id}`);
+    });
+    if (stuck.length > 12) lines.push(`…e mais ${stuck.length - 12}.`);
+  }
+
   lines.push('');
   lines.push('_Relatório automático do CRM · crm-tiago.vercel.app_');
 
