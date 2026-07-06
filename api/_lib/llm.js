@@ -22,19 +22,30 @@ export async function chatLLM({ system, messages, maxTokens = 700, wantJson = fa
 
   try {
     if (provider === 'openai') {
+      // Modelos "pensantes" (gpt-5*, o*) gastam tokens de raciocínio DENTRO do
+      // limite de resposta — precisam de folga extra e esforço mínimo de raciocínio,
+      // senão a resposta volta vazia em turnos mais difíceis.
+      const isGpt5 = /^gpt-5/.test(model);
+      const isOSeries = /^o\d/.test(model);
+      const reasoning = isGpt5 ? { reasoning_effort: 'minimal' } : isOSeries ? { reasoning_effort: 'low' } : {};
+      const budget = (isGpt5 || isOSeries) ? maxTokens + 2000 : maxTokens;
       const res = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model,
-          max_completion_tokens: maxTokens,
+          max_completion_tokens: budget,
+          ...reasoning,
           ...(wantJson ? { response_format: { type: 'json_object' } } : {}),
           messages: [{ role: 'system', content: system }, ...messages],
         }),
       });
       const data = await res.json();
       if (!res.ok) { console.error('OpenAI error:', JSON.stringify(data)); return null; }
-      return data?.choices?.[0]?.message?.content?.trim() || null;
+      const choice = data?.choices?.[0];
+      const content = choice?.message?.content?.trim() || null;
+      if (!content) console.error('OpenAI resposta vazia — finish_reason:', choice?.finish_reason, 'usage:', JSON.stringify(data?.usage));
+      return content;
     }
 
     if (provider === 'anthropic') {
