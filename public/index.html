@@ -347,8 +347,18 @@ input,textarea,select{font-family:inherit;font-size:13.5px;color:var(--ink)}
     <div class="field"><label>WhatsApp da secretária (55DDDNÚMERO)</label><input id="cfgSecretary" placeholder="5554999999999" /></div>
     <div class="field"><label>WhatsApp p/ relatório semanal (número principal)</label><input id="cfgReport" placeholder="5554999999999" /></div>
     <div class="field"><label>Código p/ criar novos logins</label><input id="cfgSignup" placeholder="ex: drtiago2026" /></div>
-    <div class="field"><label>Gemini · API Key</label><input id="cfgGeminiKey" type="password" placeholder="AIza..." autocomplete="off" /></div>
-    <div class="field"><label>Gemini · Modelo</label><input id="cfgGeminiModel" placeholder="gemini-2.5-flash" /></div>
+    <div class="field"><label>IA · Provedor</label>
+      <select id="cfgAiProvider" onchange="aiProviderChanged()">
+        <option value="openai">OpenAI</option>
+        <option value="anthropic">Anthropic (Claude)</option>
+        <option value="gemini">Google Gemini</option>
+      </select>
+    </div>
+    <div class="field"><label>IA · Chave da API</label><input id="cfgAiKey" type="password" placeholder="cole a chave aqui" autocomplete="off" /></div>
+    <div class="field"><label>IA · Modelo</label>
+      <input id="cfgAiModel" list="aiModels" placeholder="gpt-5-mini" />
+      <datalist id="aiModels"></datalist>
+    </div>
     <div class="modal-actions">
       <button class="btn-ghost" onclick="document.getElementById('configModal').classList.remove('open')">Cancelar</button>
       <button class="btn-primary" onclick="saveConfig()">Salvar</button>
@@ -757,8 +767,10 @@ async function openConfig(){
   document.getElementById('cfgSecretary').value = map.secretary_phone||'';
   document.getElementById('cfgReport').value = map.report_phone||'';
   document.getElementById('cfgSignup').value = map.signup_code||'';
-  document.getElementById('cfgGeminiKey').value = map.gemini_api_key||'';
-  document.getElementById('cfgGeminiModel').value = map.gemini_model||'gemini-2.5-flash';
+  document.getElementById('cfgAiProvider').value = map.ai_provider||'gemini';
+  document.getElementById('cfgAiKey').value = map.ai_api_key||map.gemini_api_key||'';
+  document.getElementById('cfgAiModel').value = map.ai_model||map.gemini_model||'';
+  aiProviderChanged(false);
   document.getElementById('configModal').classList.add('open');
 }
 async function saveConfig(){
@@ -776,12 +788,29 @@ async function saveConfig(){
     {key:'secretary_phone', value:document.getElementById('cfgSecretary').value.replace(/\D/g,'')},
     {key:'report_phone', value:document.getElementById('cfgReport').value.replace(/\D/g,'')},
     {key:'signup_code', value:document.getElementById('cfgSignup').value.trim()},
-    {key:'gemini_api_key', value:document.getElementById('cfgGeminiKey').value.trim()},
-    {key:'gemini_model', value:document.getElementById('cfgGeminiModel').value.trim()||'gemini-2.5-flash'},
+    {key:'ai_provider', value:document.getElementById('cfgAiProvider').value},
+    {key:'ai_api_key', value:document.getElementById('cfgAiKey').value.trim()},
+    {key:'ai_model', value:document.getElementById('cfgAiModel').value.trim()},
   ];
   await sb.from('crm_settings').upsert(rows);
   document.getElementById('configModal').classList.remove('open');
   toast('Configuração da IA salva');
+}
+
+/* ================= IA: modelos por provedor ================= */
+const AI_MODELS = {
+  openai:    ['gpt-5-mini','gpt-5','gpt-5-nano','gpt-4.1-mini','gpt-4o-mini'],
+  anthropic: ['claude-haiku-4-5','claude-sonnet-4-6'],
+  gemini:    ['gemini-2.5-flash','gemini-2.5-pro'],
+};
+function aiProviderChanged(clear=true){
+  const prov = document.getElementById('cfgAiProvider').value;
+  const dl = document.getElementById('aiModels');
+  const models = AI_MODELS[prov]||[];
+  dl.innerHTML = models.map(m=>`<option value="${m}">`).join('');
+  const inp = document.getElementById('cfgAiModel');
+  inp.placeholder = models[0]||'';
+  if(clear && (!inp.value || !models.includes(inp.value))) inp.value = models[0]||'';
 }
 
 /* ================= UTIL ================= */
