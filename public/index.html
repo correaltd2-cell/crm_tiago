@@ -359,7 +359,9 @@ input,textarea,select{font-family:inherit;font-size:13.5px;color:var(--ink)}
       <input id="cfgAiModel" list="aiModels" placeholder="gpt-5-mini" />
       <datalist id="aiModels"></datalist>
     </div>
+    <div id="auditResult" style="display:none;white-space:pre-wrap;background:#FBF9F3;border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:10px;padding:14px;margin-top:14px;font-size:12.5px;line-height:1.55"></div>
     <div class="modal-actions">
+      <button class="btn-ghost" id="auditBtn" onclick="analyzePrompts()">🔍 Analisar prompts com IA</button>
       <button class="btn-ghost" onclick="document.getElementById('configModal').classList.remove('open')">Cancelar</button>
       <button class="btn-primary" onclick="saveConfig()">Salvar</button>
     </div>
@@ -795,6 +797,26 @@ async function saveConfig(){
   await sb.from('crm_settings').upsert(rows);
   document.getElementById('configModal').classList.remove('open');
   toast('Configuração da IA salva');
+}
+
+/* ================= AUDITOR DE PROMPTS ================= */
+async function analyzePrompts(){
+  const btn = document.getElementById('auditBtn');
+  const out = document.getElementById('auditResult');
+  btn.disabled = true; btn.textContent = 'Analisando… (até 30s)';
+  out.style.display='block'; out.textContent='A IA está lendo suas instruções, a base de conhecimento e os prompts de follow-up…';
+  const r = await authed('/api/analyze', {
+    system_prompt: document.getElementById('cfgPrompt').value,
+    knowledge_base: document.getElementById('cfgKb').value,
+    followups: {
+      d2: document.getElementById('cfgFuD2').value,
+      d7: document.getElementById('cfgFuD7').value,
+      d15: document.getElementById('cfgFuD15').value,
+      d30: document.getElementById('cfgFuD30').value,
+    }
+  });
+  btn.disabled = false; btn.textContent = '🔍 Analisar prompts com IA';
+  out.textContent = r.ok ? r.data.report : ('Erro: ' + (r.data.error||'falha na análise'));
 }
 
 /* ================= IA: modelos por provedor ================= */

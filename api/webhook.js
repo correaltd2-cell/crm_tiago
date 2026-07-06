@@ -94,6 +94,29 @@ export default async function handler(req, res) {
       waMessageId: b.messageId || null,
     });
 
+    // ---- Paciente respondeu durante o follow-up: reengajou! ----
+    // Cancela os follow-ups pendentes e devolve o card para Em Atendimento,
+    // onde a Maia reassume a conversa direcionando para a consulta.
+    if (lead.stage_id === 'followup') {
+      await db.from('crm_follow_ups')
+        .update({ status: 'canceled' })
+        .eq('lead_id', lead.id)
+        .eq('status', 'pending');
+      await db.from('crm_leads').update({ stage_id: 'em_atendimento' }).eq('id', lead.id);
+      await db.from('crm_stage_events').insert({
+        lead_id: lead.id,
+        from_stage: 'followup',
+        to_stage: 'em_atendimento',
+        actor: 'system',
+      });
+      await saveMessage(lead.id, {
+        direction: 'out',
+        sender: 'system',
+        body: '[Sistema] Paciente respondeu ao follow-up — conversa reativada e follow-ups pendentes cancelados.',
+      });
+      lead = { ...lead, stage_id: 'em_atendimento' };
+    }
+
     // ---- IA responde como padrão nas etapas de atendimento ----
     const aiStages = ['novo_lead', 'em_atendimento'];
     if (lead.ai_enabled && aiStages.includes(lead.stage_id)) {
