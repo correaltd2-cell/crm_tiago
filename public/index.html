@@ -224,6 +224,7 @@ input,textarea,select{font-family:inherit;font-size:13.5px;color:var(--ink)}
     <nav class="sidebar">
       <div class="nav-item active" id="navFunil" onclick="switchView('funil')"><span class="nav-dot"></span><span class="nav-txt">Funil</span></div>
       <div class="nav-item" id="navRel" onclick="switchView('relatorios')"><span class="nav-dot"></span><span class="nav-txt">Relatórios</span></div>
+      <div class="nav-item" id="navSim" onclick="switchView('simulador')"><span class="nav-dot"></span><span class="nav-txt">Simulador</span></div>
     </nav>
     <main class="main">
       <div class="board" id="board"></div>
@@ -251,6 +252,19 @@ input,textarea,select{font-family:inherit;font-size:13.5px;color:var(--ink)}
               <div id="repLoss"></div>
             </div>
           </div>
+        </div>
+      </div>
+      <div class="reports" id="simView" style="display:none;padding:0;overflow:hidden;flex-direction:column">
+        <div style="display:flex;align-items:center;gap:12px;padding:16px 24px;border-bottom:1px solid var(--hairline)">
+          <span class="rep-title" style="font-family:'Cormorant Garamond',serif;font-weight:600;font-size:24px">Simulador</span>
+          <span style="font-size:12px;color:var(--ink-soft)">Converse como se fosse a paciente — a Maia responde com o cérebro real do sistema. Nada é gravado.</span>
+          <button class="btn-ghost" style="margin-left:auto" onclick="simReset()">↺ Nova conversa</button>
+        </div>
+        <div id="simFicha" style="padding:8px 24px;font-size:11.5px;color:var(--gold-deep);border-bottom:1px solid var(--hairline);display:none"></div>
+        <div class="chat-body" id="simBody" style="flex:1"></div>
+        <div class="chat-foot">
+          <textarea id="simComposer" rows="1" placeholder="Escreva como a paciente… (ex: Oi, vi o anúncio sobre a cirurgia das pálpebras)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();simSend()}"></textarea>
+          <button class="send-btn" id="simSendBtn" onclick="simSend()">Enviar</button>
         </div>
       </div>
     </main>
@@ -644,8 +658,10 @@ const MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov'
 async function switchView(v){
   document.getElementById('navFunil').classList.toggle('active', v==='funil');
   document.getElementById('navRel').classList.toggle('active', v==='relatorios');
+  document.getElementById('navSim').classList.toggle('active', v==='simulador');
   document.getElementById('board').style.display = v==='funil'?'flex':'none';
   document.getElementById('reports').style.display = v==='relatorios'?'block':'none';
+  document.getElementById('simView').style.display = v==='simulador'?'flex':'none';
   if(v==='relatorios'){
     if(!stageEvents){
       const { data } = await sb.from('crm_stage_events').select('lead_id,to_stage,created_at');
@@ -825,6 +841,60 @@ async function saveConfig(){
   document.getElementById('configModal').classList.remove('open');
   toast('Configuração da IA salva');
 }
+
+/* ================= SIMULADOR ================= */
+let simMessages = [], simLead = {};
+const SIM_ACTION_NOTES = {
+  handoff: '🔴 Neste ponto, a IA se pausaria e o card ganharia a tag "Precisa de humano".',
+  suggest_qualified: '🟡 Neste ponto, a IA moveria o card para QUALIFICADO e enviaria o resumo para a secretária do hospital.',
+};
+function simAdd(role, html, cls){
+  const body = document.getElementById('simBody');
+  const div = document.createElement('div');
+  div.className = cls || ('msg ' + (role==='user'?'in':'out'));
+  div.innerHTML = html;
+  body.appendChild(div);
+  body.scrollTop = body.scrollHeight;
+}
+function simReset(){
+  simMessages = []; simLead = {};
+  document.getElementById('simBody').innerHTML = '';
+  document.getElementById('simFicha').style.display='none';
+  simAdd(null, 'Simulação iniciada — escreva a primeira mensagem como a paciente escreveria.', 'msg sys');
+}
+function simFichaRender(){
+  const parts = [];
+  if(simLead.name) parts.push('Nome: '+esc(simLead.name));
+  if(simLead.city) parts.push('Cidade: '+esc(simLead.city));
+  if(simLead.complaint) parts.push('Queixa: '+esc(simLead.complaint));
+  const el = document.getElementById('simFicha');
+  if(parts.length){ el.style.display='block'; el.innerHTML = '📋 <b>Ficha que a IA preencheria:</b> ' + parts.join(' · '); }
+}
+async function simSend(){
+  const ta = document.getElementById('simComposer');
+  const text = ta.value.trim();
+  if(!text) return;
+  ta.value='';
+  simMessages.push({role:'user', content:text});
+  simAdd('user', esc(text));
+  const btn = document.getElementById('simSendBtn');
+  btn.disabled = true; btn.textContent='…';
+  const r = await authed('/api/simulate', { messages: simMessages, lead: simLead });
+  btn.disabled = false; btn.textContent='Enviar';
+  if(!r.ok){ simAdd(null, 'Erro: '+(r.data.error||'falha'), 'msg sys'); return; }
+  const d = r.data;
+  if(d.reply){
+    simMessages.push({role:'assistant', content:d.reply});
+    simAdd('assistant', '<span class="msg-ai-tag">IA</span>'+esc(d.reply));
+  }
+  const ex = d.extracted||{};
+  if(ex.name) simLead.name = ex.name;
+  if(ex.city) simLead.city = ex.city;
+  if(ex.complaint) simLead.complaint = ex.complaint;
+  simFichaRender();
+  if(SIM_ACTION_NOTES[d.action]) simAdd(null, SIM_ACTION_NOTES[d.action], 'msg sys');
+}
+document.addEventListener('DOMContentLoaded', ()=>{ try{ simReset(); }catch(e){} });
 
 /* ================= AUDITOR DE PROMPTS ================= */
 async function analyzePrompts(){
