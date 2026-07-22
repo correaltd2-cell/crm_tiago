@@ -231,6 +231,7 @@ input,textarea,select{font-family:inherit;font-size:13.5px;color:var(--ink)}
       <div class="nav-item active" id="navFunil" onclick="switchView('funil')"><span class="nav-dot"></span><span class="nav-txt">Funil</span></div>
       <div class="nav-item" id="navRel" onclick="switchView('relatorios')"><span class="nav-dot"></span><span class="nav-txt">Relatórios</span></div>
       <div class="nav-item" id="navSim" onclick="switchView('simulador')"><span class="nav-dot"></span><span class="nav-txt">Simulador</span></div>
+      <div class="nav-item" id="navCamp" onclick="switchView('campanhas')"><span class="nav-dot"></span><span class="nav-txt">Campanhas</span></div>
     </nav>
     <main class="main">
       <div class="board" id="board"></div>
@@ -273,7 +274,31 @@ input,textarea,select{font-family:inherit;font-size:13.5px;color:var(--ink)}
           <button class="send-btn" id="simSendBtn" onclick="simSend()">Enviar</button>
         </div>
       </div>
+      <div class="reports" id="campView" style="display:none">
+        <div class="rep-filters">
+          <span class="rep-title">Campanhas</span>
+          <button class="btn-primary" style="border-radius:999px" onclick="openNewCampaign()">+ Nova campanha</button>
+        </div>
+        <div style="font-size:12px;color:var(--ink-soft);margin-bottom:14px;max-width:640px">Crie uma campanha para cada anúncio. Copie o link gerado e use como destino do anúncio (Meta Ads → clique para WhatsApp). Cada lead que chegar por ele já entra no funil identificado — sem precisar adivinhar a origem.</div>
+        <div class="field" style="max-width:280px;margin-bottom:18px"><label>Número do WhatsApp dos anúncios</label><input id="campWaNumber" placeholder="5554999999999" oninput="saveWaNumberForLinks(this.value)" /></div>
+        <div id="campList" style="display:flex;flex-direction:column;gap:10px"></div>
+      </div>
     </main>
+  </div>
+</div>
+
+<!-- ===================== MODAL: nova campanha ===================== -->
+<div class="modal-veil" id="newCampModal">
+  <div class="modal" style="width:min(440px,92vw)">
+    <h3>Nova campanha</h3>
+    <div class="field"><label>Nome da campanha</label><input id="ncName" placeholder="Ex: Blefaroplastia — Instagram Julho" /></div>
+    <div class="field"><label>Código (curto, sem espaços)</label><input id="ncCode" placeholder="ex: blefa-jul26" /></div>
+    <div class="field"><label>Procedimento (opcional)</label><input id="ncProc" placeholder="Blefaroplastia" /></div>
+    <div class="login-err" id="ncErr"></div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="document.getElementById('newCampModal').classList.remove('open')">Cancelar</button>
+      <button class="btn-primary" onclick="createCampaign()">Criar</button>
+    </div>
   </div>
 </div>
 
@@ -699,9 +724,12 @@ async function switchView(v){
   document.getElementById('navFunil').classList.toggle('active', v==='funil');
   document.getElementById('navRel').classList.toggle('active', v==='relatorios');
   document.getElementById('navSim').classList.toggle('active', v==='simulador');
+  document.getElementById('navCamp').classList.toggle('active', v==='campanhas');
   document.getElementById('board').style.display = v==='funil'?'flex':'none';
   document.getElementById('reports').style.display = v==='relatorios'?'block':'none';
   document.getElementById('simView').style.display = v==='simulador'?'flex':'none';
+  document.getElementById('campView').style.display = v==='campanhas'?'block':'none';
+  if(v==='campanhas'){ renderCampaigns(); }
   if(v==='relatorios'){
     if(!stageEvents){
       const { data } = await sb.from('crm_stage_events').select('lead_id,to_stage,created_at');
@@ -860,6 +888,73 @@ function startEmbeddedSignup(){
     override_default_response_type: true,
     extras: { setup: {}, featureType: '', sessionInfoVersion: '3' }
   });
+}
+
+/* ================= CAMPANHAS ================= */
+let campaigns = [];
+let waNumberForLinks = '';
+let waNumberSaveTimer;
+function saveWaNumberForLinks(v){
+  waNumberForLinks = v.replace(/\D/g,'');
+  clearTimeout(waNumberSaveTimer);
+  waNumberSaveTimer = setTimeout(()=>{ sb.from('crm_settings').upsert({key:'ads_phone_number', value: waNumberForLinks}); }, 500);
+}
+async function renderCampaigns(){
+  const list = document.getElementById('campList');
+  list.innerHTML = '<div class="empty" style="font-family:\'Cormorant Garamond\',serif;font-size:15px;color:#A9A492">Carregando…</div>';
+  const [{data: camps}, {data: numRow}] = await Promise.all([
+    sb.from('crm_campaigns').select('*').order('created_at',{ascending:false}),
+    sb.from('crm_settings').select('value').eq('key','ads_phone_number').single()
+  ]);
+  campaigns = camps||[];
+  waNumberForLinks = numRow?.value || '';
+  document.getElementById('campWaNumber').value = waNumberForLinks;
+  if(!campaigns.length){
+    list.innerHTML = '<div class="panel"><div class="empty">Nenhuma campanha ainda — crie a primeira para rastrear seus anúncios.</div></div>';
+    return;
+  }
+  const counts = {};
+  leads.forEach(l=>{ if(l.campaign_id) counts[l.campaign_id]=(counts[l.campaign_id]||0)+1; });
+  list.innerHTML = campaigns.map(c=>{
+    const link = buildCampaignLink(c);
+    return `<div class="panel" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+      <div style="flex:1;min-width:200px">
+        <div style="font-family:'Cormorant Garamond',serif;font-weight:600;font-size:17px">${esc(c.name)}</div>
+        <div class="mono" style="font-size:11px;color:var(--ink-soft)">código: ${esc(c.code)}${c.procedure_interest?' · '+esc(c.procedure_interest):''}</div>
+      </div>
+      <div class="kpi" style="padding:8px 14px"><b style="font-size:22px">${counts[c.id]||0}</b><span>leads</span></div>
+      <button class="btn-ghost" onclick="copyCampaignLink('${c.id}')">🔗 Copiar link do anúncio</button>
+    </div>`;
+  }).join('');
+}
+function buildCampaignLink(c){
+  const num = waNumberForLinks || '5500000000000';
+  const text = encodeURIComponent(`Olá! Vi o anúncio e queria saber mais [ref:${c.code}]`);
+  return `https://wa.me/${num}?text=${text}`;
+}
+function copyCampaignLink(id){
+  const c = campaigns.find(x=>x.id===id);
+  if(!c) return;
+  navigator.clipboard.writeText(buildCampaignLink(c));
+  toast(waNumberForLinks ? 'Link copiado!' : 'Link copiado — edite o número do WhatsApp na URL antes de usar (não configurado nas Integrações ainda).');
+}
+function openNewCampaign(){
+  ['ncName','ncCode','ncProc'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('ncErr').textContent='';
+  document.getElementById('newCampModal').classList.add('open');
+}
+async function createCampaign(){
+  const err = document.getElementById('ncErr');
+  const name = document.getElementById('ncName').value.trim();
+  const code = document.getElementById('ncCode').value.trim().toLowerCase().replace(/[^a-z0-9_-]/g,'');
+  if(!name || !code){ err.textContent='Preencha nome e código.'; return; }
+  const { error } = await sb.from('crm_campaigns').insert({
+    name, code, procedure_interest: document.getElementById('ncProc').value.trim()||null
+  });
+  if(error){ err.textContent = error.code==='23505' ? 'Esse código já existe.' : 'Erro: '+error.message; return; }
+  document.getElementById('newCampModal').classList.remove('open');
+  toast('Campanha criada');
+  renderCampaigns();
 }
 
 /* ================= NOVO LEAD MANUAL ================= */

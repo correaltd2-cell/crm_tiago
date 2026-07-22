@@ -48,13 +48,27 @@ export default async function handler(req, res) {
     let { data: lead } = await db.from('crm_leads').select('*').eq('wa_id', waId).single();
 
     if (!lead) {
-      const source = referral?.headline || referral?.title
+      // Rastreio de campanha: procura um código de campanha na 1ª mensagem
+      // (ex: "Olá! Vi o anúncio sobre blefaroplastia [ref:verao26]")
+      // — a mensagem visível ao paciente/IA sai limpa, sem o marcador.
+      let campaignId = null;
+      let source = referral?.headline || referral?.title
         ? `Anúncio: ${referral.headline || referral.title}`
         : `1ª msg: "${body.slice(0, 60)}${body.length > 60 ? '…' : ''}"`;
 
+      const refMatch = body.match(/\[ref:([a-z0-9_-]{2,30})\]/i);
+      if (refMatch) {
+        const { data: camp } = await db.from('crm_campaigns').select('*').eq('code', refMatch[1].toLowerCase()).single();
+        if (camp) {
+          campaignId = camp.id;
+          source = `Campanha: ${camp.name}`;
+        }
+      }
+      body = body.replace(/\s*\[ref:[a-z0-9_-]{2,30}\]/i, '').trim() || body;
+
       const { data: created } = await db
         .from('crm_leads')
-        .insert({ wa_id: waId, name: contactName, source, referral: referral || null, unread: true, last_inbound_at: new Date().toISOString() })
+        .insert({ wa_id: waId, name: contactName, source, campaign_id: campaignId, referral: referral || null, unread: true, last_inbound_at: new Date().toISOString() })
         .select()
         .single();
       lead = created;
