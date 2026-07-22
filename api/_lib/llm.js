@@ -4,7 +4,7 @@ import { getConfig } from './core.js';
 
 export const DEFAULT_MODELS = {
   openai: 'gpt-5-mini',
-  anthropic: 'claude-haiku-4-5',
+  anthropic: 'claude-sonnet-5',
   gemini: 'gemini-2.5-flash',
 };
 
