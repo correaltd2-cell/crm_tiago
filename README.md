@@ -37,6 +37,8 @@ CRM de leads com Kanban, atendimento por IA (padrão) com assunção humana, int
 | `SUPABASE_URL` | URL do projeto |
 | `SUPABASE_SERVICE_ROLE_KEY` | service_role key |
 | `CRON_SECRET` | string aleatória (protege o cron) |
+| `META_APP_ID` | ID do app Meta da Alcance 360 (Tech Provider) — só necessário se algum cliente usar API Oficial |
+| `META_APP_SECRET` | Chave secreta do mesmo app — **nunca vai no banco, só aqui** |
 
 **Só isso.** Todas as credenciais de integração (token do Meta, Phone Number ID, verify token do webhook, WhatsApp da secretária, chave e modelo do Gemini) são preenchidas **dentro do CRM**, no botão **Config IA → seção Integrações** — salvou, já está valendo (sem redeploy).
 
@@ -67,3 +69,19 @@ templates-meta.md     → textos dos templates para aprovar no Meta
 - [ ] Preencher a base de conhecimento (Config IA no painel): cidade, hospital, particularidades.
 - [ ] Confirmar o nome da agente de IA (padrão: **Maia**) — editável em Config IA.
 - [ ] Testar o fluxo completo com seu próprio número antes de ligar os anúncios.
+
+
+## WhatsApp: Z-API ou API Oficial (por cliente)
+
+O sistema suporta os dois transportes, escolhidos em **Config IA → Integrações → WhatsApp · Provedor**, sem precisar trocar código:
+
+- **Z-API** (padrão): chip dedicado, QR code, sem burocracia — ver seção anterior.
+- **API Oficial (Meta)**: para clientes que exigem o canal oficial. Como a Alcance 360 é **Tech Provider** do Meta, a conexão usa **Embedded Signup**: o médico clica em "Conectar número via Facebook", loga, escolhe/cria o WABA e o número — e o sistema recebe e salva tudo sozinho (token, WABA ID, Phone Number ID). Nada de copiar token manualmente.
+
+  Pré-requisitos (uma vez só, por conta da Alcance 360, não por cliente):
+  1. App em modo **Live** no developers.facebook.com, com App Review aprovado para `whatsapp_business_management` e `whatsapp_business_messaging`.
+  2. Uma **Embedded Signup Configuration** criada em WhatsApp → Embedded Signup → Configurations (gera um Configuration ID).
+  3. `META_APP_ID` e `META_APP_SECRET` nas env vars da Vercel (App Dashboard → Configurações → Básico).
+
+  Por cliente, em Config IA → Integrações → API Oficial: cola o **App ID** e o **Configuration ID** (os mesmos da Alcance 360, reutilizáveis para todos os clientes) e clica em **Conectar número via Facebook**. O webhook (`https://SEU-PROJETO.vercel.app/api/webhook`) e o Verify Token continuam configurados uma vez no App Dashboard, compartilhados entre todos os clientes que usarem API Oficial nesse mesmo app.
+  Templates (`templates-meta.md`) precisam ser submetidos e aprovados por WABA/cliente.
