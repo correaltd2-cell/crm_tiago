@@ -172,6 +172,13 @@ export async function insideWindow(lastInboundAt) {
   return Date.now() - new Date(lastInboundAt).getTime() < 24 * 60 * 60 * 1000;
 }
 
+// Pode mandar texto livre (gerado pela IA) para este lead agora?
+// Z-API: sempre sim. API oficial: só dentro da janela de 24h — fora dela,
+// o Meta EXIGE um template aprovado (texto fixo, sem personalização por IA).
+export async function canSendFreeText(lead) {
+  return insideWindow(lead.last_inbound_at);
+}
+
 // ---- Autenticação do painel (JWT do Supabase Auth) ------------------------
 export async function requireUser(req) {
   const token = (req.headers.authorization || '').replace('Bearer ', '');

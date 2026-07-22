@@ -1,7 +1,13 @@
-// Cron diário (10h Brasília) — follow-ups personalizados pela IA
+// Cron diário (10h Brasília) — follow-ups da etapa "Follow-up" (D+2/7/15/30)
 // A instrução de cada etapa é editável no CRM (Config IA → Follow-ups).
-// Se a IA falhar ou estiver sem chave, cai no texto fixo de fallback.
-import { db, sendText, sendTemplate, saveMessage, getConfig } from './_lib/core.js';
+//
+// IMPORTANTE (API oficial / Meta): mensagem fora da janela de 24h só pode
+// ser um TEMPLATE APROVADO, com texto fixo — não dá pra mandar o texto livre
+// gerado pela IA. Como a Z-API não tem essa restrição, lá o texto livre da
+// IA é sempre usado (é o que dá o toque personalizado). Na API oficial,
+// só usamos o texto livre da IA se, por acaso, a janela ainda estiver aberta;
+// fora dela, vai direto de template — sem gastar chamada de IA à toa.
+import { db, sendText, sendTemplate, saveMessage, canSendFreeText } from './_lib/core.js';
 import { generateFollowUp } from './_lib/agent.js';
 
 const PROMPT_KEYS = {
@@ -34,12 +40,15 @@ export default async function handler(req, res) {
       continue;
     }
     try {
-      const instruction = settings[PROMPT_KEYS[fu.template]] || '';
-      let text = await generateFollowUp(lead, instruction);
-      let generatedByAI = !!text;
+      const freeTextOk = await canSendFreeText(lead);
+      let text = null;
+      if (freeTextOk) {
+        const instruction = settings[PROMPT_KEYS[fu.template]] || '';
+        text = await generateFollowUp(lead, instruction);
+      }
 
       if (!text) {
-        // fallback: texto fixo do core (AUTO_TEXTS)
+        // Fora da janela (oficial) ou IA indisponível: template fixo aprovado
         const firstName = (lead.name || 'Olá').split(' ')[0];
         await sendTemplate(lead.wa_id, fu.template, [firstName]);
       } else {
@@ -52,7 +61,7 @@ export default async function handler(req, res) {
         sender: 'ai',
         body: text || `[Follow-up ${fu.label}] mensagem padrão enviada`,
       });
-      if (generatedByAI) {
+      if (text) {
         await saveMessage(lead.id, {
           direction: 'out',
           sender: 'system',

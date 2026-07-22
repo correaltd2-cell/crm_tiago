@@ -2,7 +2,11 @@
 // Roda com frequência (idealmente de hora em hora) via agendador externo
 // gratuito, já que o cron nativo da Vercel no plano Hobby só roda 1x/dia.
 // Protegido pelo mesmo CRON_SECRET dos outros crons.
-import { db, sendText, sendTemplate, saveMessage } from './_lib/core.js';
+//
+// API oficial (Meta): fora da janela de 24h, mensagem só pode ser um
+// TEMPLATE APROVADO (texto fixo) — nunca texto livre gerado pela IA.
+// Na Z-API não existe essa restrição, então lá o texto da IA é sempre usado.
+import { db, sendText, sendTemplate, saveMessage, canSendFreeText } from './_lib/core.js';
 import { generateFollowUp } from './_lib/agent.js';
 
 const STEPS = [
@@ -45,9 +49,15 @@ export default async function handler(req, res) {
     if (!nextStep || silenceMs < nextStep.afterMs) continue;
 
     try {
-      const instruction = settings[nextStep.promptKey] || '';
-      let text = await generateFollowUp(lead, instruction);
+      const freeTextOk = await canSendFreeText(lead);
+      let text = null;
+      if (freeTextOk) {
+        const instruction = settings[nextStep.promptKey] || '';
+        text = await generateFollowUp(lead, instruction);
+      }
+
       if (!text) {
+        // Fora da janela (API oficial) ou IA indisponível: template fixo aprovado
         const firstName = (lead.name || 'Olá').split(' ')[0];
         await sendTemplate(lead.wa_id, nextStep.template, [firstName]);
       } else {
