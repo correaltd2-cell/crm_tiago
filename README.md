@@ -83,8 +83,9 @@ O sistema suporta os dois transportes, escolhidos em **Config IA → Integraçõ
   2. Uma **Embedded Signup Configuration** criada em WhatsApp → Embedded Signup → Configurations (gera um Configuration ID).
   3. `META_APP_ID` e `META_APP_SECRET` nas env vars da Vercel (App Dashboard → Configurações → Básico).
 
-  Por cliente, em Config IA → Integrações → API Oficial: cola o **App ID** e o **Configuration ID** (os mesmos da Alcance 360, reutilizáveis para todos os clientes) e clica em **Conectar número via Facebook**. O webhook (`https://SEU-PROJETO.vercel.app/api/webhook`) e o Verify Token continuam configurados uma vez no App Dashboard, compartilhados entre todos os clientes que usarem API Oficial nesse mesmo app.
-  Templates (`templates-meta.md`) precisam ser submetidos e aprovados por WABA/cliente.
+  Por cliente, em Config IA → Integrações → API Oficial: é só clicar em **Conectar número via Facebook** — App ID, Configuration ID e Verify Token já vêm embutidos no código (`ALCANCE360_META_APP_ID`, `ALCANCE360_META_CONFIG_ID`, `ALCANCE360_META_VERIFY_TOKEN` no topo do `public/index.html`), compartilhados entre todos os clientes que usarem API Oficial neste mesmo app Tech Provider. O cliente/secretária nunca precisa ver nem preencher esses valores.
+  O webhook (`https://SEU-PROJETO.vercel.app/api/webhook`) e o Verify Token (`alcance360-webhook`) são configurados **uma única vez** no App Dashboard da Alcance 360 — não repete por cliente.
+  Templates (`templates-meta.md`) precisam ser submetidos e aprovados por WABA/cliente. Os textos exatos ficam visíveis (somente leitura) em Config IA → "Mensagens fixas (templates aprovados)".
 
 
 ## Reativação por inatividade (2h / 24h / 72h / 15 dias)

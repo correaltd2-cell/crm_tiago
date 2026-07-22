@@ -392,8 +392,9 @@ input,textarea,select{font-family:inherit;font-size:13.5px;color:var(--ink)}
     <div class="field"><label>D+7</label><textarea id="cfgFuD7" style="min-height:70px"></textarea></div>
     <div class="field"><label>D+15</label><textarea id="cfgFuD15" style="min-height:70px"></textarea></div>
     <div class="field"><label>D+30 (despedida)</label><textarea id="cfgFuD30" style="min-height:70px"></textarea></div>
-    <div class="d-section" style="border-top:1px solid var(--hairline)">Reativação por inatividade</div>
-    <div class="callout" style="font-size:11.5px;color:var(--ink-soft)">Mensagens fixas e leves (2h, 24h, 72h e 15 dias sem resposta) — compatíveis com template aprovado do Meta. Não são geradas por IA de propósito, para manter tom controlado na área da saúde. Texto em <span class="mono">api/_lib/core.js</span> (AUTO_TEXTS) e em <span class="mono">templates-meta.md</span>.</div>
+    <div class="d-section" style="border-top:1px solid var(--hairline)">Mensagens fixas (templates aprovados)</div>
+    <div class="callout" style="font-size:11.5px;color:var(--ink-soft);margin-bottom:10px">Textos fixos usados pelo sistema — na API Oficial, precisam estar aprovados como template no Meta com este texto exato (variável {{1}} = primeiro nome). Assim que o paciente responde a qualquer uma delas, a conversa volta para a Maia normalmente.</div>
+    <div id="fixedTemplatesView"></div>
     <div class="d-section" style="border-top:1px solid var(--hairline)">Integrações</div>
     <div class="field"><label>WhatsApp · Provedor</label>
       <select id="cfgWaProvider" onchange="waProviderChanged()">
@@ -409,17 +410,9 @@ input,textarea,select{font-family:inherit;font-size:13.5px;color:var(--ink)}
     </div>
 
     <div id="metaFields" style="display:none">
-      <div class="field"><label>Meta · App ID</label><input id="cfgMetaAppId" placeholder="ID do aplicativo (App Dashboard → Básico)" /></div>
-      <div class="field"><label>Meta · Configuration ID (Embedded Signup)</label><input id="cfgMetaConfigId" placeholder="WhatsApp → Embedded Signup → Configurations" /></div>
-      <div class="field"><label>Meta · Verify token do webhook</label><input id="cfgMetaVerify" placeholder="ex: crmcliente-webhook" /></div>
-
       <div id="metaConnectBox" style="margin:6px 0 14px">
         <button class="btn-primary" type="button" id="metaConnectBtn" onclick="startEmbeddedSignup()" style="width:100%">📶 Conectar número via Facebook</button>
-        <div id="metaConnectStatus" style="font-size:11.5px;color:var(--ink-soft);margin-top:7px"></div>
-      </div>
-
-      <div class="callout" style="background:var(--gold-soft);border:1px solid #E4D8B6;border-radius:8px;padding:9px 12px;font-size:11.5px;color:#6E5518;margin-bottom:12px">
-        Webhook a configurar no Meta (uma vez, no App Dashboard): <span class="mono" style="background:#fff;padding:1px 5px;border-radius:4px" id="metaWebhookUrl"></span> — use o mesmo valor do Verify token acima. Assine o campo <b>messages</b>. Templates precisam estar aprovados (ver templates-meta.md).
+        <div id="metaConnectStatus" style="font-size:11.5px;color:var(--ink-soft);margin-top:7px;text-align:center"></div>
       </div>
     </div>
     <div class="field"><label>WhatsApp da secretária (55DDDNÚMERO)</label><input id="cfgSecretary" placeholder="5554999999999" /></div>
@@ -450,6 +443,12 @@ input,textarea,select{font-family:inherit;font-size:13.5px;color:var(--ink)}
 
 <script>
 /* ================= CONFIG ================= */
+// Credenciais do Tech Provider Alcance 360 — mesmas para TODOS os clientes
+// em API Oficial. Não são segredo (App ID e Configuration ID são públicos
+// por natureza; o App Secret fica só no servidor, nunca aqui).
+const ALCANCE360_META_APP_ID = '1605901547762349';
+const ALCANCE360_META_CONFIG_ID = '432863104115833';
+const ALCANCE360_META_VERIFY_TOKEN = 'alcance360-webhook';
 const SUPABASE_URL = 'https://jztvtfpinnudavccoxgh.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6dHZ0ZnBpbm51ZGF2Y2NveGdoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5MTM1MTMsImV4cCI6MjA5MzQ4OTUxM30.5HSIbNoj8XBn9jRUn_ZWnKgvSSX-1jsclyygzIwNNNk';
 const API = ''; // mesmo domínio (Vercel)
@@ -862,7 +861,6 @@ function waProviderChanged(){
   const isMeta = document.getElementById('cfgWaProvider').value === 'meta';
   document.getElementById('zapiFields').style.display = isMeta ? 'none' : 'block';
   document.getElementById('metaFields').style.display = isMeta ? 'block' : 'none';
-  document.getElementById('metaWebhookUrl').textContent = location.origin + '/api/webhook';
   currentWaProvider = document.getElementById('cfgWaProvider').value;
 }
 
@@ -879,10 +877,9 @@ window.addEventListener('message', (event)=>{
 });
 
 function startEmbeddedSignup(){
-  const appId = document.getElementById('cfgMetaAppId').value.trim();
-  const configId = document.getElementById('cfgMetaConfigId').value.trim();
+  const appId = ALCANCE360_META_APP_ID;
+  const configId = ALCANCE360_META_CONFIG_ID;
   const status = document.getElementById('metaConnectStatus');
-  if(!appId || !configId){ status.textContent = 'Preencha o App ID e o Configuration ID antes de conectar.'; return; }
   if(!window.FB){ status.textContent = 'Carregando o Facebook… tente novamente em 2 segundos.'; return; }
   FB.init({ appId, cookie:false, xfbml:false, version:'v21.0' });
   embeddedSignupData = null;
@@ -914,6 +911,29 @@ function startEmbeddedSignup(){
     override_default_response_type: true,
     extras: { setup: {}, featureType: '', sessionInfoVersion: '3' }
   });
+}
+
+/* ================= MENSAGENS FIXAS (visualização) ================= */
+// Cópia de exibição — a fonte real é AUTO_TEXTS em api/_lib/core.js.
+// Editar o texto de verdade lá (e resubmeter o template no Meta se já aprovado).
+const FIXED_TEMPLATES_VIEW = [
+  { key:'aviso_secretaria', label:'Aviso à secretária (lead qualificado)', text:'Novo paciente qualificado para consulta ✨\n\nNome: {{1}}\nWhatsApp: {{2}}\nResumo: {{3}}\n\nPor favor, entre em contato para confirmar o agendamento da avaliação.' },
+  { key:'retomada_atendimento', label:'Retomada (janela de 24h fechada)', text:'Olá, {{1}}! Vi que conversamos sobre a sua avaliação e queria saber se posso te ajudar a dar o próximo passo. Posso continuar por aqui?' },
+  { key:'followup_d2', label:'Follow-up D+2 (fallback — a IA personaliza quando possível)', text:'Oi, {{1}}! Passando para saber se ficou alguma dúvida sobre a sua avaliação ou sobre o procedimento. Estou à disposição para te ajudar. 😊' },
+  { key:'followup_d7', label:'Follow-up D+7 (fallback)', text:'Olá, {{1}}! Muitas pacientes contam que o que mais mudou foi se olhar no espelho e ver um olhar renovado de novo. Se quiser, posso te ajudar a organizar a sua avaliação. Faz sentido para você?' },
+  { key:'followup_d15', label:'Follow-up D+15 (fallback)', text:'Oi, {{1}}! A agenda de avaliações para as próximas semanas está sendo organizada. Se ainda fizer sentido para você, consigo verificar um horário. Posso pedir para a atendente te enviar as opções?' },
+  { key:'followup_d30', label:'Follow-up D+30 (fallback — despedida)', text:'Olá, {{1}}! Este é meu último contato por aqui para não te incomodar. 😊 Se em algum momento você quiser retomar a conversa, é só me chamar nesta conversa. Será um prazer te atender!' },
+  { key:'reactivation_2h', label:'Reativação 2h (sempre fixa)', text:'Oi, {{1}}! Tudo bem? Ficou alguma dúvida específica que gostaria de saber?' },
+  { key:'reactivation_24h', label:'Reativação 24h (sempre fixa)', text:'Oi, {{1}}! Continuo por aqui à disposição para conversar sobre a blefaroplastia, viu?' },
+  { key:'reactivation_72h', label:'Reativação 72h (sempre fixa)', text:'Oi, {{1}}! A agenda do Dr. Tiago para o mês que vem está fechando — gostaria de te encaixar em um horário de avaliação, se ainda fizer sentido para você.' },
+  { key:'reactivation_15d', label:'Reativação 15 dias (sempre fixa — encerramento)', text:'Oi, {{1}}! Vou encerrar o atendimento por aqui, mas fico à disposição para qualquer dúvida no futuro. Foi um prazer falar com você!' },
+];
+function renderFixedTemplates(){
+  document.getElementById('fixedTemplatesView').innerHTML = FIXED_TEMPLATES_VIEW.map(t=>`
+    <div style="margin-bottom:10px">
+      <label style="display:block;font-size:9.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:4px">${esc(t.label)}</label>
+      <div style="padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:var(--ivory);font-size:12.5px;color:var(--ink);white-space:pre-wrap">${esc(t.text)}</div>
+    </div>`).join('');
 }
 
 /* ================= CAMPANHAS ================= */
@@ -1028,6 +1048,7 @@ let settingsCache = null;
 async function openConfig(){
   // abre o modal NA HORA; os dados preenchem em seguida (com cache)
   document.getElementById('configModal').classList.add('open');
+  renderFixedTemplates();
   if(settingsCache) fillConfig(settingsCache);
   const { data } = await sb.from('crm_settings').select('*');
   const map = Object.fromEntries((data||[]).map(r=>[r.key,r.value]));
@@ -1046,17 +1067,12 @@ function fillConfig(map){
   document.getElementById('cfgZapiInstance').value = map.zapi_instance_id||'';
   document.getElementById('cfgZapiToken').value = map.zapi_token||'';
   document.getElementById('cfgZapiClient').value = map.zapi_client_token||'';
-  document.getElementById('cfgMetaToken').value = map.meta_token||'';
-  document.getElementById('cfgMetaPhoneId').value = map.meta_phone_number_id||'';
-  document.getElementById('cfgMetaVerify').value = map.meta_verify_token||'';
-  document.getElementById('cfgMetaAppId').value = map.meta_app_id||'';
-  document.getElementById('cfgMetaConfigId').value = map.meta_embedded_config_id||'';
-  window.__META_APP_ID__ = map.meta_app_id||'';
-  if(window.FB && map.meta_app_id) FB.init({ appId: map.meta_app_id, cookie:false, xfbml:false, version:'v21.0' });
+  window.__META_APP_ID__ = ALCANCE360_META_APP_ID;
+  if(window.FB) FB.init({ appId: ALCANCE360_META_APP_ID, cookie:false, xfbml:false, version:'v21.0' });
   const waba = map.meta_waba_id, phoneId = map.meta_phone_number_id;
   document.getElementById('metaConnectStatus').innerHTML = (waba && phoneId)
-    ? `✅ Conectado — WABA ${esc(waba)} · Phone Number ID ${esc(phoneId)}`
-    : 'Ainda não conectado.';
+    ? `✅ WhatsApp oficial conectado`
+    : 'Clique para conectar o WhatsApp oficial do consultório.';
   waProviderChanged();
   document.getElementById('cfgSecretary').value = map.secretary_phone||'';
   document.getElementById('cfgReport').value = map.report_phone||'';
@@ -1079,9 +1095,6 @@ async function saveConfig(){
     {key:'zapi_instance_id', value:document.getElementById('cfgZapiInstance').value.trim()},
     {key:'zapi_token', value:document.getElementById('cfgZapiToken').value.trim()},
     {key:'zapi_client_token', value:document.getElementById('cfgZapiClient').value.trim()},
-    {key:'meta_verify_token', value:document.getElementById('cfgMetaVerify').value.trim()},
-    {key:'meta_app_id', value:document.getElementById('cfgMetaAppId').value.trim()},
-    {key:'meta_embedded_config_id', value:document.getElementById('cfgMetaConfigId').value.trim()},
     {key:'secretary_phone', value:document.getElementById('cfgSecretary').value.replace(/\D/g,'')},
     {key:'report_phone', value:document.getElementById('cfgReport').value.replace(/\D/g,'')},
     {key:'signup_code', value:document.getElementById('cfgSignup').value.trim()},
