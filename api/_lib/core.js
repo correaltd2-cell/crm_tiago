@@ -108,11 +108,11 @@ export const AUTO_TEXTS = {
   followup_d30:
     'Olá, {{1}}! Este é meu último contato por aqui para não te incomodar. 😊 Se em algum momento você quiser retomar a conversa, é só me chamar nesta conversa. Será um prazer te atender!',
   reactivation_2h:
-    'Oi, {{1}}! Tudo bem? Ficou alguma dúvida?',
+    'Oi, {{1}}! Tudo bem? Ficou alguma dúvida específica que gostaria de saber?',
   reactivation_24h:
-    'Oi, {{1}}! Continuo por aqui à disposição, viu? Se precisar de algo é só chamar.',
+    'Oi, {{1}}! Continuo por aqui à disposição para conversar sobre a blefaroplastia, viu?',
   reactivation_72h:
-    'Oi, {{1}}! Passando só para lembrar que sigo à disposição por aqui, tá bom?',
+    'Oi, {{1}}! A agenda do Dr. Tiago para o mês que vem está fechando — gostaria de te encaixar em um horário de avaliação, se ainda fizer sentido para você.',
   reactivation_15d:
     'Oi, {{1}}! Vou encerrar o atendimento por aqui, mas fico à disposição para qualquer dúvida no futuro. Foi um prazer falar com você!',
 };

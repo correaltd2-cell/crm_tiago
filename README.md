@@ -90,9 +90,9 @@ O sistema suporta os dois transportes, escolhidos em **Config IA → Integraçõ
 ## Reativação por inatividade (2h / 24h / 72h / 15 dias)
 
 Enquanto um lead está sendo atendido pela IA (etapas Novo Lead / Em Atendimento) e para de responder, o sistema reengaja sozinho com mensagens **fixas, curtas e leves** (não geradas por IA de propósito — controle de conteúdo na área da saúde), cada etapa com um texto diferente para não soar repetitivo:
-- **2h** sem resposta → toque bem leve ("ficou alguma dúvida?")
-- **24h** → reforça disponibilidade
-- **72h** → lembrete gentil
+- **2h** sem resposta → toque bem leve, pergunta se ficou dúvida específica
+- **24h** → reforça disponibilidade, mencionando a blefaroplastia
+- **72h** → menciona que a agenda do mês seguinte está fechando e oferece encaixar uma avaliação (uso único, tom honesto — sem urgência artificial, respeitando o CFM)
 - **15 dias** → mensagem final, educada, avisando que encerra o atendimento automático por aqui mas segue à disposição (não força nenhuma mudança de etapa — o card continua onde está)
 
 Textos em `api/_lib/core.js` (`AUTO_TEXTS`) e prontos como rascunho de template em `templates-meta.md`. Se o paciente responder a qualquer momento, o relógio zera e o ciclo recomeça do zero na próxima vez que ficar em silêncio.
