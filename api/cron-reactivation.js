@@ -3,26 +3,24 @@
 // gratuito, já que o cron nativo da Vercel no plano Hobby só roda 1x/dia.
 // Protegido pelo mesmo CRON_SECRET dos outros crons.
 //
-// API oficial (Meta): fora da janela de 24h, mensagem só pode ser um
-// TEMPLATE APROVADO (texto fixo) — nunca texto livre gerado pela IA.
-// Na Z-API não existe essa restrição, então lá o texto da IA é sempre usado.
-import { db, sendText, sendTemplate, saveMessage, canSendFreeText } from './_lib/core.js';
-import { generateFollowUp } from './_lib/agent.js';
+// Mensagens FIXAS e leves (não geradas por IA) — apropriado para a área da
+// saúde: nada de a IA improvisar sozinha sobre o assunto nessa cadência.
+// sendTemplate() já cuida de mandar como template aprovado na API oficial
+// ou como texto livre na Z-API — o texto usado é o mesmo dos dois lados
+// (ver AUTO_TEXTS em _lib/core.js) e pode virar template Meta sem alterações.
+import { db, sendTemplate, saveMessage, AUTO_TEXTS } from './_lib/core.js';
 
 const STEPS = [
-  { step: 1, afterMs: 2 * 60 * 60 * 1000, template: 'reactivation_2h', promptKey: 'reactivation_2h_prompt', label: '2h' },
-  { step: 2, afterMs: 24 * 60 * 60 * 1000, template: 'reactivation_24h', promptKey: 'reactivation_24h_prompt', label: '24h' },
-  { step: 3, afterMs: 72 * 60 * 60 * 1000, template: 'reactivation_72h', promptKey: 'reactivation_72h_prompt', label: '72h' },
-  { step: 4, afterMs: 15 * 24 * 60 * 60 * 1000, template: 'reactivation_15d', promptKey: 'reactivation_15d_prompt', label: '15 dias' },
+  { step: 1, afterMs: 2 * 60 * 60 * 1000, template: 'reactivation_2h', label: '2h' },
+  { step: 2, afterMs: 24 * 60 * 60 * 1000, template: 'reactivation_24h', label: '24h' },
+  { step: 3, afterMs: 72 * 60 * 60 * 1000, template: 'reactivation_72h', label: '72h' },
+  { step: 4, afterMs: 15 * 24 * 60 * 60 * 1000, template: 'reactivation_15d', label: '15 dias' },
 ];
 
 export default async function handler(req, res) {
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: 'Não autorizado' });
   }
-
-  const { data: settingsRows } = await db.from('crm_settings').select('key,value');
-  const settings = Object.fromEntries((settingsRows || []).map((r) => [r.key, r.value]));
 
   // Candidatos: em atendimento pela IA, silenciosos desde a nossa última mensagem,
   // e que ainda não passaram pelo último passo (4).
@@ -49,31 +47,15 @@ export default async function handler(req, res) {
     if (!nextStep || silenceMs < nextStep.afterMs) continue;
 
     try {
-      const freeTextOk = await canSendFreeText(lead);
-      let text = null;
-      if (freeTextOk) {
-        const instruction = settings[nextStep.promptKey] || '';
-        text = await generateFollowUp(lead, instruction);
-      }
-
-      if (!text) {
-        // Fora da janela (API oficial) ou IA indisponível: template fixo aprovado
-        const firstName = (lead.name || 'Olá').split(' ')[0];
-        await sendTemplate(lead.wa_id, nextStep.template, [firstName]);
-      } else {
-        await sendText(lead.wa_id, text);
-      }
+      const firstName = (lead.name || 'Olá').split(' ')[0];
+      await sendTemplate(lead.wa_id, nextStep.template, [firstName]);
+      const renderedText = (AUTO_TEXTS[nextStep.template] || '').replaceAll('{{1}}', firstName);
 
       await db.from('crm_leads').update({ reactivation_step: nextStep.step }).eq('id', lead.id);
       await saveMessage(lead.id, {
         direction: 'out',
         sender: 'ai',
-        body: text || `[Reativação ${nextStep.label}] mensagem padrão enviada`,
-      });
-      await saveMessage(lead.id, {
-        direction: 'out',
-        sender: 'system',
-        body: `[Reativação por inatividade — ${nextStep.label}]`,
+        body: renderedText || `[Reativação ${nextStep.label}] mensagem enviada`,
       });
       sent++;
     } catch (err) {

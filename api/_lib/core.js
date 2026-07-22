@@ -108,13 +108,13 @@ export const AUTO_TEXTS = {
   followup_d30:
     'Olá, {{1}}! Este é meu último contato por aqui para não te incomodar. 😊 Se em algum momento você quiser retomar a conversa, é só me chamar nesta conversa. Será um prazer te atender!',
   reactivation_2h:
-    'Oi, {{1}}! Só checando por aqui, ficou alguma dúvida? 😊',
+    'Oi, {{1}}! Tudo bem? Passando para saber se ficou alguma dúvida. Posso te passar mais informações por aqui, ou prefere que o hospital te dê uma ligadinha?',
   reactivation_24h:
-    'Olá, {{1}}! Continuo por aqui à disposição para te ajudar no que precisar.',
+    'Oi, {{1}}! Continuo à disposição por aqui. Posso te ajudar com mais informações, ou prefere que o hospital entre em contato por telefone?',
   reactivation_72h:
-    'Oi, {{1}}! A consulta de avaliação é o passo mais seguro para cuidar da saúde e da estética dos seus olhos ao mesmo tempo. Ainda faz sentido para você?',
+    'Oi, {{1}}! Só passando para lembrar que seguimos à disposição. Se preferir, posso pedir para o hospital te dar uma ligadinha.',
   reactivation_15d:
-    'Olá, {{1}}! Este será meu último contato por aqui para não incomodar. A equipe continua à disposição sempre que você quiser retomar — é só chamar. 😊',
+    'Oi, {{1}}! Vou encerrar o atendimento por aqui, mas fico à disposição para qualquer dúvida no futuro. Foi um prazer falar com você!',
 };
 
 // Nomes de template esperados na Meta — precisam existir e estar APROVADOS

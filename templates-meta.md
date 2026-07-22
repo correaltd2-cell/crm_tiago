@@ -61,20 +61,29 @@ Olá, {{1}}! Este é meu último contato por aqui para não te incomodar. 😊 S
 
 ## 7. `reactivation_2h` — Categoria: MARKETING
 ```
-Oi, {{1}}! Só checando por aqui, ficou alguma dúvida? 😊
+Oi, {{1}}! Tudo bem? Passando para saber se ficou alguma dúvida. Posso te passar mais informações por aqui, ou prefere que o hospital te dê uma ligadinha?
 ```
+Botões (resposta rápida): `Pode me explicar aqui` · `Prefiro receber uma ligação`
 
 ## 8. `reactivation_24h` — Categoria: MARKETING
 ```
-Olá, {{1}}! Continuo por aqui à disposição para te ajudar no que precisar.
+Oi, {{1}}! Continuo à disposição por aqui. Posso te ajudar com mais informações, ou prefere que o hospital entre em contato por telefone?
 ```
+Botões: `Continuar por aqui` · `Prefiro receber uma ligação`
 
 ## 9. `reactivation_72h` — Categoria: MARKETING
 ```
-Oi, {{1}}! A consulta de avaliação é o passo mais seguro para cuidar da saúde e da estética dos seus olhos ao mesmo tempo. Ainda faz sentido para você?
+Oi, {{1}}! Só passando para lembrar que seguimos à disposição. Se preferir, posso pedir para o hospital te dar uma ligadinha.
 ```
+Botões: `Pode me ligar` · `Agora não`
 
 ## 10. `reactivation_15d` — Categoria: MARKETING
 ```
-Olá, {{1}}! Este será meu último contato por aqui para não incomodar. A equipe continua à disposição sempre que você quiser retomar — é só chamar. 😊
+Oi, {{1}}! Vou encerrar o atendimento por aqui, mas fico à disposição para qualquer dúvida no futuro. Foi um prazer falar com você!
 ```
+
+### Observações sobre a cadência de reativação
+- Tom propositalmente leve e sem termos clínicos — apropriado para saúde e conforme o CFM (sem preço, sem promessa, sem insistência).
+- Sempre oferece uma alternativa humana ("o hospital te liga"), nunca pressiona a continuar só pelo WhatsApp.
+- Mensagens FIXAS (não geradas por IA) nesta cadência específica — controle de conteúdo é prioridade aqui.
+- Cadência completa: 2h → 24h → 72h → 15 dias (encerramento educado). Zera e recomeça se o paciente responder a qualquer momento.

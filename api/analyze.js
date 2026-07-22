@@ -39,20 +39,15 @@ export default async function handler(req, res) {
   const user = await requireUser(req);
   if (!user) return res.status(401).json({ error: 'Não autorizado' });
 
-  const { system_prompt, knowledge_base, followups, reactivation } = req.body || {};
+  const { system_prompt, knowledge_base, followups } = req.body || {};
   const fu = followups || {};
-  const re = reactivation || {};
 
   const material = `=== INSTRUÇÕES (SYSTEM PROMPT) ===\n${system_prompt || '(vazio)'}\n
 === BASE DE CONHECIMENTO ===\n${knowledge_base || '(vazio)'}\n
 === PROMPT FOLLOW-UP D+2 ===\n${fu.d2 || '(vazio)'}\n
 === PROMPT FOLLOW-UP D+7 ===\n${fu.d7 || '(vazio)'}\n
 === PROMPT FOLLOW-UP D+15 ===\n${fu.d15 || '(vazio)'}\n
-=== PROMPT FOLLOW-UP D+30 ===\n${fu.d30 || '(vazio)'}\n
-=== PROMPT REATIVAÇÃO 2H ===\n${re.h2 || '(vazio)'}\n
-=== PROMPT REATIVAÇÃO 24H ===\n${re.h24 || '(vazio)'}\n
-=== PROMPT REATIVAÇÃO 72H ===\n${re.h72 || '(vazio)'}\n
-=== PROMPT REATIVAÇÃO 15 DIAS ===\n${re.d15 || '(vazio)'}`;
+=== PROMPT FOLLOW-UP D+30 ===\n${fu.d30 || '(vazio)'}`;
 
   const report = await chatLLM({
     system: EVALUATOR,
