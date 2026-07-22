@@ -486,7 +486,31 @@ async function submitLogin(){
 }
 async function logout(){ await sb.auth.signOut(); location.reload(); }
 
-sb.auth.getSession().then(({data})=>{ if(data.session){ session=data.session; boot(); } });
+// ===== MODO TESTE: login automático (sem tela de login) =====
+// Para reativar o login normal mais pra frente, é só trocar para false.
+const AUTO_LOGIN = true;
+const AUTO_LOGIN_EMAIL = 'demo@crm-tiago.local';
+const AUTO_LOGIN_PASSWORD = 'Demo-CrmTiago-2026!';
+const AUTO_LOGIN_CODE = 'drtiago2026'; // precisa bater com signup_code no banco
+
+async function tryAutoLogin(){
+  let { data, error } = await sb.auth.signInWithPassword({ email: AUTO_LOGIN_EMAIL, password: AUTO_LOGIN_PASSWORD });
+  if (error) {
+    // primeira vez: cria a conta compartilhada de teste
+    await fetch('/api/signup', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ email: AUTO_LOGIN_EMAIL, password: AUTO_LOGIN_PASSWORD, code: AUTO_LOGIN_CODE })
+    }).catch(()=>{});
+    ({ data, error } = await sb.auth.signInWithPassword({ email: AUTO_LOGIN_EMAIL, password: AUTO_LOGIN_PASSWORD }));
+  }
+  if (!error && data.session) { session = data.session; boot(); return true; }
+  return false;
+}
+
+sb.auth.getSession().then(async ({data})=>{
+  if(data.session){ session=data.session; boot(); return; }
+  if(AUTO_LOGIN){ const ok = await tryAutoLogin(); if(ok) return; }
+});
 
 async function authed(path, body){
   const { data } = await sb.auth.getSession();
