@@ -61,21 +61,18 @@ Olá, {{1}}! Este é meu último contato por aqui para não te incomodar. 😊 S
 
 ## 7. `reactivation_2h` — Categoria: MARKETING
 ```
-Oi, {{1}}! Tudo bem? Passando para saber se ficou alguma dúvida. Posso te passar mais informações por aqui, ou prefere que o hospital te dê uma ligadinha?
+Oi, {{1}}! Tudo bem? Ficou alguma dúvida?
 ```
-Botões (resposta rápida): `Pode me explicar aqui` · `Prefiro receber uma ligação`
 
 ## 8. `reactivation_24h` — Categoria: MARKETING
 ```
-Oi, {{1}}! Continuo à disposição por aqui. Posso te ajudar com mais informações, ou prefere que o hospital entre em contato por telefone?
+Oi, {{1}}! Continuo por aqui à disposição, viu? Se precisar de algo é só chamar.
 ```
-Botões: `Continuar por aqui` · `Prefiro receber uma ligação`
 
 ## 9. `reactivation_72h` — Categoria: MARKETING
 ```
-Oi, {{1}}! Só passando para lembrar que seguimos à disposição. Se preferir, posso pedir para o hospital te dar uma ligadinha.
+Oi, {{1}}! Passando só para lembrar que sigo à disposição por aqui, tá bom?
 ```
-Botões: `Pode me ligar` · `Agora não`
 
 ## 10. `reactivation_15d` — Categoria: MARKETING
 ```
@@ -83,7 +80,7 @@ Oi, {{1}}! Vou encerrar o atendimento por aqui, mas fico à disposição para qu
 ```
 
 ### Observações sobre a cadência de reativação
-- Tom propositalmente leve e sem termos clínicos — apropriado para saúde e conforme o CFM (sem preço, sem promessa, sem insistência).
-- Sempre oferece uma alternativa humana ("o hospital te liga"), nunca pressiona a continuar só pelo WhatsApp.
+- Tom propositalmente leve, simples e sem termos clínicos — apropriado para saúde e conforme o CFM (sem preço, sem promessa, sem insistência).
+- Retomadas curtas e variadas entre si, sem repetir a mesma oferta em cada etapa — evita soar como script de call center.
 - Mensagens FIXAS (não geradas por IA) nesta cadência específica — controle de conteúdo é prioridade aqui.
 - Cadência completa: 2h → 24h → 72h → 15 dias (encerramento educado). Zera e recomeça se o paciente responder a qualquer momento.

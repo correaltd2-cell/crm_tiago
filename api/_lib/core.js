@@ -108,11 +108,11 @@ export const AUTO_TEXTS = {
   followup_d30:
     'Olá, {{1}}! Este é meu último contato por aqui para não te incomodar. 😊 Se em algum momento você quiser retomar a conversa, é só me chamar nesta conversa. Será um prazer te atender!',
   reactivation_2h:
-    'Oi, {{1}}! Tudo bem? Passando para saber se ficou alguma dúvida. Posso te passar mais informações por aqui, ou prefere que o hospital te dê uma ligadinha?',
+    'Oi, {{1}}! Tudo bem? Ficou alguma dúvida?',
   reactivation_24h:
-    'Oi, {{1}}! Continuo à disposição por aqui. Posso te ajudar com mais informações, ou prefere que o hospital entre em contato por telefone?',
+    'Oi, {{1}}! Continuo por aqui à disposição, viu? Se precisar de algo é só chamar.',
   reactivation_72h:
-    'Oi, {{1}}! Só passando para lembrar que seguimos à disposição. Se preferir, posso pedir para o hospital te dar uma ligadinha.',
+    'Oi, {{1}}! Passando só para lembrar que sigo à disposição por aqui, tá bom?',
   reactivation_15d:
     'Oi, {{1}}! Vou encerrar o atendimento por aqui, mas fico à disposição para qualquer dúvida no futuro. Foi um prazer falar com você!',
 };
