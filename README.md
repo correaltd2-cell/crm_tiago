@@ -97,13 +97,10 @@ Enquanto um lead está sendo atendido pela IA (Novo Lead, Em Atendimento ou Foll
 
 Cobre automaticamente os leads que estão na etapa Follow-up também — não é mais preciso nenhuma cadência separada por etapa. Textos em `api/_lib/core.js` (`AUTO_TEXTS`) e prontos como rascunho de template em `templates-meta.md`. Se o paciente responder a qualquer momento, o relógio zera e o ciclo recomeça do zero na próxima vez que ficar em silêncio.
 
-### ⚠️ Importante: frequência do cron
+### Frequência do cron
 
-O endpoint é `/api/cron-reactivation`, protegido pelo mesmo `CRON_SECRET`. Substitui o antigo `/api/cron-followups` (removido) — agora é um único mecanismo para toda cadência de reativação. Como o **plano Hobby da Vercel só executa cron nativo 1x por dia**, e aqui precisamos de checagem de hora em hora, use um agendador externo **gratuito**:
+O endpoint é `/api/cron-reactivation`, protegido pelo mesmo `CRON_SECRET`. Substitui o antigo `/api/cron-followups` (removido) — agora é um único mecanismo para toda cadência de reativação. Com o **plano Pro da Vercel**, roda nativamente a cada **30 minutos**, configurado em `vercel.json` (schedule `"*/30 * * * *"`) — sem depender de nenhum serviço externo.
 
-1. Crie uma conta em **cron-job.org** (grátis).
-2. Novo cron job → URL: `https://SEU-PROJETO.vercel.app/api/cron-reactivation`
-3. Método: **POST**. Em Headers, adicione: `Authorization: Bearer SEU_CRON_SECRET` (o mesmo valor da env var da Vercel).
-4. Intervalo: a cada **30 ou 60 minutos**.
+(No plano Hobby, o cron nativo só roda 1x/dia; nesse caso seria necessário um agendador externo gratuito como cron-job.org apontando para este endpoint com o header `Authorization: Bearer SEU_CRON_SECRET`.)
 
-(Se no futuro migrar para o plano Pro da Vercel, pode trocar para um cron nativo em `vercel.json` com schedule `"*/30 * * * *"` e remover o agendador externo.)
+Pode ligar ou desligar essa reativação a qualquer momento em Config IA → "Reativação por inatividade", sem precisar mexer no código.
