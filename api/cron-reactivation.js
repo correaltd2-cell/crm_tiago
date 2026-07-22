@@ -22,6 +22,11 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Não autorizado' });
   }
 
+  const { data: flagRow } = await db.from('crm_settings').select('value').eq('key', 'reactivation_enabled').single();
+  if (flagRow?.value === 'false') {
+    return res.status(200).json({ ok: true, sent: 0, motivo: 'reativação desativada em Config IA' });
+  }
+
   const { data: leads } = await db
     .from('crm_leads')
     .select('*')

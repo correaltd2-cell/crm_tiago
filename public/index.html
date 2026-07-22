@@ -385,6 +385,12 @@ input,textarea,select{font-family:inherit;font-size:13.5px;color:var(--ink)}
     <div class="field"><label>Nome da agente</label><input id="cfgName" /></div>
     <div class="field"><label>Instruções (system prompt)</label><textarea id="cfgPrompt" style="min-height:180px"></textarea></div>
     <div class="field"><label>Base de conhecimento</label><textarea id="cfgKb" style="min-height:180px"></textarea></div>
+    <div class="d-section" style="border-top:1px solid var(--hairline)">Reativação por inatividade</div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <div class="switch" id="reactSwitch" role="switch" tabindex="0" onclick="toggleReactivation()" onkeydown="if(event.key==='Enter')toggleReactivation()"></div>
+      <span id="reactSwitchLabel" style="font-size:12.5px;color:var(--ink-soft)">Ativada</span>
+    </div>
+    <div class="callout" style="font-size:11.5px;color:var(--ink-soft);margin-bottom:10px">Quando ativada, pacientes silenciosos recebem a cadência automática de 2 horas, 2 dias e 15 dias (ver textos abaixo). Precisa de um agendador externo configurado (ver README) para funcionar de fato — desligar aqui pausa o envio imediatamente, mesmo com o agendador ativo.</div>
     <div class="d-section" style="border-top:1px solid var(--hairline)">Mensagens fixas (templates aprovados)</div>
     <div class="callout" style="font-size:11.5px;color:var(--ink-soft);margin-bottom:10px">Textos fixos usados pelo sistema — na API Oficial, precisam estar aprovados como template no Meta com este texto exato (variável {{1}} = primeiro nome). Assim que o paciente responde a qualquer uma delas, a conversa volta para a Maia normalmente.</div>
     <div id="fixedTemplatesView"></div>
@@ -423,7 +429,10 @@ input,textarea,select{font-family:inherit;font-size:13.5px;color:var(--ink)}
       <input id="cfgAiModel" list="aiModels" placeholder="gpt-5-mini" />
       <datalist id="aiModels"></datalist>
     </div>
-    <div id="auditResult" style="display:none;white-space:pre-wrap;background:#FBF9F3;border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:10px;padding:14px;margin-top:14px;font-size:12.5px;line-height:1.55"></div>
+    <div id="auditResult" style="display:none;position:relative;white-space:pre-wrap;background:#FBF9F3;border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:10px;padding:14px 34px 14px 14px;margin-top:14px;font-size:12.5px;line-height:1.55">
+      <button type="button" onclick="closeAuditResult()" style="position:absolute;top:8px;right:10px;font-size:16px;line-height:1;color:var(--ink-soft);padding:2px 6px;border-radius:6px" title="Fechar">✕</button>
+      <div id="auditResultText"></div>
+    </div>
     <div class="modal-actions">
       <button class="btn-ghost" id="auditBtn" onclick="analyzePrompts()">🔍 Analisar prompts com IA</button>
       <button class="btn-ghost" onclick="document.getElementById('configModal').classList.remove('open')">Cancelar</button>
@@ -1031,6 +1040,7 @@ let settingsCache = null;
 async function openConfig(){
   // abre o modal NA HORA; os dados preenchem em seguida (com cache)
   document.getElementById('configModal').classList.add('open');
+  closeAuditResult();
   renderFixedTemplates();
   if(settingsCache) fillConfig(settingsCache);
   const { data } = await sb.from('crm_settings').select('*');
@@ -1042,6 +1052,8 @@ function fillConfig(map){
   document.getElementById('cfgName').value = map.agent_name||'';
   document.getElementById('cfgPrompt').value = map.system_prompt||'';
   document.getElementById('cfgKb').value = map.knowledge_base||'';
+  reactivationEnabled = map.reactivation_enabled !== 'false';
+  updateReactSwitch();
   document.getElementById('cfgWaProvider').value = map.wa_provider||'zapi';
   document.getElementById('cfgZapiInstance').value = map.zapi_instance_id||'';
   document.getElementById('cfgZapiToken').value = map.zapi_token||'';
@@ -1061,11 +1073,24 @@ function fillConfig(map){
   document.getElementById('cfgAiModel').value = map.ai_model||map.gemini_model||'';
   aiProviderChanged(false);
 }
+let reactivationEnabled = true;
+function updateReactSwitch(){
+  document.getElementById('reactSwitch').classList.toggle('on', reactivationEnabled);
+  document.getElementById('reactSwitchLabel').textContent = reactivationEnabled ? 'Ativada' : 'Desativada';
+}
+async function toggleReactivation(){
+  reactivationEnabled = !reactivationEnabled;
+  updateReactSwitch();
+  await sb.from('crm_settings').upsert({key:'reactivation_enabled', value: String(reactivationEnabled)});
+  settingsCache = Object.assign(settingsCache||{}, {reactivation_enabled: String(reactivationEnabled)});
+  toast(reactivationEnabled ? 'Reativação automática ativada' : 'Reativação automática desativada');
+}
 async function saveConfig(){
   const rows = [
     {key:'agent_name', value:document.getElementById('cfgName').value},
     {key:'system_prompt', value:document.getElementById('cfgPrompt').value},
     {key:'knowledge_base', value:document.getElementById('cfgKb').value},
+    {key:'reactivation_enabled', value:String(reactivationEnabled)},
     {key:'wa_provider', value:document.getElementById('cfgWaProvider').value},
     {key:'zapi_instance_id', value:document.getElementById('cfgZapiInstance').value.trim()},
     {key:'zapi_token', value:document.getElementById('cfgZapiToken').value.trim()},
@@ -1138,17 +1163,21 @@ async function simSend(){
 document.addEventListener('DOMContentLoaded', ()=>{ try{ simReset(); }catch(e){} });
 
 /* ================= AUDITOR DE PROMPTS ================= */
+function closeAuditResult(){
+  document.getElementById('auditResult').style.display = 'none';
+}
 async function analyzePrompts(){
   const btn = document.getElementById('auditBtn');
   const out = document.getElementById('auditResult');
+  const txt = document.getElementById('auditResultText');
   btn.disabled = true; btn.textContent = 'Analisando… (até 30s)';
-  out.style.display='block'; out.textContent='A IA está lendo suas instruções e a base de conhecimento…';
+  out.style.display='block'; txt.textContent='A IA está lendo suas instruções e a base de conhecimento…';
   const r = await authed('/api/analyze', {
     system_prompt: document.getElementById('cfgPrompt').value,
     knowledge_base: document.getElementById('cfgKb').value,
   });
   btn.disabled = false; btn.textContent = '🔍 Analisar prompts com IA';
-  out.textContent = r.ok ? r.data.report : ('Erro: ' + (r.data.error||'falha na análise'));
+  txt.textContent = r.ok ? r.data.report : ('Erro: ' + (r.data.error||'falha na análise'));
 }
 
 /* ================= IA: modelos por provedor ================= */
