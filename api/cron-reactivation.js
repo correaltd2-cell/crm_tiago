@@ -1,20 +1,20 @@
-// Reativação por inatividade — 2h / 24h / 72h / 15 dias sem resposta.
+// Reativação por inatividade — cadência ÚNICA: 2h → 2 dias → 15 dias (fim).
 // Roda com frequência (idealmente de hora em hora) via agendador externo
 // gratuito, já que o cron nativo da Vercel no plano Hobby só roda 1x/dia.
 // Protegido pelo mesmo CRON_SECRET dos outros crons.
 //
+// Cobre leads em Novo Lead, Em Atendimento OU Follow-up — não precisa mais
+// arrastar o card manualmente para receber a reativação automática.
+//
 // Mensagens FIXAS e leves (não geradas por IA) — apropriado para a área da
-// saúde: nada de a IA improvisar sozinha sobre o assunto nessa cadência.
-// sendTemplate() já cuida de mandar como template aprovado na API oficial
-// ou como texto livre na Z-API — o texto usado é o mesmo dos dois lados
-// (ver AUTO_TEXTS em _lib/core.js) e pode virar template Meta sem alterações.
+// saúde. sendTemplate() já cuida de mandar como template aprovado na API
+// oficial ou como texto livre na Z-API.
 import { db, sendTemplate, saveMessage, AUTO_TEXTS } from './_lib/core.js';
 
 const STEPS = [
   { step: 1, afterMs: 2 * 60 * 60 * 1000, template: 'reactivation_2h', label: '2h' },
-  { step: 2, afterMs: 24 * 60 * 60 * 1000, template: 'reactivation_24h', label: '24h' },
-  { step: 3, afterMs: 72 * 60 * 60 * 1000, template: 'reactivation_72h', label: '72h' },
-  { step: 4, afterMs: 15 * 24 * 60 * 60 * 1000, template: 'reactivation_15d', label: '15 dias' },
+  { step: 2, afterMs: 2 * 24 * 60 * 60 * 1000, template: 'reactivation_2d', label: '2 dias' },
+  { step: 3, afterMs: 15 * 24 * 60 * 60 * 1000, template: 'reactivation_15d', label: '15 dias' },
 ];
 
 export default async function handler(req, res) {
@@ -22,25 +22,21 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Não autorizado' });
   }
 
-  // Candidatos: em atendimento pela IA, silenciosos desde a nossa última mensagem,
-  // e que ainda não passaram pelo último passo (4).
   const { data: leads } = await db
     .from('crm_leads')
     .select('*')
-    .in('stage_id', ['novo_lead', 'em_atendimento'])
+    .in('stage_id', ['novo_lead', 'em_atendimento', 'followup'])
     .eq('ai_enabled', true)
-    .lt('reactivation_step', 4)
+    .lt('reactivation_step', 3)
     .not('last_outbound_at', 'is', null);
 
   const now = Date.now();
   let sent = 0;
 
   for (const lead of leads || []) {
-    // só reativa quem realmente ficou em silêncio: nossa última msg é mais
-    // recente que a última mensagem do paciente (ele não respondeu depois)
     const lastOut = new Date(lead.last_outbound_at).getTime();
     const lastIn = lead.last_inbound_at ? new Date(lead.last_inbound_at).getTime() : 0;
-    if (lastIn >= lastOut) continue;
+    if (lastIn >= lastOut) continue; // paciente já respondeu depois da nossa última msg
 
     const silenceMs = now - lastOut;
     const nextStep = STEPS.find((s) => s.step === lead.reactivation_step + 1);

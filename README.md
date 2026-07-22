@@ -88,19 +88,18 @@ O sistema suporta os dois transportes, escolhidos em **Config IA → Integraçõ
   Templates (`templates-meta.md`) precisam ser submetidos e aprovados por WABA/cliente. Os textos exatos ficam visíveis (somente leitura) em Config IA → "Mensagens fixas (templates aprovados)".
 
 
-## Reativação por inatividade (2h / 24h / 72h / 15 dias)
+## Reativação por inatividade (2h / 2 dias / 15 dias)
 
-Enquanto um lead está sendo atendido pela IA (etapas Novo Lead / Em Atendimento) e para de responder, o sistema reengaja sozinho com mensagens **fixas, curtas e leves** (não geradas por IA de propósito — controle de conteúdo na área da saúde), cada etapa com um texto diferente para não soar repetitivo:
+Enquanto um lead está sendo atendido pela IA (Novo Lead, Em Atendimento ou Follow-up) e para de responder, o sistema reengaja sozinho com mensagens **fixas, curtas e leves** (não geradas por IA de propósito — controle de conteúdo na área da saúde). Cadência ÚNICA, sem duplicação:
 - **2h** sem resposta → toque bem leve, pergunta se ficou dúvida específica
-- **24h** → reforça disponibilidade, mencionando a blefaroplastia
-- **72h** → menciona que a agenda do mês seguinte está fechando e oferece encaixar uma avaliação (uso único, tom honesto — sem urgência artificial, respeitando o CFM)
+- **2 dias** → reforça disponibilidade, mencionando a blefaroplastia
 - **15 dias** → mensagem final, educada, avisando que encerra o atendimento automático por aqui mas segue à disposição (não força nenhuma mudança de etapa — o card continua onde está)
 
-Textos em `api/_lib/core.js` (`AUTO_TEXTS`) e prontos como rascunho de template em `templates-meta.md`. Se o paciente responder a qualquer momento, o relógio zera e o ciclo recomeça do zero na próxima vez que ficar em silêncio.
+Cobre automaticamente os leads que estão na etapa Follow-up também — não é mais preciso nenhuma cadência separada por etapa. Textos em `api/_lib/core.js` (`AUTO_TEXTS`) e prontos como rascunho de template em `templates-meta.md`. Se o paciente responder a qualquer momento, o relógio zera e o ciclo recomeça do zero na próxima vez que ficar em silêncio.
 
 ### ⚠️ Importante: frequência do cron
 
-O endpoint é `/api/cron-reactivation`, protegido pelo mesmo `CRON_SECRET`. Como o **plano Hobby da Vercel só executa cron nativo 1x por dia**, e aqui precisamos de checagem de hora em hora, use um agendador externo **gratuito**:
+O endpoint é `/api/cron-reactivation`, protegido pelo mesmo `CRON_SECRET`. Substitui o antigo `/api/cron-followups` (removido) — agora é um único mecanismo para toda cadência de reativação. Como o **plano Hobby da Vercel só executa cron nativo 1x por dia**, e aqui precisamos de checagem de hora em hora, use um agendador externo **gratuito**:
 
 1. Crie uma conta em **cron-job.org** (grátis).
 2. Novo cron job → URL: `https://SEU-PROJETO.vercel.app/api/cron-reactivation`

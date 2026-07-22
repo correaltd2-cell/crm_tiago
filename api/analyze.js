@@ -39,15 +39,10 @@ export default async function handler(req, res) {
   const user = await requireUser(req);
   if (!user) return res.status(401).json({ error: 'Não autorizado' });
 
-  const { system_prompt, knowledge_base, followups } = req.body || {};
-  const fu = followups || {};
+  const { system_prompt, knowledge_base } = req.body || {};
 
   const material = `=== INSTRUÇÕES (SYSTEM PROMPT) ===\n${system_prompt || '(vazio)'}\n
-=== BASE DE CONHECIMENTO ===\n${knowledge_base || '(vazio)'}\n
-=== PROMPT FOLLOW-UP D+2 ===\n${fu.d2 || '(vazio)'}\n
-=== PROMPT FOLLOW-UP D+7 ===\n${fu.d7 || '(vazio)'}\n
-=== PROMPT FOLLOW-UP D+15 ===\n${fu.d15 || '(vazio)'}\n
-=== PROMPT FOLLOW-UP D+30 ===\n${fu.d30 || '(vazio)'}`;
+=== BASE DE CONHECIMENTO ===\n${knowledge_base || '(vazio)'}`;
 
   const report = await chatLLM({
     system: EVALUATOR,

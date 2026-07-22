@@ -314,8 +314,6 @@ input,textarea,select{font-family:inherit;font-size:13.5px;color:var(--ink)}
     <div class="field"><label>Procedimento de interesse</label><input id="fProc" onchange="saveLeadField('procedure_interest',this.value)" /></div>
     <div class="field"><label>Origem</label><input id="fSource" disabled /></div>
     <div class="field"><label>Anotações</label><textarea id="fNotes" onchange="saveLeadField('notes',this.value)"></textarea></div>
-    <div class="d-section">Follow-ups</div>
-    <div id="fuList" style="min-height:20px"></div>
   </div>
   <div class="drawer-chat">
     <div class="chat-head">
@@ -387,11 +385,6 @@ input,textarea,select{font-family:inherit;font-size:13.5px;color:var(--ink)}
     <div class="field"><label>Nome da agente</label><input id="cfgName" /></div>
     <div class="field"><label>Instruções (system prompt)</label><textarea id="cfgPrompt" style="min-height:180px"></textarea></div>
     <div class="field"><label>Base de conhecimento</label><textarea id="cfgKb" style="min-height:180px"></textarea></div>
-    <div class="d-section" style="border-top:1px solid var(--hairline)">Follow-ups — instruções para a IA por etapa</div>
-    <div class="field"><label>D+2 (2 dias após entrar no follow-up)</label><textarea id="cfgFuD2" style="min-height:70px"></textarea></div>
-    <div class="field"><label>D+7</label><textarea id="cfgFuD7" style="min-height:70px"></textarea></div>
-    <div class="field"><label>D+15</label><textarea id="cfgFuD15" style="min-height:70px"></textarea></div>
-    <div class="field"><label>D+30 (despedida)</label><textarea id="cfgFuD30" style="min-height:70px"></textarea></div>
     <div class="d-section" style="border-top:1px solid var(--hairline)">Mensagens fixas (templates aprovados)</div>
     <div class="callout" style="font-size:11.5px;color:var(--ink-soft);margin-bottom:10px">Textos fixos usados pelo sistema — na API Oficial, precisam estar aprovados como template no Meta com este texto exato (variável {{1}} = primeiro nome). Assim que o paciente responde a qualquer uma delas, a conversa volta para a Maia normalmente.</div>
     <div id="fixedTemplatesView"></div>
@@ -657,11 +650,6 @@ async function openDrawer(l){
   (msgs||[]).forEach(m=>appendMsg(m,false));
   body.scrollTop = body.scrollHeight;
 
-  const { data: fus } = await sb.from('crm_follow_ups').select('*').eq('lead_id', l.id).order('due_at');
-  document.getElementById('fuList').innerHTML = (fus&&fus.length)
-    ? fus.map(f=>`<div class="fu-row"><span>${f.label||f.template}</span><span class="mono ${f.status==='sent'?'fu-sent':f.status==='failed'?'fu-failed':''}">${f.status==='pending'?fmtDate(f.due_at):f.status}</span></div>`).join('')
-    : '<div class="fu-row">Nenhum follow-up agendado</div>';
-
   checkWindow();
   if(l.unread){ l.unread=false; render(); await sb.from('crm_leads').update({unread:false}).eq('id', l.id); }
 }
@@ -919,14 +907,9 @@ function startEmbeddedSignup(){
 const FIXED_TEMPLATES_VIEW = [
   { key:'aviso_secretaria', label:'Aviso à secretária (lead qualificado)', text:'Novo paciente qualificado para consulta ✨\n\nNome: {{1}}\nWhatsApp: {{2}}\nResumo: {{3}}\n\nPor favor, entre em contato para confirmar o agendamento da avaliação.' },
   { key:'retomada_atendimento', label:'Retomada (janela de 24h fechada)', text:'Olá, {{1}}! Vi que conversamos sobre a sua avaliação e queria saber se posso te ajudar a dar o próximo passo. Posso continuar por aqui?' },
-  { key:'followup_d2', label:'Follow-up D+2 (fallback — a IA personaliza quando possível)', text:'Oi, {{1}}! Passando para saber se ficou alguma dúvida sobre a sua avaliação ou sobre o procedimento. Estou à disposição para te ajudar. 😊' },
-  { key:'followup_d7', label:'Follow-up D+7 (fallback)', text:'Olá, {{1}}! Muitas pacientes contam que o que mais mudou foi se olhar no espelho e ver um olhar renovado de novo. Se quiser, posso te ajudar a organizar a sua avaliação. Faz sentido para você?' },
-  { key:'followup_d15', label:'Follow-up D+15 (fallback)', text:'Oi, {{1}}! A agenda de avaliações para as próximas semanas está sendo organizada. Se ainda fizer sentido para você, consigo verificar um horário. Posso pedir para a atendente te enviar as opções?' },
-  { key:'followup_d30', label:'Follow-up D+30 (fallback — despedida)', text:'Olá, {{1}}! Este é meu último contato por aqui para não te incomodar. 😊 Se em algum momento você quiser retomar a conversa, é só me chamar nesta conversa. Será um prazer te atender!' },
-  { key:'reactivation_2h', label:'Reativação 2h (sempre fixa)', text:'Oi, {{1}}! Tudo bem? Ficou alguma dúvida específica que gostaria de saber?' },
-  { key:'reactivation_24h', label:'Reativação 24h (sempre fixa)', text:'Oi, {{1}}! Continuo por aqui à disposição para conversar sobre a blefaroplastia, viu?' },
-  { key:'reactivation_72h', label:'Reativação 72h (sempre fixa)', text:'Oi, {{1}}! A agenda do Dr. Tiago para o mês que vem está fechando — gostaria de te encaixar em um horário de avaliação, se ainda fizer sentido para você.' },
-  { key:'reactivation_15d', label:'Reativação 15 dias (sempre fixa — encerramento)', text:'Oi, {{1}}! Vou encerrar o atendimento por aqui, mas fico à disposição para qualquer dúvida no futuro. Foi um prazer falar com você!' },
+  { key:'reactivation_2h', label:'Reativação — 2 horas sem resposta', text:'Oi, {{1}}! Tudo bem? Ficou alguma dúvida específica que gostaria de saber?' },
+  { key:'reactivation_2d', label:'Reativação — 2 dias sem resposta', text:'Oi, {{1}}! Continuo por aqui à disposição para conversar sobre a blefaroplastia, viu?' },
+  { key:'reactivation_15d', label:'Reativação — 15 dias sem resposta (encerramento)', text:'Oi, {{1}}! Vou encerrar o atendimento por aqui, mas fico à disposição para qualquer dúvida no futuro. Foi um prazer falar com você!' },
 ];
 function renderFixedTemplates(){
   document.getElementById('fixedTemplatesView').innerHTML = FIXED_TEMPLATES_VIEW.map(t=>`
@@ -1059,10 +1042,6 @@ function fillConfig(map){
   document.getElementById('cfgName').value = map.agent_name||'';
   document.getElementById('cfgPrompt').value = map.system_prompt||'';
   document.getElementById('cfgKb').value = map.knowledge_base||'';
-  document.getElementById('cfgFuD2').value = map.followup_d2_prompt||'';
-  document.getElementById('cfgFuD7').value = map.followup_d7_prompt||'';
-  document.getElementById('cfgFuD15').value = map.followup_d15_prompt||'';
-  document.getElementById('cfgFuD30').value = map.followup_d30_prompt||'';
   document.getElementById('cfgWaProvider').value = map.wa_provider||'zapi';
   document.getElementById('cfgZapiInstance').value = map.zapi_instance_id||'';
   document.getElementById('cfgZapiToken').value = map.zapi_token||'';
@@ -1087,10 +1066,6 @@ async function saveConfig(){
     {key:'agent_name', value:document.getElementById('cfgName').value},
     {key:'system_prompt', value:document.getElementById('cfgPrompt').value},
     {key:'knowledge_base', value:document.getElementById('cfgKb').value},
-    {key:'followup_d2_prompt', value:document.getElementById('cfgFuD2').value},
-    {key:'followup_d7_prompt', value:document.getElementById('cfgFuD7').value},
-    {key:'followup_d15_prompt', value:document.getElementById('cfgFuD15').value},
-    {key:'followup_d30_prompt', value:document.getElementById('cfgFuD30').value},
     {key:'wa_provider', value:document.getElementById('cfgWaProvider').value},
     {key:'zapi_instance_id', value:document.getElementById('cfgZapiInstance').value.trim()},
     {key:'zapi_token', value:document.getElementById('cfgZapiToken').value.trim()},
@@ -1167,16 +1142,10 @@ async function analyzePrompts(){
   const btn = document.getElementById('auditBtn');
   const out = document.getElementById('auditResult');
   btn.disabled = true; btn.textContent = 'Analisando… (até 30s)';
-  out.style.display='block'; out.textContent='A IA está lendo suas instruções, a base de conhecimento e os prompts de follow-up…';
+  out.style.display='block'; out.textContent='A IA está lendo suas instruções e a base de conhecimento…';
   const r = await authed('/api/analyze', {
     system_prompt: document.getElementById('cfgPrompt').value,
     knowledge_base: document.getElementById('cfgKb').value,
-    followups: {
-      d2: document.getElementById('cfgFuD2').value,
-      d7: document.getElementById('cfgFuD7').value,
-      d15: document.getElementById('cfgFuD15').value,
-      d30: document.getElementById('cfgFuD30').value,
-    }
   });
   btn.disabled = false; btn.textContent = '🔍 Analisar prompts com IA';
   out.textContent = r.ok ? r.data.report : ('Erro: ' + (r.data.error||'falha na análise'));

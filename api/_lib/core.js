@@ -92,27 +92,17 @@ async function metaPost(payload) {
 }
 
 // Textos das mensagens automáticas (usados como texto livre na Z-API,
-// e como fallback/preview quando a oficial ainda não tem o template aprovado).
-// {{1}}, {{2}}, {{3}} são substituídos pelos parâmetros.
+// e como template aprovado na API oficial). {{1}}, {{2}}, {{3}} = variáveis.
+// Cadência única de reativação por inatividade: 2h → 2 dias → 15 dias (fim).
 export const AUTO_TEXTS = {
   aviso_secretaria:
     'Novo paciente qualificado para consulta ✨\n\nNome: {{1}}\nWhatsApp: {{2}}\nResumo: {{3}}\n\nPor favor, entre em contato para confirmar o agendamento da avaliação.',
   retomada_atendimento:
     'Olá, {{1}}! Vi que conversamos sobre a sua avaliação e queria saber se posso te ajudar a dar o próximo passo. Posso continuar por aqui?',
-  followup_d2:
-    'Oi, {{1}}! Passando para saber se ficou alguma dúvida sobre a sua avaliação ou sobre o procedimento. Estou à disposição para te ajudar. 😊',
-  followup_d7:
-    'Olá, {{1}}! Muitas pacientes contam que o que mais mudou foi se olhar no espelho e ver um olhar renovado de novo. Se quiser, posso te ajudar a organizar a sua avaliação. Faz sentido para você?',
-  followup_d15:
-    'Oi, {{1}}! A agenda de avaliações para as próximas semanas está sendo organizada. Se ainda fizer sentido para você, consigo verificar um horário. Posso pedir para a atendente te enviar as opções?',
-  followup_d30:
-    'Olá, {{1}}! Este é meu último contato por aqui para não te incomodar. 😊 Se em algum momento você quiser retomar a conversa, é só me chamar nesta conversa. Será um prazer te atender!',
   reactivation_2h:
     'Oi, {{1}}! Tudo bem? Ficou alguma dúvida específica que gostaria de saber?',
-  reactivation_24h:
+  reactivation_2d:
     'Oi, {{1}}! Continuo por aqui à disposição para conversar sobre a blefaroplastia, viu?',
-  reactivation_72h:
-    'Oi, {{1}}! A agenda do Dr. Tiago para o mês que vem está fechando — gostaria de te encaixar em um horário de avaliação, se ainda fizer sentido para você.',
   reactivation_15d:
     'Oi, {{1}}! Vou encerrar o atendimento por aqui, mas fico à disposição para qualquer dúvida no futuro. Foi um prazer falar com você!',
 };
@@ -122,13 +112,8 @@ export const AUTO_TEXTS = {
 const META_TEMPLATE_NAMES = {
   aviso_secretaria: 'aviso_secretaria',
   retomada_atendimento: 'retomada_atendimento',
-  followup_d2: 'followup_d2',
-  followup_d7: 'followup_d7',
-  followup_d15: 'followup_d15',
-  followup_d30: 'followup_d30',
   reactivation_2h: 'reactivation_2h',
-  reactivation_24h: 'reactivation_24h',
-  reactivation_72h: 'reactivation_72h',
+  reactivation_2d: 'reactivation_2d',
   reactivation_15d: 'reactivation_15d',
 };
 

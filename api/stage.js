@@ -1,17 +1,9 @@
 // Movimentação de etapa no Kanban — com os efeitos automáticos:
-// - Qualificado  → avisa a secretária do hospital (template) + confirma com o paciente
-// - Follow-up    → agenda a cadência D+2 / D+7 / D+15 / D+30
-// - Perdido      → registra motivo de perda e cancela follow-ups pendentes
-// - Fechado      → cancela follow-ups pendentes
-import { db, sendTemplate, requireUser } from './_lib/core.js';
+// - Qualificado → avisa a secretária do hospital (template) + confirma com o paciente
+// - Follow-up   → zera o relógio de reativação (a cadência 2h/2d/15d roda sozinha)
+// - Fechado/Perdido → registra motivo e desliga a IA
+import { db, requireUser } from './_lib/core.js';
 import { qualifyLead } from './_lib/actions.js';
-
-const FOLLOWUP_PLAN = [
-  { days: 2, template: 'followup_d2', label: 'D+2' },
-  { days: 7, template: 'followup_d7', label: 'D+7' },
-  { days: 15, template: 'followup_d15', label: 'D+15' },
-  { days: 30, template: 'followup_d30', label: 'D+30' },
-];
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
@@ -37,25 +29,14 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, notices });
     }
 
-    // ---------- FOLLOW-UP: agenda a cadência ----------
+    // ---------- FOLLOW-UP: zera o relógio — a reativação (2h/2d/15d) roda sozinha ----------
     if (toStage === 'followup') {
-      const rows = FOLLOWUP_PLAN.map((f) => ({
-        lead_id: lead.id,
-        due_at: new Date(Date.now() + f.days * 24 * 60 * 60 * 1000).toISOString(),
-        template: f.template,
-        label: f.label,
-      }));
-      await db.from('crm_follow_ups').insert(rows);
-      notices.push('Cadência de follow-up agendada (D+2, D+7, D+15, D+30).');
+      updates.reactivation_step = 0;
+      notices.push('Reativação automática ativa (2h, 2 dias e 15 dias).');
     }
 
-    // ---------- FECHADO ou PERDIDO: encerra follow-ups pendentes ----------
+    // ---------- FECHADO ou PERDIDO ----------
     if (toStage === 'fechado' || toStage === 'perdido') {
-      await db
-        .from('crm_follow_ups')
-        .update({ status: 'canceled' })
-        .eq('lead_id', lead.id)
-        .eq('status', 'pending');
       if (toStage === 'perdido') updates.loss_reason = lossReason || 'Não informado';
       updates.ai_enabled = false;
     }
@@ -74,4 +55,3 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: err.message });
   }
 }
-
