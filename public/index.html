@@ -923,20 +923,29 @@ async function renderCampaigns(){
         <div class="mono" style="font-size:11px;color:var(--ink-soft)">código: ${esc(c.code)}${c.procedure_interest?' · '+esc(c.procedure_interest):''}</div>
       </div>
       <div class="kpi" style="padding:8px 14px"><b style="font-size:22px">${counts[c.id]||0}</b><span>leads</span></div>
-      <button class="btn-ghost" onclick="copyCampaignLink('${c.id}')">🔗 Copiar link do anúncio</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn-ghost" onclick="copyCampaignText('${c.id}')">💬 Copiar mensagem (Ads Manager)</button>
+        <button class="btn-ghost" onclick="copyCampaignLink('${c.id}')">🔗 Copiar link (bio/stories)</button>
+      </div>
     </div>`;
   }).join('');
 }
+function campaignText(c){ return `Olá! Vi o anúncio e queria saber mais [ref:${c.code}]`; }
 function buildCampaignLink(c){
   const num = waNumberForLinks || '5500000000000';
-  const text = encodeURIComponent(`Olá! Vi o anúncio e queria saber mais [ref:${c.code}]`);
-  return `https://wa.me/${num}?text=${text}`;
+  return `https://wa.me/${num}?text=${encodeURIComponent(campaignText(c))}`;
+}
+function copyCampaignText(id){
+  const c = campaigns.find(x=>x.id===id);
+  if(!c) return;
+  navigator.clipboard.writeText(campaignText(c));
+  toast('Mensagem copiada — cole no campo "Mensagem inicial" do anúncio no Ads Manager.');
 }
 function copyCampaignLink(id){
   const c = campaigns.find(x=>x.id===id);
   if(!c) return;
   navigator.clipboard.writeText(buildCampaignLink(c));
-  toast(waNumberForLinks ? 'Link copiado!' : 'Link copiado — edite o número do WhatsApp na URL antes de usar (não configurado nas Integrações ainda).');
+  toast(waNumberForLinks ? 'Link copiado — use em bio, Stories ou botões de link.' : 'Link copiado — falta preencher o número do WhatsApp acima.');
 }
 function openNewCampaign(){
   ['ncName','ncCode','ncProc'].forEach(id=>document.getElementById(id).value='');
