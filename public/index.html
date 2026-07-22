@@ -362,9 +362,27 @@ input,textarea,select{font-family:inherit;font-size:13.5px;color:var(--ink)}
     <div class="field"><label>D+15</label><textarea id="cfgFuD15" style="min-height:70px"></textarea></div>
     <div class="field"><label>D+30 (despedida)</label><textarea id="cfgFuD30" style="min-height:70px"></textarea></div>
     <div class="d-section" style="border-top:1px solid var(--hairline)">Integrações</div>
-    <div class="field"><label>Z-API · Instance ID</label><input id="cfgZapiInstance" placeholder="3D0A..." autocomplete="off" /></div>
-    <div class="field"><label>Z-API · Token da instância</label><input id="cfgZapiToken" type="password" placeholder="F2C9..." autocomplete="off" /></div>
-    <div class="field"><label>Z-API · Client-Token (Segurança da conta)</label><input id="cfgZapiClient" type="password" placeholder="Fa1b..." autocomplete="off" /></div>
+    <div class="field"><label>WhatsApp · Provedor</label>
+      <select id="cfgWaProvider" onchange="waProviderChanged()">
+        <option value="zapi">Z-API (rápido, sem burocracia)</option>
+        <option value="meta">API Oficial (Meta Cloud API)</option>
+      </select>
+    </div>
+
+    <div id="zapiFields">
+      <div class="field"><label>Z-API · Instance ID</label><input id="cfgZapiInstance" placeholder="3D0A..." autocomplete="off" /></div>
+      <div class="field"><label>Z-API · Token da instância</label><input id="cfgZapiToken" type="password" placeholder="F2C9..." autocomplete="off" /></div>
+      <div class="field"><label>Z-API · Client-Token (Segurança da conta)</label><input id="cfgZapiClient" type="password" placeholder="Fa1b..." autocomplete="off" /></div>
+    </div>
+
+    <div id="metaFields" style="display:none">
+      <div class="field"><label>Meta · Token permanente</label><input id="cfgMetaToken" type="password" placeholder="EAAG..." autocomplete="off" /></div>
+      <div class="field"><label>Meta · Phone Number ID</label><input id="cfgMetaPhoneId" placeholder="1234567890" /></div>
+      <div class="field"><label>Meta · Verify token do webhook</label><input id="cfgMetaVerify" placeholder="ex: crmcliente-webhook" /></div>
+      <div class="callout" style="background:var(--gold-soft);border:1px solid #E4D8B6;border-radius:8px;padding:9px 12px;font-size:11.5px;color:#6E5518;margin-bottom:12px">
+        Webhook a configurar no Meta: <span class="mono" style="background:#fff;padding:1px 5px;border-radius:4px" id="metaWebhookUrl"></span> — use o mesmo valor do Verify token acima. Assine o campo <b>messages</b>. Templates precisam estar aprovados (ver templates-meta.md).
+      </div>
+    </div>
     <div class="field"><label>WhatsApp da secretária (55DDDNÚMERO)</label><input id="cfgSecretary" placeholder="5554999999999" /></div>
     <div class="field"><label>WhatsApp p/ relatório semanal (número principal)</label><input id="cfgReport" placeholder="5554999999999" /></div>
     <div class="field"><label>Código p/ criar novos logins</label><input id="cfgSignup" placeholder="ex: drtiago2026" /></div>
@@ -447,6 +465,8 @@ async function authed(path, body){
 async function boot(){
   document.getElementById('loginView').style.display='none';
   document.getElementById('appView').style.display='block';
+  sb.from('crm_settings').select('value').eq('key','wa_provider').single()
+    .then(({data})=>{ currentWaProvider = data?.value || 'zapi'; });
   const [s, l] = await Promise.all([
     sb.from('crm_stages').select('*').order('position'),
     sb.from('crm_leads').select('*').order('last_message_at',{ascending:false,nullsFirst:false})
@@ -614,11 +634,19 @@ async function toggleAI(){
   await sb.from('crm_leads').update({ai_enabled:on, ...(on?{needs_human:false}:{})}).eq('id', currentLead.id);
   toast(on?'IA reativada nesta conversa':'Você assumiu a conversa — IA pausada');
 }
+let currentWaProvider = 'zapi';
 function checkWindow(){
-  // Z-API: sem janela de 24h — envio sempre liberado
-  document.getElementById('windowBanner').style.display = 'none';
-  document.getElementById('composer').disabled = false;
-  document.getElementById('sendBtn').disabled = false;
+  const l = currentLead;
+  if(currentWaProvider !== 'meta'){
+    document.getElementById('windowBanner').style.display = 'none';
+    document.getElementById('composer').disabled = false;
+    document.getElementById('sendBtn').disabled = false;
+    return;
+  }
+  const open = l.last_inbound_at && (Date.now()-new Date(l.last_inbound_at).getTime() < 24*3600*1000);
+  document.getElementById('windowBanner').style.display = open?'none':'flex';
+  document.getElementById('composer').disabled = !open;
+  document.getElementById('sendBtn').disabled = !open;
 }
 function appendMsg(m, scroll){
   const body = document.getElementById('chatBody');
@@ -764,6 +792,14 @@ function renderReports(){
     : '<div class="empty">Nenhuma perda no período 🎉</div>';
 }
 
+function waProviderChanged(){
+  const isMeta = document.getElementById('cfgWaProvider').value === 'meta';
+  document.getElementById('zapiFields').style.display = isMeta ? 'none' : 'block';
+  document.getElementById('metaFields').style.display = isMeta ? 'block' : 'none';
+  document.getElementById('metaWebhookUrl').textContent = location.origin + '/api/webhook';
+  currentWaProvider = document.getElementById('cfgWaProvider').value;
+}
+
 /* ================= NOVO LEAD MANUAL ================= */
 function openNewLead(){
   ['nlName','nlPhone','nlCity'].forEach(id=>document.getElementById(id).value='');
@@ -814,9 +850,14 @@ function fillConfig(map){
   document.getElementById('cfgFuD7').value = map.followup_d7_prompt||'';
   document.getElementById('cfgFuD15').value = map.followup_d15_prompt||'';
   document.getElementById('cfgFuD30').value = map.followup_d30_prompt||'';
+  document.getElementById('cfgWaProvider').value = map.wa_provider||'zapi';
   document.getElementById('cfgZapiInstance').value = map.zapi_instance_id||'';
   document.getElementById('cfgZapiToken').value = map.zapi_token||'';
   document.getElementById('cfgZapiClient').value = map.zapi_client_token||'';
+  document.getElementById('cfgMetaToken').value = map.meta_token||'';
+  document.getElementById('cfgMetaPhoneId').value = map.meta_phone_number_id||'';
+  document.getElementById('cfgMetaVerify').value = map.meta_verify_token||'';
+  waProviderChanged();
   document.getElementById('cfgSecretary').value = map.secretary_phone||'';
   document.getElementById('cfgReport').value = map.report_phone||'';
   document.getElementById('cfgSignup').value = map.signup_code||'';
@@ -834,9 +875,13 @@ async function saveConfig(){
     {key:'followup_d7_prompt', value:document.getElementById('cfgFuD7').value},
     {key:'followup_d15_prompt', value:document.getElementById('cfgFuD15').value},
     {key:'followup_d30_prompt', value:document.getElementById('cfgFuD30').value},
+    {key:'wa_provider', value:document.getElementById('cfgWaProvider').value},
     {key:'zapi_instance_id', value:document.getElementById('cfgZapiInstance').value.trim()},
     {key:'zapi_token', value:document.getElementById('cfgZapiToken').value.trim()},
     {key:'zapi_client_token', value:document.getElementById('cfgZapiClient').value.trim()},
+    {key:'meta_token', value:document.getElementById('cfgMetaToken').value.trim()},
+    {key:'meta_phone_number_id', value:document.getElementById('cfgMetaPhoneId').value.trim()},
+    {key:'meta_verify_token', value:document.getElementById('cfgMetaVerify').value.trim()},
     {key:'secretary_phone', value:document.getElementById('cfgSecretary').value.replace(/\D/g,'')},
     {key:'report_phone', value:document.getElementById('cfgReport').value.replace(/\D/g,'')},
     {key:'signup_code', value:document.getElementById('cfgSignup').value.trim()},

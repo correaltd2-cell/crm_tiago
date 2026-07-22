@@ -1,5 +1,5 @@
-// Helpers compartilhados — Supabase (service role), Z-API e autenticação
-// Credenciais vêm da tabela crm_settings (aba Integrações do CRM)
+// Helpers compartilhados — Supabase (service role), WhatsApp (Z-API OU API oficial Meta) e autenticação
+// Credenciais e o provedor escolhido vêm da tabela crm_settings (aba Integrações do CRM)
 import { createClient } from '@supabase/supabase-js';
 
 export const db = createClient(
@@ -17,11 +17,20 @@ export async function getConfig() {
   const { data } = await db.from('crm_settings').select('key,value');
   const map = Object.fromEntries((data || []).map((r) => [r.key, r.value]));
   _cfgCache = {
+    waProvider: map.wa_provider || 'zapi', // 'zapi' | 'meta'
+    // Z-API
     zapiInstance: map.zapi_instance_id || '',
     zapiToken: map.zapi_token || '',
     zapiClientToken: map.zapi_client_token || '',
+    // Meta Cloud API (oficial)
+    metaToken: map.meta_token || '',
+    metaPhoneNumberId: map.meta_phone_number_id || '',
+    metaVerifyToken: map.meta_verify_token || '',
+    metaWabaId: map.meta_waba_id || '',
+    // comuns
     secretaryPhone: map.secretary_phone || '',
     reportPhone: map.report_phone || '',
+    signupCode: map.signup_code || '',
     aiProvider: map.ai_provider || 'gemini',
     aiKey: map.ai_api_key || map.gemini_api_key || '',
     aiModel: map.ai_model || map.gemini_model || '',
@@ -58,39 +67,97 @@ async function zapiPost(path, payload) {
   return data;
 }
 
-export function sendText(to, body) {
+// ---- Meta Cloud API (oficial) ----------------------------------------------
+const GRAPH = 'https://graph.facebook.com/v21.0';
+
+async function metaPost(payload) {
+  const cfg = await getConfig();
+  if (!cfg.metaToken || !cfg.metaPhoneNumberId) {
+    throw new Error('API oficial não configurada — preencha o Token e o Phone Number ID na aba Integrações.');
+  }
+  const res = await fetch(`${GRAPH}/${cfg.metaPhoneNumberId}/messages`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${cfg.metaToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    console.error('Meta API error:', JSON.stringify(data));
+    throw new Error(data?.error?.message || 'Falha ao enviar mensagem via Meta');
+  }
+  return data;
+}
+
+// Textos das mensagens automáticas (usados como texto livre na Z-API,
+// e como fallback/preview quando a oficial ainda não tem o template aprovado).
+// {{1}}, {{2}}, {{3}} são substituídos pelos parâmetros.
+export const AUTO_TEXTS = {
+  aviso_secretaria:
+    'Novo paciente qualificado para consulta ✨\n\nNome: {{1}}\nWhatsApp: {{2}}\nResumo: {{3}}\n\nPor favor, entre em contato para confirmar o agendamento da avaliação.',
+  retomada_atendimento:
+    'Olá, {{1}}! Vi que conversamos sobre a sua avaliação e queria saber se posso te ajudar a dar o próximo passo. Posso continuar por aqui?',
+  followup_d2:
+    'Oi, {{1}}! Passando para saber se ficou alguma dúvida sobre a sua avaliação ou sobre o procedimento. Estou à disposição para te ajudar. 😊',
+  followup_d7:
+    'Olá, {{1}}! Muitas pacientes contam que o que mais mudou foi se olhar no espelho e ver um olhar renovado de novo. Se quiser, posso te ajudar a organizar a sua avaliação. Faz sentido para você?',
+  followup_d15:
+    'Oi, {{1}}! A agenda de avaliações para as próximas semanas está sendo organizada. Se ainda fizer sentido para você, consigo verificar um horário. Posso pedir para a atendente te enviar as opções?',
+  followup_d30:
+    'Olá, {{1}}! Este é meu último contato por aqui para não te incomodar. 😊 Se em algum momento você quiser retomar a conversa, é só me chamar nesta conversa. Será um prazer te atender!',
+};
+
+// Nomes de template esperados na Meta — precisam existir e estar APROVADOS
+// no WhatsApp Manager com esses nomes exatos (ver templates-meta.md).
+const META_TEMPLATE_NAMES = {
+  aviso_secretaria: 'aviso_secretaria',
+  retomada_atendimento: 'retomada_atendimento',
+  followup_d2: 'followup_d2',
+  followup_d7: 'followup_d7',
+  followup_d15: 'followup_d15',
+  followup_d30: 'followup_d30',
+};
+
+// ---- API pública unificada (o resto do código nunca sabe qual provedor está ativo) ----
+
+export async function sendText(to, body) {
+  const cfg = await getConfig();
+  if (cfg.waProvider === 'meta') {
+    return metaPost({ messaging_product: 'whatsapp', to, type: 'text', text: { body, preview_url: false } });
+  }
   return zapiPost('send-text', { phone: String(to), message: body });
 }
 
-// Textos das mensagens automáticas (sem burocracia de template na Z-API).
-// {{1}}, {{2}}, {{3}} são substituídos pelos parâmetros.
-const AUTO_TEXTS = {
-  aviso_secretaria:
-    'Novo paciente qualificado para consulta com o Dr. Tiago 👁️\n\nNome: {{1}}\nWhatsApp: {{2}}\nResumo: {{3}}\n\nPor favor, entre em contato para confirmar o agendamento da avaliação.',
-  retomada_atendimento:
-    'Olá, {{1}}! Aqui é do consultório do Dr. Tiago Franco Martins. Vi que conversamos sobre a sua avaliação e queria saber se posso te ajudar a dar o próximo passo. Posso continuar por aqui?',
-  followup_d2:
-    'Oi, {{1}}! Aqui é do consultório do Dr. Tiago. Passando para saber se ficou alguma dúvida sobre a sua avaliação ou sobre o procedimento. Estou à disposição para te ajudar. 😊',
-  followup_d7:
-    'Olá, {{1}}! Muitas pacientes do Dr. Tiago contam que o que mais mudou depois da blefaroplastia foi se olhar no espelho e ver um olhar descansado de novo. Se quiser, posso te ajudar a organizar a sua avaliação. Faz sentido para você?',
-  followup_d15:
-    'Oi, {{1}}! A agenda de avaliações do Dr. Tiago para as próximas semanas está sendo organizada. Se ainda fizer sentido para você, consigo verificar um horário. Posso pedir para a secretária te enviar as opções?',
-  followup_d30:
-    'Olá, {{1}}! Este é meu último contato por aqui para não te incomodar. 😊 Se em algum momento você quiser retomar a conversa sobre a sua avaliação com o Dr. Tiago, é só me chamar nesta conversa. Será um prazer te atender!',
-};
-
-// Mantém a assinatura antiga (compatível com o resto do código):
-// envia o texto correspondente ao "template" com as variáveis preenchidas
-export function sendTemplate(to, templateName, params = []) {
+// "Mensagem automática" — na Z-API sai como texto livre; na oficial, como
+// TEMPLATE aprovado (obrigatório para iniciar conversa fora da janela de 24h).
+export async function sendTemplate(to, templateName, params = [], lang = 'pt_BR') {
+  const cfg = await getConfig();
+  if (cfg.waProvider === 'meta') {
+    const name = META_TEMPLATE_NAMES[templateName] || templateName;
+    const components = params.length
+      ? [{ type: 'body', parameters: params.map((t) => ({ type: 'text', text: String(t) })) }]
+      : [];
+    return metaPost({
+      messaging_product: 'whatsapp',
+      to,
+      type: 'template',
+      template: { name, language: { code: lang }, components },
+    });
+  }
   let text = AUTO_TEXTS[templateName];
   if (!text) throw new Error(`Mensagem automática desconhecida: ${templateName}`);
   params.forEach((p, i) => { text = text.replaceAll(`{{${i + 1}}}`, String(p)); });
-  return sendText(to, text);
+  return zapiPost('send-text', { phone: String(to), message: text });
 }
 
-// ---- Janela de 24h: não existe na Z-API ------------------------------------
-export function insideWindow() {
-  return true;
+// Janela de 24h: só existe na API oficial. Na Z-API não há essa restrição.
+export async function insideWindow(lastInboundAt) {
+  const cfg = await getConfig();
+  if (cfg.waProvider !== 'meta') return true;
+  if (!lastInboundAt) return false;
+  return Date.now() - new Date(lastInboundAt).getTime() < 24 * 60 * 60 * 1000;
 }
 
 // ---- Autenticação do painel (JWT do Supabase Auth) ------------------------

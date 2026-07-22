@@ -39,7 +39,7 @@ export async function qualifyLead(lead, actor = 'human', { notifyPatient = true 
     });
   }
 
-  if (notifyPatient && insideWindow(lead.last_inbound_at)) {
+  if (notifyPatient && (await insideWindow(lead.last_inbound_at))) {
     const firstName = (lead.name || '').split(' ')[0] || 'Olá';
     const msg = `Perfeito, ${firstName}! 😊 Já passei o seu contato para a atendente do hospital — ela vai te chamar aqui no WhatsApp para passar a agenda, os valores e todos os detalhes da sua avaliação com o Dr. Tiago.`;
     await sendText(lead.wa_id, msg);
