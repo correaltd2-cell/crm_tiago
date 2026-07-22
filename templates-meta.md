@@ -54,3 +54,27 @@ Olá, {{1}}! Este é meu último contato por aqui para não te incomodar. 😊 S
 - Templates de MARKETING têm custo por envio e podem levar de minutos a horas para aprovar.
 - Se algum for reprovado, ajustar levemente o texto e reenviar (evitar promessas de resultado — o texto acima já respeita as regras de publicidade médica do CFM: sem antes/depois, sem preço, sem garantia de resultado).
 - O nome do template no Meta precisa ser idêntico ao usado no código (`followup_d2`, etc.).
+
+---
+
+## Templates de reativação por inatividade (para clientes em API Oficial)
+
+## 7. `reactivation_2h` — Categoria: MARKETING
+```
+Oi, {{1}}! Só checando por aqui, ficou alguma dúvida? 😊
+```
+
+## 8. `reactivation_24h` — Categoria: MARKETING
+```
+Olá, {{1}}! Continuo por aqui à disposição para te ajudar no que precisar.
+```
+
+## 9. `reactivation_72h` — Categoria: MARKETING
+```
+Oi, {{1}}! A consulta de avaliação é o passo mais seguro para cuidar da saúde e da estética dos seus olhos ao mesmo tempo. Ainda faz sentido para você?
+```
+
+## 10. `reactivation_15d` — Categoria: MARKETING
+```
+Olá, {{1}}! Este será meu último contato por aqui para não incomodar. A equipe continua à disposição sempre que você quiser retomar — é só chamar. 😊
+```

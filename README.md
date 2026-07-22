@@ -85,3 +85,25 @@ O sistema suporta os dois transportes, escolhidos em **Config IA → Integraçõ
 
   Por cliente, em Config IA → Integrações → API Oficial: cola o **App ID** e o **Configuration ID** (os mesmos da Alcance 360, reutilizáveis para todos os clientes) e clica em **Conectar número via Facebook**. O webhook (`https://SEU-PROJETO.vercel.app/api/webhook`) e o Verify Token continuam configurados uma vez no App Dashboard, compartilhados entre todos os clientes que usarem API Oficial nesse mesmo app.
   Templates (`templates-meta.md`) precisam ser submetidos e aprovados por WABA/cliente.
+
+
+## Reativação por inatividade (2h / 24h / 72h / 15 dias)
+
+Enquanto um lead está sendo atendido pela IA (etapas Novo Lead / Em Atendimento) e para de responder, o sistema reengaja sozinho, com mensagens **personalizadas pela IA** com base na conversa — editáveis em Config IA → "Reativação por inatividade":
+- **2h** sem resposta → toque leve
+- **24h** → reforça disponibilidade
+- **72h** → retoma o valor da consulta
+- **15 dias** → mensagem final, avisando que para de insistir mas segue à disposição (não força nenhuma mudança de etapa — o card continua onde está)
+
+Se o paciente responder a qualquer momento, o relógio zera e o ciclo recomeça do zero na próxima vez que ficar em silêncio.
+
+### ⚠️ Importante: frequência do cron
+
+O endpoint é `/api/cron-reactivation`, protegido pelo mesmo `CRON_SECRET`. Como o **plano Hobby da Vercel só executa cron nativo 1x por dia**, e aqui precisamos de checagem de hora em hora, use um agendador externo **gratuito**:
+
+1. Crie uma conta em **cron-job.org** (grátis).
+2. Novo cron job → URL: `https://SEU-PROJETO.vercel.app/api/cron-reactivation`
+3. Método: **POST**. Em Headers, adicione: `Authorization: Bearer SEU_CRON_SECRET` (o mesmo valor da env var da Vercel).
+4. Intervalo: a cada **30 ou 60 minutos**.
+
+(Se no futuro migrar para o plano Pro da Vercel, pode trocar para um cron nativo em `vercel.json` com schedule `"*/30 * * * *"` e remover o agendador externo.)

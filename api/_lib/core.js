@@ -107,6 +107,14 @@ export const AUTO_TEXTS = {
     'Oi, {{1}}! A agenda de avaliações para as próximas semanas está sendo organizada. Se ainda fizer sentido para você, consigo verificar um horário. Posso pedir para a atendente te enviar as opções?',
   followup_d30:
     'Olá, {{1}}! Este é meu último contato por aqui para não te incomodar. 😊 Se em algum momento você quiser retomar a conversa, é só me chamar nesta conversa. Será um prazer te atender!',
+  reactivation_2h:
+    'Oi, {{1}}! Só checando por aqui, ficou alguma dúvida? 😊',
+  reactivation_24h:
+    'Olá, {{1}}! Continuo por aqui à disposição para te ajudar no que precisar.',
+  reactivation_72h:
+    'Oi, {{1}}! A consulta de avaliação é o passo mais seguro para cuidar da saúde e da estética dos seus olhos ao mesmo tempo. Ainda faz sentido para você?',
+  reactivation_15d:
+    'Olá, {{1}}! Este será meu último contato por aqui para não incomodar. A equipe continua à disposição sempre que você quiser retomar — é só chamar. 😊',
 };
 
 // Nomes de template esperados na Meta — precisam existir e estar APROVADOS
@@ -118,6 +126,10 @@ const META_TEMPLATE_NAMES = {
   followup_d7: 'followup_d7',
   followup_d15: 'followup_d15',
   followup_d30: 'followup_d30',
+  reactivation_2h: 'reactivation_2h',
+  reactivation_24h: 'reactivation_24h',
+  reactivation_72h: 'reactivation_72h',
+  reactivation_15d: 'reactivation_15d',
 };
 
 // ---- API pública unificada (o resto do código nunca sabe qual provedor está ativo) ----
@@ -183,8 +195,12 @@ export async function saveMessage(leadId, { direction, sender, body, waMessageId
     body,
     wa_message_id: waMessageId,
   });
-  await db
-    .from('crm_leads')
-    .update({ last_message_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-    .eq('id', leadId);
+  const updates = { last_message_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+  if (direction === 'out' && sender !== 'system') {
+    updates.last_outbound_at = new Date().toISOString();
+  }
+  if (direction === 'in') {
+    updates.reactivation_step = 0; // paciente respondeu — zera o relógio de reativação
+  }
+  await db.from('crm_leads').update(updates).eq('id', leadId);
 }

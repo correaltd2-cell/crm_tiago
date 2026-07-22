@@ -392,6 +392,11 @@ input,textarea,select{font-family:inherit;font-size:13.5px;color:var(--ink)}
     <div class="field"><label>D+7</label><textarea id="cfgFuD7" style="min-height:70px"></textarea></div>
     <div class="field"><label>D+15</label><textarea id="cfgFuD15" style="min-height:70px"></textarea></div>
     <div class="field"><label>D+30 (despedida)</label><textarea id="cfgFuD30" style="min-height:70px"></textarea></div>
+    <div class="d-section" style="border-top:1px solid var(--hairline)">Reativação por inatividade — instruções para a IA</div>
+    <div class="field"><label>2 horas sem resposta</label><textarea id="cfgReact2h" style="min-height:60px"></textarea></div>
+    <div class="field"><label>24 horas sem resposta</label><textarea id="cfgReact24h" style="min-height:60px"></textarea></div>
+    <div class="field"><label>72 horas sem resposta</label><textarea id="cfgReact72h" style="min-height:60px"></textarea></div>
+    <div class="field"><label>15 dias sem resposta (mensagem final)</label><textarea id="cfgReact15d" style="min-height:60px"></textarea></div>
     <div class="d-section" style="border-top:1px solid var(--hairline)">Integrações</div>
     <div class="field"><label>WhatsApp · Provedor</label>
       <select id="cfgWaProvider" onchange="waProviderChanged()">
@@ -1040,6 +1045,10 @@ function fillConfig(map){
   document.getElementById('cfgFuD7').value = map.followup_d7_prompt||'';
   document.getElementById('cfgFuD15').value = map.followup_d15_prompt||'';
   document.getElementById('cfgFuD30').value = map.followup_d30_prompt||'';
+  document.getElementById('cfgReact2h').value = map.reactivation_2h_prompt||'';
+  document.getElementById('cfgReact24h').value = map.reactivation_24h_prompt||'';
+  document.getElementById('cfgReact72h').value = map.reactivation_72h_prompt||'';
+  document.getElementById('cfgReact15d').value = map.reactivation_15d_prompt||'';
   document.getElementById('cfgWaProvider').value = map.wa_provider||'zapi';
   document.getElementById('cfgZapiInstance').value = map.zapi_instance_id||'';
   document.getElementById('cfgZapiToken').value = map.zapi_token||'';
@@ -1073,6 +1082,10 @@ async function saveConfig(){
     {key:'followup_d7_prompt', value:document.getElementById('cfgFuD7').value},
     {key:'followup_d15_prompt', value:document.getElementById('cfgFuD15').value},
     {key:'followup_d30_prompt', value:document.getElementById('cfgFuD30').value},
+    {key:'reactivation_2h_prompt', value:document.getElementById('cfgReact2h').value},
+    {key:'reactivation_24h_prompt', value:document.getElementById('cfgReact24h').value},
+    {key:'reactivation_72h_prompt', value:document.getElementById('cfgReact72h').value},
+    {key:'reactivation_15d_prompt', value:document.getElementById('cfgReact15d').value},
     {key:'wa_provider', value:document.getElementById('cfgWaProvider').value},
     {key:'zapi_instance_id', value:document.getElementById('cfgZapiInstance').value.trim()},
     {key:'zapi_token', value:document.getElementById('cfgZapiToken').value.trim()},
@@ -1161,6 +1174,12 @@ async function analyzePrompts(){
       d7: document.getElementById('cfgFuD7').value,
       d15: document.getElementById('cfgFuD15').value,
       d30: document.getElementById('cfgFuD30').value,
+    },
+    reactivation: {
+      h2: document.getElementById('cfgReact2h').value,
+      h24: document.getElementById('cfgReact24h').value,
+      h72: document.getElementById('cfgReact72h').value,
+      d15: document.getElementById('cfgReact15d').value,
     }
   });
   btn.disabled = false; btn.textContent = '🔍 Analisar prompts com IA';
