@@ -250,7 +250,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
     const req = r.request();
     const u = new URL(req.url());
     const json = (b) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
-    if (u.pathname.endsWith(':batchWrite')) {
+    if (u.pathname.endsWith(':commit')) {
       for (const w of JSON.parse(req.postData()).writes) {
         const parts = w.update.name.split('/documents/')[1].split('/');
         (store[parts[0]] = store[parts[0]] || {})[parts[1]] = w.update.fields;

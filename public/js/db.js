@@ -122,14 +122,15 @@
   function fsDelete(table, id) {
     return fs('/' + table + '/' + encodeURIComponent(id), { method: 'DELETE' });
   }
-  // carga em lote (máx. 500 escritas por chamada) — usada na primeira instalação
+  // carga em lote via :commit (máx. 500 escritas; :batchWrite exige IAM e
+  // não funciona com regras + chave de API) — usada na primeira instalação
   async function fsBatchSet(table, rows) {
     const pk = PK[table] || 'id';
     for (let i = 0; i < rows.length; i += 400) {
       const writes = rows.slice(i, i + 400).map(r => ({
         update: { name: docPath(table, r[pk]), fields: encFields(r) }
       }));
-      await fs(':batchWrite', { method: 'POST', body: { writes } });
+      await fs(':commit', { method: 'POST', body: { writes } });
     }
   }
 
