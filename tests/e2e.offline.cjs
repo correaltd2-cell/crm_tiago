@@ -48,8 +48,8 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
     let body = fs.readFileSync(f);
     if (f.endsWith('index.html'))
       body = Buffer.from(body.toString()
-        .replace("FIREBASE_PROJECT_ID: ''", "FIREBASE_PROJECT_ID: 'fake-proj'")
-        .replace("FIREBASE_API_KEY: ''", "FIREBASE_API_KEY: 'fake-key'"));
+        .replace(/FIREBASE_PROJECT_ID: '[^']*'/, "FIREBASE_PROJECT_ID: 'fake-proj'")
+        .replace(/FIREBASE_API_KEY: '[^']*'/, "FIREBASE_API_KEY: 'fake-key'"));
     res.writeHead(200, { 'Content-Type': MIME[path.extname(f)] || 'application/octet-stream' });
     res.end(body);
   }).listen(8899);
