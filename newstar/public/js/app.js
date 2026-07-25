@@ -1,0 +1,1055 @@
+/* NEW STAR — app principal: login, Hoje (rota), clientes, pedidos, dashboard,
+ * despesas e área administrativa do gestor. */
+(function () {
+  'use strict';
+  const { $, $$, el, escH, toast, modal, confirmar, dataBR, hojeISO, mesISO, baixar } = window.NSUI;
+  const C = window.NSCalc, DB = window.NSDB, R = window.NSRota;
+
+  // ================= SESSÃO / LOGIN =================
+  let session = JSON.parse(localStorage.getItem('ns_session') || 'null');
+  let verRepId = localStorage.getItem('ns_ver_rep') || null; // seletor do gestor
+
+  async function sha256(txt) {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(txt));
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  function sessao() {
+    const eu = session ? DB.byId('representantes', session.repId) : null;
+    if (!eu) return null;
+    let rep = eu;
+    if (eu.papel === 'gestor' && verRepId && verRepId !== 'todos')
+      rep = DB.byId('representantes', verRepId) || eu;
+    return { eu, rep, papel: eu.papel, consolidado: eu.papel === 'gestor' && verRepId === 'todos' };
+  }
+
+  async function telaLogin(msg) {
+    const email = el('input', { class: 'input big', type: 'email', placeholder: 'E-mail', autocomplete: 'username' });
+    const senha = el('input', { class: 'input big', type: 'password', placeholder: 'Senha', autocomplete: 'current-password' });
+    const box = el('div', { class: 'login-box' },
+      el('div', { class: 'login-logo' }, '⭐'),
+      el('h1', null, 'New Star'),
+      el('p', { class: 'sub' }, 'Gestão do representante + talão digital'),
+      msg ? el('p', { class: 'aviso' }, msg) : null,
+      email, senha,
+      el('button', { class: 'btn big w100 mt8', onclick: entrar }, 'Entrar'));
+    $('#view').innerHTML = ''; $('#view').appendChild(box);
+    $('#topbar').style.display = 'none'; $('#tabs').style.display = 'none';
+
+    async function entrar() {
+      const em = email.value.trim().toLowerCase();
+      if (!em || !senha.value) return toast('Informe e-mail e senha.', 'erro');
+      if (!DB.all('representantes').length && navigator.onLine && DB.configured()) {
+        try { await DB.pullAll(); } catch (e) {}
+      }
+      const rep = DB.all('representantes').find(r => (r.email || '').toLowerCase() === em && r.ativo !== false);
+      if (!rep) return toast('Usuário não encontrado' + (navigator.onLine ? '.' : ' no cache offline — conecte uma vez.'), 'erro');
+      if (rep.senha_hash === 'PLACEHOLDER') return definirSenha(rep, senha.value);
+      const h = await sha256(senha.value);
+      if (h !== rep.senha_hash) return toast('Senha incorreta.', 'erro');
+      autenticar(rep);
+    }
+
+    function definirSenha(rep, senhaDigitada) {
+      const s1 = el('input', { class: 'input big', type: 'password', placeholder: 'Nova senha (mín. 6)', value: senhaDigitada || '' });
+      const s2 = el('input', { class: 'input big', type: 'password', placeholder: 'Repita a nova senha' });
+      const m = modal(el('div', null,
+        el('p', { class: 'sub mb12' }, 'Primeiro acesso de ' + rep.nome + ': defina sua senha.'),
+        s1, el('div', { class: 'mt8' }, s2),
+        el('button', {
+          class: 'btn big w100 mt12', onclick: async () => {
+            if (s1.value.length < 6) return toast('Senha muito curta (mínimo 6).', 'erro');
+            if (s1.value !== s2.value) return toast('As senhas não conferem.', 'erro');
+            DB.update('representantes', rep.id, { senha_hash: await sha256(s1.value) });
+            m.fechar(); autenticar(rep);
+          }
+        }, 'Salvar senha e entrar')), { titulo: 'Definir senha' });
+    }
+  }
+
+  function autenticar(rep) {
+    session = { repId: rep.id };
+    localStorage.setItem('ns_session', JSON.stringify(session));
+    if (rep.papel === 'gestor' && !verRepId) {
+      const v = DB.all('representantes').find(r => r.papel === 'vendedor' && r.ativo !== false);
+      verRepId = v ? v.id : 'todos';
+      localStorage.setItem('ns_ver_rep', verRepId);
+    }
+    iniciarApp();
+  }
+
+  function sair() {
+    localStorage.removeItem('ns_session'); session = null;
+    location.reload();
+  }
+
+  // ================= SHELL =================
+  const VIEWS = { hoje: vHoje, clientes: vClientes, pedidos: vPedidos, dash: vDashboard, mais: vMais };
+  let viewAtual = 'hoje';
+
+  function iniciarApp() {
+    $('#topbar').style.display = ''; $('#tabs').style.display = '';
+    montarTopbar();
+    nav(viewAtual);
+    if (navigator.onLine && DB.configured()) DB.sync();
+  }
+
+  function montarTopbar() {
+    const s = sessao();
+    const top = $('#topbar');
+    top.innerHTML = '';
+    top.appendChild(el('div', { class: 'row space w100' },
+      el('div', { class: 'row gap8' },
+        el('strong', null, '⭐ New Star'),
+        s.papel === 'gestor' ? seletorRep() : el('span', { class: 'sub' }, s.eu.nome)),
+      el('button', { class: 'sync-chip', id: 'syncChip', onclick: mostrarSync }, '…')));
+    atualizarSyncChip(DB.status());
+  }
+
+  function seletorRep() {
+    const sel = el('select', {
+      class: 'sel-rep', onchange: () => {
+        verRepId = sel.value; localStorage.setItem('ns_ver_rep', verRepId); nav(viewAtual);
+      }
+    },
+      el('option', { value: 'todos', selected: verRepId === 'todos' ? '' : null }, '👥 Todos (consolidado)'),
+      DB.all('representantes').filter(r => r.papel === 'vendedor' && r.ativo !== false)
+        .map(r => el('option', { value: r.id, selected: verRepId === r.id ? '' : null }, r.nome)));
+    return sel;
+  }
+
+  function atualizarSyncChip(st) {
+    const chip = $('#syncChip');
+    if (!chip) return;
+    if (!st.configured) { chip.textContent = '⚙ configurar'; chip.className = 'sync-chip erro'; }
+    else if (!st.online) { chip.textContent = '📴 offline' + (st.pendentes ? ' · ' + st.pendentes : ''); chip.className = 'sync-chip off'; }
+    else if (st.syncing) { chip.textContent = '🔄 sincronizando…'; chip.className = 'sync-chip'; }
+    else if (st.pendentes) { chip.textContent = '⏳ ' + st.pendentes + ' pendente(s)'; chip.className = 'sync-chip off'; }
+    else { chip.textContent = '✅ sincronizado'; chip.className = 'sync-chip ok'; }
+  }
+  DB.onStatus(atualizarSyncChip);
+
+  function mostrarSync() {
+    const st = DB.status();
+    modal(el('div', null,
+      el('p', null, st.online ? '🟢 Online' : '🔴 Offline — tudo continua funcionando; as alterações entram na fila.'),
+      el('p', { class: 'sub mt4' }, 'Escrituras pendentes: ' + st.pendentes),
+      st.lastSync ? el('p', { class: 'sub' }, 'Última sincronização: ' + new Date(st.lastSync).toLocaleString('pt-BR')) : null,
+      st.erros.length ? el('div', { class: 'mt8' },
+        el('strong', null, '⚠ ' + st.erros.length + ' erro(s) de sincronização'),
+        el('div', { class: 'sub', style: 'max-height:120px;overflow:auto' },
+          st.erros.map(e => el('div', null, e.erro))),
+        el('button', { class: 'btn-link', onclick: () => { DB.clearErros(); } }, 'limpar erros')) : null,
+      el('button', {
+        class: 'btn w100 mt12', onclick: async () => { await DB.sync(); toast('Sincronização executada.'); }
+      }, 'Sincronizar agora')), { titulo: 'Sincronização' });
+  }
+
+  function nav(v) {
+    viewAtual = v;
+    $$('#tabs button').forEach(b => b.classList.toggle('ativo', b.dataset.v === v));
+    const view = $('#view');
+    view.innerHTML = '';
+    VIEWS[v](view);
+    view.scrollTop = 0;
+  }
+
+  // ================= HELPERS DE DOMÍNIO =================
+  function clientesDoRep(repId) {
+    return DB.all('clientes').filter(c => c.ativo !== false &&
+      (!repId || c.representante_id === repId));
+  }
+  function repEfetivoId() {
+    const s = sessao();
+    return s.consolidado ? null : s.rep.id;
+  }
+  function alertasCiclo(repId) {
+    const hoje = hojeISO();
+    const avisoDias = Number(DB.config('alerta_vencendo_dias', 7));
+    const out = { atrasados: [], vencendo: [] };
+    for (const c of clientesDoRep(repId)) {
+      if (!c.proxima_visita) continue;
+      const dif = Math.round((new Date(c.proxima_visita) - new Date(hoje)) / 86400000);
+      if (dif < 0) out.atrasados.push({ c, dias: -dif });
+      else if (dif <= avisoDias) out.vencendo.push({ c, dias: dif });
+    }
+    out.atrasados.sort((a, b) => b.dias - a.dias);
+    out.vencendo.sort((a, b) => a.dias - b.dias);
+    return out;
+  }
+  function visitouHoje(clienteId) {
+    return DB.all('visitas').find(v => v.cliente_id === clienteId && v.data === hojeISO() && v.realizada);
+  }
+
+  // ================= VIEW: HOJE =================
+  let rotaDia = null; // {sequencia, km_total, ...}
+
+  async function vHoje(view) {
+    const s = sessao();
+    if (s.consolidado) {
+      view.appendChild(el('p', { class: 'vazio' }, 'Selecione um representante no topo para ver a rota do dia.'));
+      return;
+    }
+    const rep = s.rep;
+    const hoje = hojeISO();
+    const ciclo = C.cicloDoDia(hoje, DB.config('ciclo_inicio', '2026-01-05'));
+    const doDia = clientesDoRep(rep.id).filter(c =>
+      c.semana_ciclo === ciclo.semana && c.dia_semana === ciclo.diaSemana);
+    const pendencias = DB.all('pendencias').filter(p => !p.resolvida_em &&
+      (p.representante_id === rep.id || !p.representante_id));
+    const pendentes = pendencias.map(p => DB.byId('clientes', p.cliente_id)).filter(Boolean)
+      .filter(c => !doDia.some(d => d.id === c.id));
+    const atrasados = alertasCiclo(rep.id).atrasados.map(a => a.c)
+      .filter(c => !doDia.some(d => d.id === c.id) && !pendentes.some(pp => pp.id === c.id));
+
+    // partida: pernoite de ontem > base do representante
+    const ontem = (() => { const d = new Date(hoje + 'T12:00:00'); d.setDate(d.getDate() - 1); return d.toISOString().slice(0, 10); })();
+    const pernoite = DB.all('pernoites').find(p => p.representante_id === rep.id && p.data === ontem);
+    const partida = pernoite
+      ? { lat: pernoite.lat, lng: pernoite.lng, label: '📍 Pernoite: ' + (pernoite.local_desc || 'posição salva') }
+      : (rep.base_lat != null ? { lat: rep.base_lat, lng: rep.base_lng, label: '🏠 Base: ' + (rep.cidade_base || '') } : null);
+
+    const rotaSalva = DB.all('rotas').find(r => r.representante_id === rep.id && r.data === hoje);
+
+    const head = el('div', null,
+      el('div', { class: 'row space' },
+        el('h2', null, 'Hoje · ' + dataBR(hoje)),
+        el('span', { class: 'badge' }, 'Semana ' + ciclo.semana + ' · ' +
+          ['', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'][ciclo.diaSemana])));
+    view.appendChild(head);
+
+    const listaIds = rotaSalva ? rotaSalva.sequencia.map(x => x.cliente_id) : doDia.map(c => c.id);
+    const listaCls = listaIds.map(id => DB.byId('clientes', id)).filter(Boolean);
+    // clientes do dia que não estão na rota salva (ex.: rota antiga) entram no fim
+    doDia.forEach(c => { if (!listaCls.some(x => x.id === c.id)) listaCls.push(c); });
+
+    const feitos = listaCls.filter(c => visitouHoje(c.id)).length;
+    const pct = listaCls.length ? Math.round(feitos / listaCls.length * 100) : 0;
+    view.appendChild(el('div', { class: 'progresso mt8' },
+      el('div', { class: 'progresso-info' }, `${feitos} de ${listaCls.length} visitados · ${pct}%`),
+      el('div', { class: 'progresso-barra' }, el('div', { class: 'progresso-fill', style: 'width:' + pct + '%' }))));
+
+    if (rotaSalva)
+      view.appendChild(el('div', { class: 'rota-info mt8' },
+        `🛣 ${rotaSalva.km_total} km · ⏱ ~${Math.round(rotaSalva.tempo_min)} min · 💰 ${C.fmtMoney(Number(rotaSalva.custo_estimado || 0))}` +
+        (rotaSalva.fonte_matriz === 'google' ? ' · Google' : ' · estimado (offline)')));
+
+    view.appendChild(el('div', { class: 'row gap8 mt8' },
+      el('button', { class: 'btn grow', onclick: otimizar }, rotaSalva ? '🔄 Reotimizar rota' : '⚡ Otimizar rota'),
+      el('button', { class: 'btn btn-sec', onclick: estouAqui }, '📍 Estou aqui')));
+    if (partida) view.appendChild(el('div', { class: 'sub mt4' }, 'Partida: ' + partida.label));
+    if (pendentes.length || atrasados.length)
+      view.appendChild(el('div', { class: 'sub mt4' },
+        `Fila de reencaixe: ${pendentes.length} pendente(s), ${atrasados.length} atrasado(s) — entram na rota se o desvio compensar.`));
+
+    const listaEl = el('div', { class: 'col gap8 mt12' });
+    view.appendChild(listaEl);
+    renderLista();
+
+    function renderLista() {
+      listaEl.innerHTML = '';
+      if (!listaCls.length) {
+        listaEl.appendChild(el('p', { class: 'vazio' }, 'Nenhum cliente programado para hoje. 🎉'));
+        return;
+      }
+      listaCls.forEach((c, i) => {
+        const v = visitouHoje(c.id);
+        const seqInfo = rotaSalva && rotaSalva.sequencia.find(x => x.cliente_id === c.id);
+        listaEl.appendChild(el('div', { class: 'card-visita' + (v ? ' feito' : '') },
+          el('div', { class: 'row space' },
+            el('div', null,
+              el('strong', null, `${i + 1}. ${c.nome}`),
+              el('div', { class: 'sub' }, [c.endereco, c.cidade].filter(Boolean).join(' · ') +
+                (seqInfo && seqInfo.reencaixado ? ' · 🔁 reencaixado' : '') +
+                (c.geocode_status !== 'preciso' ? ' · 📍' + c.geocode_status : ''))),
+            v ? el('span', { class: 'badge ok' }, v.fez_pedido ? '✅ pedido' : '✅ visitado') : null),
+          v ? null : el('div', { class: 'row gap8 mt8' },
+            el('button', { class: 'btn-mini', onclick: () => abrirGPS(c) }, '🗺 GPS'),
+            el('button', { class: 'btn-mini', onclick: () => window.NSPedido.novo(c) }, '🧾 Pedido'),
+            el('button', { class: 'btn-mini', onclick: () => visitaSemPedido(c) }, '✔ Sem pedido'),
+            el('button', { class: 'btn-mini vermelho', onclick: () => naoRealizada(c) }, '✖ Não realizada'))));
+      });
+    }
+
+    async function otimizar() {
+      const comCoord = listaCls.filter(c => !visitouHoje(c.id));
+      if (!partida && !comCoord.some(c => c.lat != null))
+        return toast('Sem coordenadas: geocodifique os clientes (Mais → Geocodificar) e defina a base do representante.', 'erro');
+      const start = partida || { lat: comCoord.find(c => c.lat != null).lat, lng: comCoord.find(c => c.lat != null).lng, label: '1º cliente' };
+      toast('Calculando melhor sequência…');
+      const rota = await R.montarRota({
+        partida: start,
+        fixos: doDia.filter(c => !visitouHoje(c.id)),
+        candidatos: pendentes.concat(atrasados),
+        hojeISO: hoje
+      });
+      R.salvarRota(rep.id, hoje, rota, start);
+      // sugestão de pernoite
+      const base = rep.base_lat != null ? { lat: rep.base_lat, lng: rep.base_lng } : null;
+      if (base && rota.ultimoPonto) {
+        const amanhaISO = (() => { const d = new Date(hoje + 'T12:00:00'); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); })();
+        const cicloAm = C.cicloDoDia(amanhaISO, DB.config('ciclo_inicio', '2026-01-05'));
+        const amanha = clientesDoRep(rep.id).filter(c => c.semana_ciclo === cicloAm.semana && c.dia_semana === cicloAm.diaSemana && c.lat != null)[0];
+        const dec = C.decidirPernoite({
+          ultimo: rota.ultimoPonto, base, primeiroAmanha: amanha ? { lat: amanha.lat, lng: amanha.lng } : null,
+          distMinKm: Number(DB.config('pernoite_dist_km', 150)),
+          economiaMinKm: Number(DB.config('pernoite_economia_km', 60)),
+          fator: Number(DB.config('haversine_fator', 1.3))
+        });
+        if (dec.sugerir)
+          toast(`🛏 Sugestão: pernoitar na região (volta = ${Math.round(dec.dVolta)} km; economia ~${Math.round(dec.economia)} km). Use "📍 Estou aqui" no fim do dia.`);
+      }
+      nav('hoje');
+    }
+
+    function estouAqui() {
+      if (!navigator.geolocation) return toast('GPS não disponível neste aparelho.', 'erro');
+      toast('Obtendo posição…');
+      navigator.geolocation.getCurrentPosition((pos) => {
+        const existente = DB.all('pernoites').find(p => p.representante_id === rep.id && p.data === hoje);
+        const body = { representante_id: rep.id, data: hoje, lat: pos.coords.latitude, lng: pos.coords.longitude, local_desc: 'GPS ' + new Date().toLocaleTimeString('pt-BR') };
+        if (existente) DB.update('pernoites', existente.id, body); else DB.insert('pernoites', body);
+        toast('📍 Posição salva! A rota de amanhã parte daqui.');
+      }, () => toast('Não foi possível obter o GPS.', 'erro'), { enableHighAccuracy: true, timeout: 15000 });
+    }
+
+    function visitaSemPedido(c) {
+      DB.insert('visitas', {
+        cliente_id: c.id, representante_id: rep.id, data: hoje,
+        realizada: true, fez_pedido: false, valor_pedido: 0
+      });
+      espelharVisitaLocal(c);
+      toast('Visita registrada (sem pedido).');
+      nav('hoje');
+    }
+
+    function naoRealizada(c) {
+      const motivos = [['fechado', '🚪 Fechado'], ['ausente', '👤 Responsável ausente'], ['sem_tempo', '⏰ Sem tempo'], ['reagendado', '📅 Reagendado']];
+      const m = modal(el('div', { class: 'col gap8' },
+        motivos.map(([val, rot]) => el('button', {
+          class: 'btn btn-sec big', onclick: async () => {
+            DB.insert('visitas', { cliente_id: c.id, representante_id: rep.id, data: hoje, realizada: false, fez_pedido: false, motivo: val, valor_pedido: 0 });
+            DB.insert('pendencias', { cliente_id: c.id, representante_id: rep.id, motivo: val, criada_em: new Date().toISOString() });
+            m.fechar();
+            toast(c.nome + ' entrou na fila de reencaixe. Recalculando a rota…');
+            const idx = listaCls.findIndex(x => x.id === c.id);
+            if (idx >= 0) listaCls.splice(idx, 1);
+            await otimizar(); // rota recalculada inteira, não apenas anexada
+          }
+        }, rot))), { titulo: 'Por que não visitou ' + c.nome + '?' });
+    }
+  }
+
+  function espelharVisitaLocal(c) {
+    const d = new Date(hojeISO() + 'T12:00:00');
+    d.setDate(d.getDate() + (c.frequencia_dias || 49));
+    DB.update('clientes', c.id, { ultima_visita: hojeISO(), proxima_visita: d.toISOString().slice(0, 10) });
+    DB.all('pendencias').filter(p => p.cliente_id === c.id && !p.resolvida_em)
+      .forEach(p => DB.update('pendencias', p.id, { resolvida_em: new Date().toISOString() }));
+  }
+
+  function abrirGPS(c) {
+    const dest = (c.lat != null && c.geocode_status !== 'falhou')
+      ? c.lat + ',' + c.lng
+      : encodeURIComponent(R.enderecoCompleto(c));
+    window.open('https://www.google.com/maps/dir/?api=1&destination=' + dest, '_blank');
+  }
+
+  // ================= VIEW: CLIENTES =================
+  function vClientes(view) {
+    const repId = repEfetivoId();
+    const busca = el('input', { class: 'input big', placeholder: 'Buscar por CNPJ, nome ou cidade…', oninput: render });
+    const lista = el('div', { class: 'col gap8 mt8' });
+    view.appendChild(el('h2', null, 'Clientes'));
+    view.appendChild(el('div', { class: 'mt8' }, busca));
+    view.appendChild(lista);
+
+    function render() {
+      const q = busca.value.trim().toLowerCase();
+      const qNum = q.replace(/\D/g, '');
+      lista.innerHTML = '';
+      const hoje = hojeISO();
+      const cls = clientesDoRep(repId).filter(c => {
+        if (!q) return true;
+        return (c.nome || '').toLowerCase().includes(q) || (c.cidade || '').toLowerCase().includes(q) ||
+          (qNum && (c.cnpj || '').replace(/\D/g, '').includes(qNum));
+      }).sort((a, b) => (a.nome || '').localeCompare(b.nome || '')).slice(0, 80);
+      for (const c of cls) {
+        let badge = null;
+        if (c.proxima_visita) {
+          const dif = Math.round((new Date(c.proxima_visita) - new Date(hoje)) / 86400000);
+          if (dif < 0) badge = el('span', { class: 'badge erro' }, (-dif) + 'd atrasado');
+          else if (dif <= Number(DB.config('alerta_vencendo_dias', 7))) badge = el('span', { class: 'badge aviso' }, 'vence em ' + dif + 'd');
+        }
+        lista.appendChild(el('button', { class: 'item-lista', onclick: () => fichaCliente(c.id) },
+          el('div', { class: 'row space w100' }, el('strong', null, c.nome), badge),
+          el('span', { class: 'sub' }, [c.cidade, c.uf].filter(Boolean).join(' - ') +
+            (c.rede ? ' · ' + c.rede : '') + ' · ciclo ' + (c.frequencia_dias || 49) + 'd')));
+      }
+      if (!cls.length) lista.appendChild(el('p', { class: 'vazio' }, 'Nenhum cliente encontrado.'));
+    }
+    render();
+  }
+
+  function fichaCliente(id) {
+    const c = DB.byId('clientes', id);
+    if (!c) return;
+    const s = sessao();
+    const visitas = DB.all('visitas').filter(v => v.cliente_id === id)
+      .sort((a, b) => (b.data || '').localeCompare(a.data || ''));
+    const pedidos = DB.all('pedidos').filter(p => p.cliente_id === id && p.status === 'concluido')
+      .sort((a, b) => (b.data || '').localeCompare(a.data || ''));
+    const sug = c.frequencia_auto !== false ? C.sugestaoFrequencia(visitas, c.frequencia_dias || 49) : null;
+
+    // linhas que trabalha (chips com toque)
+    const minhas = new Set(DB.all('cliente_produtos').filter(cp => cp.cliente_id === id).map(cp => cp.produto_id));
+    const porLinha = {};
+    DB.all('produtos').filter(p => p.ativo !== false).forEach(p => {
+      (porLinha[p.linha || 'Outros'] = porLinha[p.linha || 'Outros'] || []).push(p);
+    });
+    const linhasTrab = new Set(DB.all('produtos').filter(p => minhas.has(p.id)).map(p => p.linha || 'Outros'));
+    const upsell = Object.keys(porLinha).filter(l => !linhasTrab.has(l));
+
+    const chips = el('div', { class: 'chips mt4' },
+      DB.all('produtos').filter(p => p.ativo !== false)
+        .sort((a, b) => (a.linha || '').localeCompare(b.linha || ''))
+        .map(p => el('button', {
+          class: 'chip' + (minhas.has(p.id) ? ' ativo' : ''),
+          onclick: (e) => {
+            const btn = e.currentTarget;
+            if (minhas.has(p.id)) {
+              minhas.delete(p.id); btn.classList.remove('ativo');
+              DB.removeWhere('cliente_produtos',
+                'cliente_id=eq.' + id + '&produto_id=eq.' + p.id,
+                (r) => r.cliente_id === id && r.produto_id === p.id);
+            } else {
+              minhas.add(p.id); btn.classList.add('ativo');
+              DB.insert('cliente_produtos', { cliente_id: id, produto_id: p.id, adicionado_em: new Date().toISOString() });
+            }
+          }
+        }, (p.codigo ? p.codigo + ' ' : '') + p.nome + (p.variacao ? ' (' + p.variacao + ')' : ''))));
+
+    const dif = c.proxima_visita ? Math.round((new Date(c.proxima_visita) - new Date(hojeISO())) / 86400000) : null;
+
+    modal(el('div', null,
+      el('div', { class: 'sub' },
+        (c.cnpj ? 'CNPJ ' + c.cnpj + ' · ' : '') + [c.endereco, c.bairro, c.cidade, c.uf].filter(Boolean).join(', ')),
+      el('div', { class: 'sub mt4' },
+        'Contato: ' + (c.contato || '—') + ' · ' + (c.telefone || c.celular || '—') +
+        (c.rede ? ' · Rede ' + c.rede + (c.recebimento_dias ? ' (comissão +' + c.recebimento_dias + 'd)' : '') : '')),
+      el('div', { class: 'row gap8 mt8' },
+        el('button', { class: 'btn-mini', onclick: () => abrirGPS(c) }, '🗺 GPS (' + c.geocode_status + ')'),
+        el('button', { class: 'btn-mini', onclick: () => window.NSPedido.novo(c) }, '🧾 Novo pedido'),
+        s.papel === 'gestor' ? el('button', { class: 'btn-mini', onclick: () => editarCliente(c.id) }, '✏ Editar') : null),
+
+      el('h4', { class: 'mt12' }, 'Ciclo de visitas'),
+      el('div', { class: 'sub' },
+        `A cada ${c.frequencia_dias || 49} dias · última: ${dataBR(c.ultima_visita)} · próxima: ${dataBR(c.proxima_visita)}` +
+        (dif != null ? (dif < 0 ? ` · ⚠ ${-dif}d atrasado` : ` · vence em ${dif}d`) : '')),
+      el('label', { class: 'row gap8 mt4 sub' },
+        el('input', {
+          type: 'checkbox', checked: c.frequencia_auto !== false ? '' : null,
+          onchange: (e) => DB.update('clientes', c.id, { frequencia_auto: e.target.checked })
+        }), 'Ajuste automático de frequência'),
+      sug ? el('div', { class: 'sugestao mt8' },
+        el('span', null, `💡 ${sug.motivo} — ${sug.tipo} ciclo para ${sug.para} dias?`),
+        el('button', {
+          class: 'btn-mini', onclick: (e) => {
+            DB.update('clientes', c.id, { frequencia_dias: sug.para });
+            e.currentTarget.closest('.sugestao').remove();
+            toast('Ciclo ajustado para ' + sug.para + ' dias.');
+          }
+        }, 'Aceitar')) : null,
+
+      el('h4', { class: 'mt12' }, 'Linhas que trabalha (toque para marcar)'),
+      chips,
+      upsell.length ? el('div', { class: 'sugestao mt8' },
+        el('span', null, '🎯 Upsell: ainda não trabalha ' + upsell.join(', '))) : null,
+
+      el('h4', { class: 'mt12' }, 'Histórico'),
+      el('div', { class: 'col gap4' },
+        visitas.slice(0, 12).map(v => {
+          const ped = v.pedido_id ? DB.byId('pedidos', v.pedido_id) : null;
+          return el('div', { class: 'hist-linha' + (v.realizada ? '' : ' apagado') },
+            el('span', null, dataBR(v.data) + ' · ' + (v.realizada
+              ? (v.fez_pedido ? '🧾 pedido ' + C.fmtMoney(Number(v.valor_pedido)) +
+                (v.comissao_pct ? ` (${v.comissao_pct}%)` : '') +
+                (ped && (Number(ped.total_unid_dev_display) + Number(ped.total_unid_dev_quebrada)) > 0
+                  ? ` · dev ${ped.total_unid_dev_display}+${ped.total_unid_dev_quebrada}q` : '')
+                : 'visita sem pedido')
+              : '✖ não realizada (' + (v.motivo || '') + ')')),
+            ped ? el('button', { class: 'btn-link', onclick: () => window.NSPedido.abrir(ped.id) }, 'ver') : null);
+        }),
+        !visitas.length ? el('p', { class: 'vazio' }, 'Sem visitas registradas.') : null)
+    ), { titulo: c.nome });
+  }
+
+  // ================= VIEW: PEDIDOS =================
+  function vPedidos(view) {
+    const repId = repEfetivoId();
+    const busca = el('input', { class: 'input big', placeholder: 'Buscar por cliente, nº ou data (aaaa-mm-dd)…', oninput: render });
+    const lista = el('div', { class: 'col gap8 mt8' });
+    view.appendChild(el('div', { class: 'row space' },
+      el('h2', null, 'Pedidos'),
+      el('button', { class: 'btn', onclick: () => window.NSPedido.novo() }, '+ Novo Pedido')));
+    view.appendChild(el('div', { class: 'mt8' }, busca));
+    view.appendChild(lista);
+
+    function render() {
+      const q = busca.value.trim().toLowerCase();
+      lista.innerHTML = '';
+      const peds = DB.all('pedidos')
+        .filter(p => !repId || p.representante_id === repId)
+        .filter(p => p.status !== 'cancelado')
+        .filter(p => {
+          if (!q) return true;
+          const cli = DB.byId('clientes', p.cliente_id) || {};
+          return (cli.nome || '').toLowerCase().includes(q) ||
+            String(p.numero || '').includes(q) || (p.data || '').includes(q);
+        })
+        .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+        .slice(0, 60);
+      for (const p of peds) {
+        const cli = DB.byId('clientes', p.cliente_id) || {};
+        lista.appendChild(el('button', { class: 'item-lista', onclick: () => window.NSPedido.abrir(p.id) },
+          el('div', { class: 'row space w100' },
+            el('strong', null, 'Nº ' + (p.numero || '⏳') + ' · ' + (cli.nome || '—')),
+            el('strong', null, C.fmtMoney(Number(p.total_valor)))),
+          el('span', { class: 'sub' }, dataBR(p.data) + ' · ' + p.status +
+            (p.assinatura ? ' · ✍ assinado' : '') +
+            ` · ${p.total_unid_vendidas} un vendidas`)));
+      }
+      if (!peds.length) lista.appendChild(el('p', { class: 'vazio' }, 'Nenhum pedido.'));
+    }
+    render();
+  }
+
+  // ================= VIEW: DASHBOARD =================
+  function vDashboard(view) {
+    const repId = repEfetivoId();
+    const mes = mesISO();
+    const noMes = (iso) => (iso || '').slice(0, 7) === mes;
+    const doRep = (r) => !repId || r.representante_id === repId;
+
+    const visitas = DB.all('visitas').filter(doRep);
+    const vMes = visitas.filter(v => noMes(v.data));
+    const vHojeArr = visitas.filter(v => v.data === hojeISO() && v.realizada);
+    const realizadasMes = vMes.filter(v => v.realizada);
+    const comPedido = realizadasMes.filter(v => v.fez_pedido);
+    const faturamento = comPedido.reduce((s, v) => s + Number(v.valor_pedido || 0), 0);
+    const comissaoGerada = vMes.reduce((s, v) => s + Number(v.comissao_valor || 0), 0);
+    const aReceber = visitas.filter(v => noMes(v.comissao_recebimento_em))
+      .reduce((s, v) => s + Number(v.comissao_valor || 0), 0);
+    const despesas = DB.all('despesas').filter(doRep).filter(d => noMes(d.data));
+    const totDesp = despesas.reduce((s, d) => s + Number(d.valor || 0), 0);
+    const kmLanc = despesas.reduce((s, d) => s + Number(d.km || 0), 0);
+    const kmRotas = DB.all('rotas').filter(doRep).filter(r => noMes(r.data))
+      .reduce((s, r) => s + Number(r.km_total || 0), 0);
+    const conversao = realizadasMes.length ? Math.round(comPedido.length / realizadasMes.length * 100) : 0;
+    const alertas = alertasCiclo(repId);
+    const custoRealKm = kmLanc > 0 ? totDesp / kmLanc : null;
+
+    const kpi = (rot, val, cls) => el('div', { class: 'kpi ' + (cls || '') },
+      el('span', { class: 'kpi-rot' }, rot), el('strong', { class: 'kpi-val' }, val));
+
+    view.appendChild(el('h2', null, 'Dashboard · ' + mes.split('-').reverse().join('/')));
+    view.appendChild(el('div', { class: 'kpis mt8' },
+      kpi('Faturamento (vendido)', C.fmtMoney(faturamento)),
+      kpi('Comissão gerada', C.fmtMoney(comissaoGerada)),
+      kpi('A receber no mês', C.fmtMoney(aReceber), 'destaque'),
+      kpi('Despesas', C.fmtMoney(totDesp)),
+      kpi('Líquido (comissão − despesas)', C.fmtMoney(comissaoGerada - totDesp), comissaoGerada - totDesp >= 0 ? 'ok' : 'erro'),
+      kpi('Km rodado (rotas)', Math.round(kmRotas) + ' km'),
+      kpi('Custo real por km', custoRealKm ? C.fmtMoney(custoRealKm) : '—'),
+      kpi('Visitas hoje / mês', vHojeArr.length + ' / ' + realizadasMes.length),
+      kpi('Conversão visitas→pedidos', conversao + '%'),
+      kpi('Clientes ativos', String(clientesDoRep(repId).length)),
+      kpi('Atrasados', String(alertas.atrasados.length), alertas.atrasados.length ? 'erro' : 'ok'),
+      kpi('Vencendo', String(alertas.vencendo.length), alertas.vencendo.length ? 'aviso' : 'ok')));
+
+    // Ranking de linhas mais vendidas no mês
+    const pedMes = new Set(DB.all('pedidos').filter(doRep)
+      .filter(p => p.status === 'concluido' && noMes(p.data)).map(p => p.id));
+    const porLinha = {};
+    DB.all('pedido_itens').filter(i => pedMes.has(i.pedido_id)).forEach(i => {
+      const p = DB.byId('produtos', i.produto_id) || {};
+      const l = p.linha || 'Outros';
+      porLinha[l] = porLinha[l] || { un: 0, valor: 0 };
+      porLinha[l].un += Number(i.unid_vendidas || 0);
+      porLinha[l].valor += Number(i.valor_total || 0);
+    });
+    const ranking = Object.entries(porLinha).sort((a, b) => b[1].valor - a[1].valor);
+    view.appendChild(el('h3', { class: 'mt16' }, 'Linhas mais vendidas no mês'));
+    view.appendChild(el('div', { class: 'col gap4 mt8' },
+      ranking.length ? ranking.map(([l, d], i) => el('div', { class: 'hist-linha' },
+        el('span', null, `${i + 1}º ${l} — ${d.un} un`),
+        el('strong', null, C.fmtMoney(d.valor))))
+        : el('p', { class: 'vazio' }, 'Sem vendas no mês.')));
+
+    // Alertas de ciclo clicáveis
+    view.appendChild(el('h3', { class: 'mt16' }, 'Alertas de ciclo'));
+    const alertasEl = el('div', { class: 'col gap4 mt8' });
+    alertas.atrasados.slice(0, 20).forEach(a => alertasEl.appendChild(
+      el('button', { class: 'item-lista compacto', onclick: () => fichaCliente(a.c.id) },
+        el('span', null, '🔴 ' + a.c.nome), el('span', { class: 'sub' }, a.dias + 'd atrasado'))));
+    alertas.vencendo.slice(0, 20).forEach(a => alertasEl.appendChild(
+      el('button', { class: 'item-lista compacto', onclick: () => fichaCliente(a.c.id) },
+        el('span', null, '🟡 ' + a.c.nome), el('span', { class: 'sub' }, 'vence em ' + a.dias + 'd'))));
+    if (!alertas.atrasados.length && !alertas.vencendo.length)
+      alertasEl.appendChild(el('p', { class: 'vazio' }, 'Nenhum alerta. 👌'));
+    view.appendChild(alertasEl);
+  }
+
+  // ================= VIEW: MAIS (despesas + admin + config) =================
+  function vMais(view) {
+    const s = sessao();
+    view.appendChild(el('h2', null, 'Mais'));
+    const item = (rot, fn) => el('button', { class: 'item-lista mt8', onclick: fn }, el('strong', null, rot));
+    view.appendChild(item('💸 Despesas de estrada', telaDespesas));
+    view.appendChild(item('📍 Geocodificar clientes', telaGeocode));
+    if (s.papel === 'gestor') {
+      view.appendChild(el('h3', { class: 'mt16' }, 'Administração'));
+      view.appendChild(item('👥 Clientes (CRUD / Importar CSV / Exportar)', telaAdminClientes));
+      view.appendChild(item('💍 Produtos e preços', telaAdminProdutos));
+      view.appendChild(item('🧑‍💼 Vendedores', telaAdminVendedores));
+      view.appendChild(item('⚙ Configurações', telaAdminConfig));
+      view.appendChild(item('🗓 Redistribuir mês (virada de mês)', telaReplanejarMes));
+    }
+    view.appendChild(el('button', { class: 'btn-link mt16', onclick: sair }, 'Sair (' + s.eu.email + ')'));
+    view.appendChild(el('p', { class: 'sub mt8' }, 'New Star · PWA offline-first · v1'));
+  }
+
+  // ---------- Despesas ----------
+  function telaDespesas() {
+    const s = sessao();
+    const repId = s.consolidado ? null : s.rep.id;
+    const CATS = { combustivel: '⛽ Combustível', pedagio: '🛣 Pedágio', hospedagem: '🛏 Hospedagem', alimentacao: '🍽 Alimentação', manutencao: '🔧 Manutenção', outro: '📦 Outro' };
+    const wrap = el('div');
+    const m = modal(wrap, { titulo: 'Despesas de estrada', full: true });
+    render();
+    function render() {
+      wrap.innerHTML = '';
+      const mes = mesISO();
+      const desps = DB.all('despesas').filter(d => (!repId || d.representante_id === repId) && (d.data || '').slice(0, 7) === mes)
+        .sort((a, b) => (b.data || '').localeCompare(a.data || ''));
+      const tot = desps.reduce((s2, d) => s2 + Number(d.valor || 0), 0);
+      const porCat = {};
+      desps.forEach(d => porCat[d.categoria] = (porCat[d.categoria] || 0) + Number(d.valor || 0));
+      wrap.appendChild(el('div', { class: 'total-bar' }, el('span', null, 'Total do mês'), el('strong', null, C.fmtMoney(tot))));
+      wrap.appendChild(el('div', { class: 'sub mt4' },
+        Object.entries(porCat).map(([c2, v]) => CATS[c2] + ' ' + C.fmtMoney(v)).join(' · ') || 'Sem lançamentos.'));
+      wrap.appendChild(el('button', { class: 'btn w100 mt12', onclick: nova }, '+ Lançar despesa'));
+      wrap.appendChild(el('div', { class: 'col gap4 mt12' },
+        desps.map(d => el('div', { class: 'hist-linha' },
+          el('span', null, dataBR(d.data) + ' · ' + (CATS[d.categoria] || d.categoria) + (d.km ? ' · ' + d.km + ' km' : '') + (d.obs ? ' · ' + d.obs : '')),
+          el('div', { class: 'row gap8' },
+            el('strong', null, C.fmtMoney(Number(d.valor))),
+            el('button', { class: 'btn-icon', onclick: async () => { if (await confirmar('Excluir lançamento?')) { DB.remove('despesas', d.id); render(); } } }, '🗑'))))));
+    }
+    function nova() {
+      const cat = el('select', { class: 'input big' }, Object.entries(CATS).map(([v, r2]) => el('option', { value: v }, r2)));
+      const val = el('input', { class: 'input big', type: 'number', step: '0.01', inputmode: 'decimal', placeholder: 'Valor (R$)' });
+      const km = el('input', { class: 'input big', type: 'number', step: '1', inputmode: 'numeric', placeholder: 'Km rodado (opcional)' });
+      const dt = el('input', { class: 'input big', type: 'date', value: hojeISO() });
+      const obs = el('input', { class: 'input big', placeholder: 'Observação (opcional)' });
+      const mm = modal(el('div', { class: 'col gap8' }, cat, val, km, dt, obs,
+        el('button', {
+          class: 'btn big w100', onclick: () => {
+            if (!Number(val.value)) return toast('Informe o valor.', 'erro');
+            DB.insert('despesas', {
+              representante_id: repId || s.rep.id, data: dt.value, categoria: cat.value,
+              valor: Number(val.value), km: km.value ? Number(km.value) : null, obs: obs.value || null
+            });
+            mm.fechar(); render();
+          }
+        }, 'Salvar')), { titulo: 'Nova despesa' });
+    }
+  }
+
+  // ---------- Geocodificação em massa ----------
+  function telaGeocode() {
+    const repId = repEfetivoId();
+    const pend = clientesDoRep(repId).filter(c => c.geocode_status === 'pendente' || c.geocode_status === 'falhou' || c.lat == null);
+    const info = el('p', { class: 'sub mt8' }, pend.length + ' cliente(s) sem coordenada precisa.');
+    const barra = el('div', { class: 'sub mt8' });
+    const m = modal(el('div', null,
+      el('p', null, 'Geocodifica pelo endereço completo via Google (status por cliente: preciso / aproximado / falhou).'),
+      info, barra,
+      el('button', {
+        class: 'btn big w100 mt12', onclick: async (e) => {
+          if (!DB.config('google_maps_key', '')) return toast('Configure a chave do Google Maps em Admin → Configurações.', 'erro');
+          if (!navigator.onLine) return toast('Necessário estar online.', 'erro');
+          e.currentTarget.disabled = true;
+          const n = await R.geocodificarPendentes(pend, (f, t) => { barra.textContent = f + ' / ' + t + ' processados…'; });
+          toast(n + ' cliente(s) geocodificado(s).');
+          m.fechar();
+        }
+      }, '🌍 Geocodificar pendentes')), { titulo: 'Geocodificação em massa' });
+  }
+
+  // ---------- Admin: Clientes ----------
+  const CAMPOS_CLIENTE = ['nome', 'cnpj', 'inscricao_estadual', 'contato', 'email', 'telefone', 'celular',
+    'endereco', 'bairro', 'cidade', 'uf', 'cep', 'rede', 'semana_ciclo', 'dia_semana', 'frequencia_dias'];
+
+  function telaAdminClientes() {
+    const wrap = el('div');
+    const m = modal(wrap, { titulo: 'Admin · Clientes', full: true });
+    render();
+    function render() {
+      wrap.innerHTML = '';
+      const busca = el('input', { class: 'input big', placeholder: 'Buscar…', oninput: lista });
+      const listaEl = el('div', { class: 'col gap4 mt8' });
+      wrap.appendChild(el('div', { class: 'row gap8' },
+        el('button', { class: 'btn grow', onclick: () => editarCliente(null, render) }, '+ Novo'),
+        el('button', { class: 'btn btn-sec grow', onclick: importarCSV }, '⬆ Importar CSV'),
+        el('button', { class: 'btn btn-sec grow', onclick: exportarCSV }, '⬇ Exportar')));
+      wrap.appendChild(el('div', { class: 'mt8' }, busca));
+      wrap.appendChild(listaEl);
+      function lista() {
+        const q = busca.value.trim().toLowerCase();
+        listaEl.innerHTML = '';
+        DB.all('clientes').filter(c => !q || (c.nome || '').toLowerCase().includes(q) || (c.cidade || '').toLowerCase().includes(q))
+          .sort((a, b) => (a.nome || '').localeCompare(b.nome || '')).slice(0, 100)
+          .forEach(c => listaEl.appendChild(el('div', { class: 'hist-linha' },
+            el('span', null, (c.ativo === false ? '🚫 ' : '') + c.nome + ' · ' + (c.cidade || '') +
+              ' · S' + (c.semana_ciclo || '?') + 'D' + (c.dia_semana || '?')),
+            el('button', { class: 'btn-link', onclick: () => editarCliente(c.id, render) }, 'editar'))));
+      }
+      lista();
+    }
+    function exportarCSV() {
+      const linhas = [CAMPOS_CLIENTE.concat(['recebimento_dias', 'geocode_status', 'ultima_visita', 'proxima_visita'])];
+      DB.all('clientes').forEach(c => linhas.push(linhas[0].map(k => c[k])));
+      baixar(new Blob(['﻿' + C.toCSV(linhas)], { type: 'text/csv;charset=utf-8' }), 'clientes-newstar.csv');
+    }
+    function importarCSV() {
+      const file = el('input', { type: 'file', accept: '.csv,text/csv', class: 'input big' });
+      const mm = modal(el('div', null,
+        el('p', { class: 'sub' }, 'CSV com cabeçalho (separador ; ou ,). Na próxima tela você mapeia as colunas.'),
+        el('div', { class: 'mt8' }, file)), { titulo: 'Importar CSV' });
+      file.addEventListener('change', () => {
+        const f = file.files[0];
+        if (!f) return;
+        const reader = new FileReader();
+        reader.onload = () => { mm.fechar(); mapear(C.parseCSV(String(reader.result))); };
+        reader.readAsText(f, 'utf-8');
+      });
+    }
+    function mapear(linhas) {
+      if (linhas.length < 2) return toast('CSV vazio.', 'erro');
+      const header = linhas[0];
+      const sels = CAMPOS_CLIENTE.map(campo => {
+        const auto = header.findIndex(h2 => h2.trim().toLowerCase().replace(/\s/g, '_') === campo ||
+          h2.trim().toLowerCase().includes(campo.replace(/_/g, ' ')));
+        return el('select', { class: 'input', 'data-campo': campo },
+          el('option', { value: '-1' }, '(ignorar)'),
+          header.map((h2, i) => el('option', { value: String(i), selected: i === auto ? '' : null }, h2)));
+      });
+      const repSel = el('select', { class: 'input big' },
+        DB.all('representantes').filter(r => r.papel === 'vendedor').map(r => el('option', { value: r.id }, 'Atribuir a: ' + r.nome)));
+      const mm = modal(el('div', null,
+        el('p', { class: 'sub' }, linhas.length - 1 + ' linha(s). Mapeie as colunas:'),
+        repSel,
+        el('div', { class: 'col gap4 mt8' },
+          CAMPOS_CLIENTE.map((campo, i) => el('div', { class: 'row space gap8' },
+            el('span', { class: 'sub', style: 'min-width:130px' }, campo), sels[i]))),
+        el('button', {
+          class: 'btn big w100 mt12', onclick: () => {
+            let n = 0;
+            for (const linha of linhas.slice(1)) {
+              const row = { representante_id: repSel.value, ativo: true, geocode_status: 'pendente' };
+              CAMPOS_CLIENTE.forEach((campo, i) => {
+                const idx = Number(sels[i].value);
+                if (idx >= 0 && linha[idx] != null && String(linha[idx]).trim() !== '') {
+                  let v = String(linha[idx]).trim();
+                  if (['semana_ciclo', 'dia_semana', 'frequencia_dias'].includes(campo)) v = parseInt(v, 10) || null;
+                  row[campo] = v;
+                }
+              });
+              if (!row.nome) continue;
+              if (row.rede && String(row.rede).toUpperCase().includes('CLAMED')) row.recebimento_dias = 45;
+              DB.insert('clientes', row); n++;
+            }
+            mm.fechar(); toast(n + ' cliente(s) importado(s).'); render();
+          }
+        }, 'Importar')), { titulo: 'Mapeamento de colunas', full: true });
+    }
+  }
+
+  function editarCliente(id, aoSalvar) {
+    const c = id ? DB.byId('clientes', id) : {};
+    const campos = {};
+    const inp = (campo, rot, tipo) => {
+      campos[campo] = el('input', { class: 'input', type: tipo || 'text', value: c[campo] != null ? c[campo] : '', placeholder: rot });
+      return el('label', { class: 'campo' }, el('span', { class: 'sub' }, rot), campos[campo]);
+    };
+    const repSel = el('select', { class: 'input' },
+      DB.all('representantes').filter(r => r.papel === 'vendedor')
+        .map(r => el('option', { value: r.id, selected: c.representante_id === r.id ? '' : null }, r.nome)));
+    const ativo = el('input', { type: 'checkbox', checked: c.ativo !== false ? '' : null });
+    const mm = modal(el('div', { class: 'col gap8' },
+      inp('nome', 'Nome *'), inp('cnpj', 'CNPJ/CPF'), inp('inscricao_estadual', 'Inscrição Estadual'),
+      inp('contato', 'Contato'), inp('email', 'E-mail', 'email'), inp('telefone', 'Telefone'), inp('celular', 'Celular'),
+      inp('endereco', 'Endereço'), inp('bairro', 'Bairro'), inp('cidade', 'Cidade'), inp('uf', 'UF'), inp('cep', 'CEP'),
+      inp('rede', 'Rede (ex.: Clamed)'), inp('recebimento_dias', 'Prazo comissão (dias — Clamed = 45)', 'number'),
+      inp('semana_ciclo', 'Semana do ciclo (1-7)', 'number'), inp('dia_semana', 'Dia (1=Seg…6=Sáb)', 'number'),
+      inp('frequencia_dias', 'Frequência (dias)', 'number'),
+      el('label', { class: 'campo' }, el('span', { class: 'sub' }, 'Representante'), repSel),
+      el('label', { class: 'row gap8' }, ativo, 'Ativo'),
+      el('button', {
+        class: 'btn big w100', onclick: () => {
+          if (!campos.nome.value.trim()) return toast('Nome é obrigatório.', 'erro');
+          const body = { representante_id: repSel.value, ativo: ativo.checked };
+          for (const [k, elInp] of Object.entries(campos)) {
+            let v = elInp.value.trim();
+            if (['semana_ciclo', 'dia_semana', 'frequencia_dias', 'recebimento_dias'].includes(k))
+              v = v === '' ? null : parseInt(v, 10);
+            body[k] = v === '' ? null : v;
+          }
+          if (body.rede && String(body.rede).toUpperCase().includes('CLAMED') && !body.recebimento_dias)
+            body.recebimento_dias = 45;
+          if (body.frequencia_dias == null) body.frequencia_dias = 49;
+          if (body.recebimento_dias == null) body.recebimento_dias = 0;
+          const antigo = id ? DB.byId('clientes', id) : null;
+          if (antigo && (antigo.endereco !== body.endereco || antigo.cidade !== body.cidade || antigo.cep !== body.cep))
+            body.geocode_status = 'pendente';
+          if (id) DB.update('clientes', id, body); else DB.insert('clientes', body);
+          mm.fechar(); toast('Cliente salvo.');
+          if (aoSalvar) aoSalvar();
+        }
+      }, 'Salvar')), { titulo: id ? 'Editar cliente' : 'Novo cliente', full: true });
+  }
+
+  // ---------- Admin: Produtos ----------
+  function telaAdminProdutos() {
+    const wrap = el('div');
+    const m = modal(wrap, { titulo: 'Admin · Produtos e preços', full: true });
+    render();
+    function render() {
+      wrap.innerHTML = '';
+      wrap.appendChild(el('button', { class: 'btn w100', onclick: () => editar(null) }, '+ Novo produto'));
+      wrap.appendChild(el('div', { class: 'col gap4 mt8' },
+        DB.all('produtos').sort((a, b) => (a.codigo || '').localeCompare(b.codigo || ''))
+          .map(p => el('div', { class: 'hist-linha' },
+            el('span', null, (p.ativo === false ? '🚫 ' : '') + (p.codigo || '') + ' · ' + p.nome +
+              (p.variacao ? ' (' + p.variacao + ')' : '') +
+              ` · P=${p.unid_placa_p} G=${p.unid_placa_g} · ` +
+              (p.preco_simples != null ? C.fmtMoney(Number(p.preco_simples)) : '⚠ sem preço') + ' / ' +
+              (p.preco_lucro != null ? C.fmtMoney(Number(p.preco_lucro)) : '⚠ sem preço')),
+            el('button', { class: 'btn-link', onclick: () => editar(p) }, 'editar')))));
+    }
+    function editar(p) {
+      p = p || {};
+      const f = {};
+      const inp = (k, rot, tipo, step) => {
+        f[k] = el('input', { class: 'input', type: tipo || 'text', step: step || null, value: p[k] != null ? p[k] : '', placeholder: rot });
+        return el('label', { class: 'campo' }, el('span', { class: 'sub' }, rot), f[k]);
+      };
+      const ativo = el('input', { type: 'checkbox', checked: p.ativo !== false ? '' : null });
+      const mm = modal(el('div', { class: 'col gap8' },
+        inp('codigo', 'Código'), inp('nome', 'Nome *'), inp('variacao', 'Variação'), inp('linha', 'Linha de produto'),
+        inp('preco_simples', 'Preço Tabela Simples', 'number', '0.01'),
+        inp('preco_lucro', 'Preço Lucro Presumido', 'number', '0.01'),
+        inp('unid_placa_p', 'Unidades placa P *', 'number'), inp('unid_placa_g', 'Unidades placa G *', 'number'),
+        el('label', { class: 'row gap8' }, ativo, 'Ativo'),
+        el('button', {
+          class: 'btn big w100', onclick: () => {
+            if (!f.nome.value.trim() || !f.unid_placa_p.value || !f.unid_placa_g.value)
+              return toast('Nome e unidades por placa são obrigatórios.', 'erro');
+            const body = {
+              codigo: f.codigo.value.trim() || null, nome: f.nome.value.trim(),
+              variacao: f.variacao.value.trim() || null, linha: f.linha.value.trim() || null,
+              preco_simples: f.preco_simples.value === '' ? null : Number(f.preco_simples.value),
+              preco_lucro: f.preco_lucro.value === '' ? null : Number(f.preco_lucro.value),
+              unid_placa_p: parseInt(f.unid_placa_p.value, 10), unid_placa_g: parseInt(f.unid_placa_g.value, 10),
+              ativo: ativo.checked
+            };
+            if (p.id) DB.update('produtos', p.id, body); else DB.insert('produtos', body);
+            mm.fechar(); render();
+          }
+        }, 'Salvar')), { titulo: p.id ? 'Editar produto' : 'Novo produto', full: true });
+    }
+  }
+
+  // ---------- Admin: Vendedores ----------
+  function telaAdminVendedores() {
+    const wrap = el('div');
+    const m = modal(wrap, { titulo: 'Admin · Vendedores', full: true });
+    render();
+    function render() {
+      wrap.innerHTML = '';
+      wrap.appendChild(el('button', { class: 'btn w100', onclick: () => editar(null) }, '+ Novo vendedor'));
+      wrap.appendChild(el('div', { class: 'col gap4 mt8' },
+        DB.all('representantes').map(r => el('div', { class: 'hist-linha' },
+          el('span', null, (r.ativo === false ? '🚫 ' : '') + r.nome + ' (' + r.papel + ') · ' + r.email +
+            ` · ${r.comissao_pct_novo}%/${r.comissao_pct}% · ${C.fmtMoney(Number(r.custo_km || 0))}/km`),
+          el('button', { class: 'btn-link', onclick: () => editar(r) }, 'editar')))));
+    }
+    function editar(r) {
+      r = r || {};
+      const f = {};
+      const inp = (k, rot, tipo, step) => {
+        f[k] = el('input', { class: 'input', type: tipo || 'text', step: step || null, value: r[k] != null ? r[k] : '', placeholder: rot });
+        return el('label', { class: 'campo' }, el('span', { class: 'sub' }, rot), f[k]);
+      };
+      const papel = el('select', { class: 'input' },
+        el('option', { value: 'vendedor', selected: r.papel !== 'gestor' ? '' : null }, 'Vendedor'),
+        el('option', { value: 'gestor', selected: r.papel === 'gestor' ? '' : null }, 'Gestor'));
+      const ativo = el('input', { type: 'checkbox', checked: r.ativo !== false ? '' : null });
+      const mm = modal(el('div', { class: 'col gap8' },
+        inp('nome', 'Nome *'), inp('email', 'E-mail (login) *', 'email'), inp('contato', 'Contato (sai no talão)'),
+        inp('comissao_pct_novo', '% comissão cliente novo', 'number', '0.1'),
+        inp('comissao_pct', '% comissão reposição', 'number', '0.1'),
+        inp('custo_km', 'Custo por km (R$)', 'number', '0.01'),
+        inp('cidade_base', 'Cidade base'),
+        inp('base_lat', 'Base — latitude', 'number', 'any'), inp('base_lng', 'Base — longitude', 'number', 'any'),
+        el('label', { class: 'campo' }, el('span', { class: 'sub' }, 'Papel'), papel),
+        el('label', { class: 'row gap8' }, ativo, 'Ativo'),
+        el('div', { class: 'row gap8' },
+          r.id ? el('button', {
+            class: 'btn btn-sec grow', onclick: async () => {
+              if (await confirmar('Resetar a senha de ' + r.nome + '? Ele definirá uma nova no próximo login.')) {
+                DB.update('representantes', r.id, { senha_hash: 'PLACEHOLDER' });
+                toast('Senha resetada.');
+              }
+            }
+          }, '🔑 Resetar senha') : null,
+          el('button', {
+            class: 'btn grow', onclick: () => {
+              if (!f.nome.value.trim() || !f.email.value.trim()) return toast('Nome e e-mail obrigatórios.', 'erro');
+              const body = {
+                nome: f.nome.value.trim(), email: f.email.value.trim().toLowerCase(),
+                contato: f.contato.value.trim() || null,
+                comissao_pct_novo: Number(f.comissao_pct_novo.value) || 15,
+                comissao_pct: Number(f.comissao_pct.value) || 10,
+                custo_km: Number(f.custo_km.value) || 0.8,
+                cidade_base: f.cidade_base.value.trim() || null,
+                base_lat: f.base_lat.value === '' ? null : Number(f.base_lat.value),
+                base_lng: f.base_lng.value === '' ? null : Number(f.base_lng.value),
+                papel: papel.value, ativo: ativo.checked
+              };
+              if (r.id) DB.update('representantes', r.id, body);
+              else DB.insert('representantes', Object.assign({ senha_hash: 'PLACEHOLDER' }, body));
+              mm.fechar(); render();
+            }
+          }, 'Salvar'))), { titulo: r.id ? 'Editar vendedor' : 'Novo vendedor', full: true });
+    }
+  }
+
+  // ---------- Admin: Configurações ----------
+  function telaAdminConfig() {
+    const CHAVES = [
+      ['google_maps_key', 'Chave Google Maps (Geocoding/Distance Matrix/JS)', 'text'],
+      ['ciclo_inicio', 'Início do ciclo (segunda da semana 1, aaaa-mm-dd)', 'text'],
+      ['visitas_dia_min', 'Visitas por dia — mínimo', 'number'],
+      ['visitas_dia_max', 'Visitas por dia — máximo', 'number'],
+      ['pernoite_dist_km', 'Pernoite: distância mínima da base (km)', 'number'],
+      ['pernoite_economia_km', 'Pernoite: economia mínima (km)', 'number'],
+      ['reencaixe_detour_km', 'Reencaixe: desvio máximo (km)', 'number'],
+      ['alerta_vencendo_dias', 'Alerta "vence em Xd" — antecedência', 'number'],
+      ['haversine_fator', 'Fator haversine offline', 'number'],
+      ['velocidade_media_kmh', 'Velocidade média (km/h)', 'number']
+    ];
+    const inputs = {};
+    const condTxt = el('textarea', { class: 'input', rows: '3' },
+      (DB.config('condicoes_pagamento', []) || []).join('\n'));
+    const obsTxt = el('textarea', { class: 'input', rows: '5' }, DB.config('pdf_observacoes', ''));
+    const mm = modal(el('div', { class: 'col gap8' },
+      CHAVES.map(([k, rot, tipo]) => {
+        inputs[k] = el('input', { class: 'input', type: tipo, step: 'any', value: String(DB.config(k, '') ?? '') });
+        return el('label', { class: 'campo' }, el('span', { class: 'sub' }, rot), inputs[k]);
+      }),
+      el('label', { class: 'campo' }, el('span', { class: 'sub' }, 'Condições de pagamento (uma por linha)'), condTxt),
+      el('label', { class: 'campo' }, el('span', { class: 'sub' }, 'Observações padrão do PDF/talão'), obsTxt),
+      el('button', {
+        class: 'btn big w100', onclick: () => {
+          for (const [k, , tipo] of CHAVES) {
+            const v = inputs[k].value.trim();
+            DB.upsertConfig(k, tipo === 'number' ? Number(v) : v);
+          }
+          DB.upsertConfig('condicoes_pagamento', condTxt.value.split('\n').map(x => x.trim()).filter(Boolean));
+          DB.upsertConfig('pdf_observacoes', obsTxt.value.trim());
+          mm.fechar(); toast('Configurações salvas.');
+        }
+      }, 'Salvar configurações')), { titulo: 'Configurações', full: true });
+  }
+
+  // ---------- Redistribuição mensal (virada de mês) ----------
+  function telaReplanejarMes() {
+    const s = sessao();
+    if (s.consolidado) return toast('Selecione um representante no topo.', 'erro');
+    const rep = s.rep;
+    const m = modal(el('div', null,
+      el('p', null, 'Redistribui os clientes de ' + rep.nome + ' pelo ciclo de 7 semanas respeitando a frequência individual, ' +
+        DB.config('visitas_dia_min', 6) + '–' + DB.config('visitas_dia_max', 8) + ' visitas/dia e proximidade geográfica (menor km).'),
+      el('p', { class: 'aviso mt8' }, 'Isso regrava semana_ciclo e dia_semana de todos os clientes ativos do representante.'),
+      el('button', {
+        class: 'btn big w100 mt12', onclick: async () => {
+          const res = replanejar(rep.id);
+          m.fechar();
+          toast(`Redistribuído: ${res.n} clientes em ${res.dias} dias úteis (média ${res.media}/dia).`);
+        }
+      }, '🗓 Redistribuir agora')), { titulo: 'Virada de mês' });
+
+    function replanejar(repId) {
+      const maxDia = Number(DB.config('visitas_dia_max', 8));
+      const minDia = Number(DB.config('visitas_dia_min', 6));
+      const cls = clientesDoRep(repId).slice();
+      // urgência: quem está mais perto de estourar o ciclo primeiro
+      cls.sort((a, b) => (a.proxima_visita || '9999').localeCompare(b.proxima_visita || '9999'));
+      const slots = []; // 7 semanas × 6 dias
+      for (let ss = 1; ss <= 7; ss++) for (let dd = 1; dd <= 6; dd++) slots.push({ s: ss, d: dd, membros: [] });
+      const alvo = Math.min(maxDia, Math.max(minDia, Math.ceil(cls.length / slots.length)));
+      const restantes = new Set(cls.map(c => c.id));
+      for (const slot of slots) {
+        if (!restantes.size) break;
+        // semente: mais urgente restante
+        const seed = cls.find(c2 => restantes.has(c2.id));
+        slot.membros.push(seed); restantes.delete(seed.id);
+        // vizinhos mais próximos da semente (haversine) até o alvo
+        while (slot.membros.length < alvo && restantes.size) {
+          let melhor = null, melhorD = Infinity;
+          for (const c2 of cls) {
+            if (!restantes.has(c2.id)) continue;
+            const d2 = (seed.lat != null && c2.lat != null)
+              ? C.haversineKm(seed, c2)
+              : (seed.cidade === c2.cidade ? 0.5 : 999);
+            if (d2 < melhorD) { melhorD = d2; melhor = c2; }
+          }
+          if (!melhor) break;
+          slot.membros.push(melhor); restantes.delete(melhor.id);
+        }
+      }
+      let n = 0, dias = 0;
+      for (const slot of slots) {
+        if (!slot.membros.length) continue;
+        dias++;
+        for (const c2 of slot.membros) { DB.update('clientes', c2.id, { semana_ciclo: slot.s, dia_semana: slot.d }); n++; }
+      }
+      return { n, dias, media: dias ? Math.round(n / dias * 10) / 10 : 0 };
+    }
+  }
+
+  // ================= BOOT =================
+  window.NSApp = {
+    sessao, nav,
+    aoConcluirPedido() { if (viewAtual === 'hoje' || viewAtual === 'pedidos') nav(viewAtual); }
+  };
+
+  document.addEventListener('DOMContentLoaded', async () => {
+    $$('#tabs button').forEach(b => b.addEventListener('click', () => nav(b.dataset.v)));
+    $('#fab').addEventListener('click', () => window.NSPedido.novo());
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+    if (!DB.configured()) {
+      $('#view').innerHTML = '<div class="login-box"><h1>⚙ Configuração</h1>' +
+        '<p class="sub">Preencha SUPABASE_URL e SUPABASE_ANON_KEY no bloco NS_CONFIG do index.html e rode os 3 SQLs (schema_v2 → migracao_clientes_v2 → update_v3) no Supabase.</p></div>';
+      $('#topbar').style.display = 'none'; $('#tabs').style.display = 'none';
+      return;
+    }
+    if (session && !DB.all('representantes').length && navigator.onLine) {
+      try { await DB.pullAll(); } catch (e) {}
+    }
+    if (session && DB.byId('representantes', session.repId)) iniciarApp();
+    else telaLogin();
+  });
+})();

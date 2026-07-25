@@ -1,0 +1,236 @@
+/* NEW STAR — teste E2E offline: login → novo pedido → itens → assinatura →
+ * conclusão → PDF, tudo sem backend (backend bloqueado = modo offline). */
+const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+
+const PUB = path.join(__dirname, '..', 'public');
+const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
+
+const REP_ID = '11111111-1111-4111-8111-111111111111';
+const CLI_ID = '22222222-2222-4222-8222-222222222222';
+const PROD_ID = '33333333-3333-4333-8333-333333333333';
+
+const seed = {
+  ns_c_representantes: [{
+    id: REP_ID, nome: 'Denilson', email: 'denilson@newstar.com.br',
+    senha_hash: sha256('123456'), papel: 'vendedor', contato: '(49) 99999-0000',
+    comissao_pct: 10, comissao_pct_novo: 15, custo_km: 0.8,
+    cidade_base: 'Chapecó', base_lat: -27.1, base_lng: -52.61, ativo: true
+  }],
+  ns_c_clientes: [{
+    id: CLI_ID, representante_id: REP_ID, nome: 'FARMACIA TESTE LTDA',
+    cnpj: '11.222.333/0001-44', cidade: 'Chapecó', uf: 'SC', rede: 'Clamed',
+    recebimento_dias: 45, semana_ciclo: 1, dia_semana: 1, frequencia_dias: 49,
+    geocode_status: 'pendente', ativo: true
+  }],
+  ns_c_produtos: [{
+    id: PROD_ID, codigo: '4109', nome: 'BRAG — Argolinha', variacao: null,
+    linha: 'Argolinhas', preco_simples: 12.60, preco_lucro: 14.50,
+    unid_placa_p: 48, unid_placa_g: 72, ativo: true
+  }],
+  ns_c_configuracoes: [
+    { chave: 'ciclo_inicio', valor: '2026-01-05' },
+    { chave: 'condicoes_pagamento', valor: ['À vista', '30 dias'] },
+    { chave: 'pdf_observacoes', valor: 'A troca de peças com defeito será efetuada mediante a guarda das partes.' }
+  ]
+};
+
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.png': 'image/png', '.webmanifest': 'application/manifest+json' };
+
+(async () => {
+  const server = http.createServer((req, res) => {
+    let f = path.join(PUB, req.url === '/' ? 'index.html' : req.url.split('?')[0]);
+    if (!fs.existsSync(f)) { res.writeHead(404); return res.end(); }
+    let body = fs.readFileSync(f);
+    if (f.endsWith('index.html'))
+      body = Buffer.from(body.toString()
+        .replace("SUPABASE_URL: ''", "SUPABASE_URL: 'https://fake.supabase.co'")
+        .replace("SUPABASE_ANON_KEY: ''", "SUPABASE_ANON_KEY: 'fake-key'"));
+    res.writeHead(200, { 'Content-Type': MIME[path.extname(f)] || 'application/octet-stream' });
+    res.end(body);
+  }).listen(8899);
+
+  const browser = await chromium.launch();
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  const erros = [];
+  page.on('pageerror', (e) => erros.push('pageerror: ' + e.message));
+  page.on('console', (m) => { if (m.type() === 'error' && !m.text().includes('fake.supabase')) erros.push('console: ' + m.text()); });
+  await page.route('**/fake.supabase.co/**', (r) => r.abort()); // backend fora do ar = offline
+
+  await page.addInitScript((s) => {
+    for (const [k, v] of Object.entries(s)) localStorage.setItem(k, JSON.stringify(v));
+    Object.defineProperty(navigator, 'onLine', { get: () => false }); // simula sem sinal
+  }, seed);
+
+  let ok = 0, fail = 0;
+  const check = (nome, cond) => { if (cond) { ok++; console.log('  ✓', nome); } else { fail++; console.error('  ✗', nome); } };
+
+  await page.goto('http://localhost:8899/');
+  await page.waitForSelector('.login-box input[type=email]');
+  check('tela de login aparece', true);
+
+  await page.fill('input[type=email]', 'denilson@newstar.com.br');
+  await page.fill('input[type=password]', '123456');
+  await page.click('text=Entrar');
+  await page.waitForSelector('#tabs', { state: 'visible' });
+  check('login offline com cache funciona', await page.isVisible('#topbar'));
+  check('chip mostra offline', (await page.textContent('#syncChip')).includes('offline') || (await page.textContent('#syncChip')).includes('pendente'));
+
+  // busca parcial de cliente por CNPJ
+  await page.click('#tabs button[data-v=clientes]');
+  await page.fill('#view input', '11222');
+  await page.waitForTimeout(150);
+  check('busca parcial por CNPJ encontra cliente', await page.isVisible('text=FARMACIA TESTE LTDA'));
+
+  // novo pedido pelo FAB
+  await page.click('#fab');
+  await page.waitForSelector('.ns-modal');
+  await page.fill('.ns-modal input', 'farm');
+  await page.click('.ns-modal .item-lista');
+  check('seleção de cliente carrega dados', await page.isVisible('text=Tabela de preço do pedido'));
+
+  // tabela Lucro Presumido → preço 14,50
+  await page.selectOption('.ns-modal select', '30 dias');
+  await page.click('text=Tabela Lucro Presumido');
+  await page.click('text=+ Adicionar produto');
+  const modalItem = page.locator('.ns-overlay').last().locator('.ns-modal');
+  await modalItem.waitFor();
+  check('produto lista preço da tabela Lucro (14,50)', (await modalItem.textContent()).includes('14,50'));
+  await modalItem.locator('.item-lista').click();
+
+  // placa P, dev display 5, quebrada 2 → 41 × 14,50 = 594,50
+  const steppers = modalItem.locator('.stepper');
+  const plus = async (i, n) => { for (let k = 0; k < n; k++) await steppers.nth(i).locator('button', { hasText: '+' }).click(); };
+  await plus(1, 5); await plus(2, 2);
+  const live = await page.textContent('.calc-live');
+  check('cálculo: 48 − 5 − 2 = 41 vendidas', live.includes('41'));
+  check('valor 41 × 14,50 = 594,50', live.replace(/ /g, ' ').includes('594,50'));
+  await modalItem.locator('button:has-text("Adicionar")').click();
+
+  await page.click('text=Conferir →');
+  const conf = await page.textContent('.ns-modal');
+  check('conferência mostra tabela e total', conf.includes('Lucro Presumido') && conf.replace(/ /g, ' ').includes('594,50'));
+
+  // assinatura no canvas
+  await page.click('text=Assinar →');
+  const cv = page.locator('.assinatura-cv');
+  const bb = await cv.boundingBox();
+  await page.mouse.move(bb.x + 30, bb.y + 100);
+  await page.mouse.down();
+  for (let i = 0; i < 12; i++) await page.mouse.move(bb.x + 30 + i * 18, bb.y + 100 + Math.sin(i) * 30);
+  await page.mouse.up();
+  await page.click('text=✓ Confirmar e concluir');
+  await page.waitForSelector('.sucesso-banner');
+  check('pedido concluído com assinatura', await page.isVisible('.sucesso-banner'));
+
+  // dados persistidos + comissão 15% (cliente novo) + prazo Clamed +45d
+  const dados = await page.evaluate(() => ({
+    pedido: JSON.parse(localStorage.getItem('ns_c_pedidos'))[0],
+    visita: JSON.parse(localStorage.getItem('ns_c_visitas'))[0],
+    itens: JSON.parse(localStorage.getItem('ns_c_pedido_itens')),
+    outbox: JSON.parse(localStorage.getItem('ns_outbox')).length,
+    cliProds: JSON.parse(localStorage.getItem('ns_c_cliente_produtos') || '[]')
+  }));
+  check('pedido salvo concluído, total 594,50', dados.pedido.status === 'concluido' && dados.pedido.total_valor === 594.5);
+  check('assinatura salva no pedido (PNG base64)', String(dados.pedido.assinatura || '').startsWith('data:image/png'));
+  check('visita com fez_pedido e valor vendido', dados.visita.fez_pedido === true && dados.visita.valor_pedido === 594.5);
+  check('comissão 15% no 1º pedido = 89,18', dados.visita.comissao_pct === 15 && dados.visita.comissao_valor === 89.18);
+  const dt = new Date(dados.pedido.data + 'T12:00:00'); dt.setDate(dt.getDate() + 45);
+  check('recebimento Clamed +45 dias', dados.visita.comissao_recebimento_em === dt.toISOString().slice(0, 10));
+  check('linha do produto virou "linha que trabalha"', dados.cliProds.some(cp => cp.produto_id === PROD_ID));
+  check('escrituras na fila offline (sync posterior)', dados.outbox >= 4);
+
+  // PDF gerado com assinatura embutida
+  const pdfInfo = await page.evaluate(async (pid) => {
+    const blob = await window.NSPedido.gerarPDF(pid);
+    const buf = new Uint8Array(await blob.arrayBuffer());
+    const head = String.fromCharCode(...buf.slice(0, 5));
+    let temImg = false;
+    const txt = new TextDecoder('latin1').decode(buf);
+    temImg = txt.includes('/DCTDecode') && txt.includes('/Im1');
+    return { size: buf.length, head, temImg, type: blob.type };
+  }, dados.pedido.id);
+  check('PDF válido (%PDF, application/pdf)', pdfInfo.head === '%PDF-' && pdfInfo.type === 'application/pdf');
+  check('PDF > 5KB com assinatura embutida (DCTDecode)', pdfInfo.size > 5000 && pdfInfo.temImg);
+
+  // estrutura interna do PDF: todos os offsets da xref apontam para "N 0 obj"
+  const xrefOk = await page.evaluate(async (pid) => {
+    const blob = await window.NSPedido.gerarPDF(pid);
+    const buf = new Uint8Array(await blob.arrayBuffer());
+    const txt = new TextDecoder('latin1').decode(buf);
+    const start = Number(txt.match(/startxref\n(\d+)\n%%EOF$/)[1]);
+    const tab = txt.slice(start);
+    const linhas = tab.split('\n').slice(3); // pula "xref", "0 N" e a entrada livre
+    let i = 1;
+    for (const l of linhas) {
+      const m2 = l.match(/^(\d{10}) 00000 n /);
+      if (!m2) break;
+      const off = Number(m2[1]);
+      if (!txt.slice(off).startsWith(i + ' 0 obj')) return 'offset errado obj ' + i;
+      i++;
+    }
+    return i > 5 ? 'ok' : 'poucos objetos: ' + i;
+  }, dados.pedido.id);
+  check('xref do PDF consistente (' + xrefOk + ')', xrefOk === 'ok');
+
+  // histórico: pedido consultável depois
+  await page.locator('.ns-overlay').last().locator('.btn-icon').first().click(); // fecha modal do pedido
+  await page.click('#tabs button[data-v=pedidos]');
+  check('pedido aparece no histórico', await page.isVisible('text=FARMACIA TESTE LTDA'));
+
+  // 2º pedido do mesmo cliente = reposição 10% (testar via lógica local)
+  const com2 = await page.evaluate(() => {
+    const rep = JSON.parse(localStorage.getItem('ns_c_representantes'))[0];
+    const jaComprou = JSON.parse(localStorage.getItem('ns_c_visitas'))
+      .some(v => v.fez_pedido && Number(v.valor_pedido) > 0);
+    return NSCalc.calcComissao({ valor: 1000, clienteNovo: !jaComprou, pctNovo: rep.comissao_pct_novo, pctReposicao: rep.comissao_pct, dataPedido: '2026-07-25', recebimentoDias: 45 });
+  });
+  check('reposição usa 10% (cliente já comprou)', com2.pct === 10 && com2.valor === 100);
+
+  // dashboard KPIs
+  await page.click('#tabs button[data-v=dash]');
+  const dash = (await page.textContent('#view')).replace(/ /g, ' ');
+  check('dashboard: faturamento 594,50', dash.includes('594,50'));
+  check('dashboard: comissão gerada 89,18', dash.includes('89,18'));
+  check('dashboard: ranking de linhas (Argolinhas)', dash.includes('Argolinhas'));
+
+  check('sem erros de JavaScript na página', erros.length === 0);
+  if (erros.length) console.error(erros.join('\n'));
+
+  // ===== Cenário 2: conexão volta → fila sincroniza na ordem certa =====
+  const dump = await page.evaluate(() => { const o = {}; for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); o[k] = localStorage.getItem(k); } return o; });
+  await page.close();
+
+  const reqs = [];
+  const page2 = await browser.newPage();
+  await page2.route('**/fake.supabase.co/**', (r) => {
+    const req = r.request();
+    reqs.push(req.method() + ' ' + new URL(req.url()).pathname.replace('/rest/v1/', '') +
+      (req.method() === 'PATCH' ? '?' + new URL(req.url()).searchParams.toString().slice(0, 20) : ''));
+    if (req.method() === 'GET') return r.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+    return r.fulfill({ status: 201, contentType: 'application/json', body: 'null' });
+  });
+  await page2.addInitScript((d) => { for (const [k, v] of Object.entries(d)) localStorage.setItem(k, v); }, dump);
+  await page2.goto('http://localhost:8899/');
+  await page2.waitForFunction(() => JSON.parse(localStorage.getItem('ns_outbox') || '[]').length === 0, null, { timeout: 15000 });
+  check('fila sincronizada ao voltar a conexão (outbox vazio)', true);
+  const posts = reqs.filter(x => !x.startsWith('GET'));
+  const iPostPed = posts.findIndex(x => x.startsWith('POST pedidos'));
+  const iPostIt = posts.findIndex(x => x.startsWith('POST pedido_itens'));
+  const iPostVis = posts.findIndex(x => x.startsWith('POST visitas'));
+  const iPatchPed = posts.findIndex(x => x.startsWith('PATCH pedidos'));
+  check('ordem do sync: pedido → itens → visita → conclusão',
+    iPostPed >= 0 && iPostIt > iPostPed && iPostVis > iPostIt && iPatchPed > iPostVis);
+  await page2.waitForFunction(() => document.querySelector('#syncChip') && document.querySelector('#syncChip').textContent.includes('sincronizado'), null, { timeout: 8000 }).catch(async () => {
+    console.log('    chip atual:', await page2.textContent('#syncChip').catch(() => '(sem chip)'));
+  });
+  check('chip confirma sincronizado', (await page2.textContent('#syncChip').catch(() => '')).includes('sincronizado'));
+
+  await browser.close();
+  server.close();
+  console.log(`\nE2E: ${ok} ok, ${fail} falhas`);
+  process.exit(fail ? 1 : 0);
+})().catch((e) => { console.error('ERRO FATAL:', e); process.exit(1); });
