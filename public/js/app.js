@@ -410,38 +410,73 @@
     window.open('https://www.google.com/maps/dir/?api=1&destination=' + dest, '_blank');
   }
 
-  // ================= VIEW: CLIENTES =================
+  // ================= VIEW: CLIENTES (farol de prazo) =================
+  // 🟢 dentro do prazo · 🟡 vence em até X dias · 🔴 visita atrasada · ⚪ sem visita registrada
+  let filtroClientes = 'todos';
+
+  function statusCliente(c, hoje, avisoDias) {
+    if (!c.proxima_visita_prevista)
+      return { k: 'cinza', dot: '⚪', rot: 'sem visita registrada', ordem: 3, sub: 9e9 };
+    const dif = Math.round((new Date(c.proxima_visita_prevista) - new Date(hoje)) / 86400000);
+    if (dif < 0) return { k: 'vermelho', dot: '🔴', rot: (-dif) + 'd atrasado', ordem: 0, sub: dif };
+    if (dif <= avisoDias) return { k: 'amarelo', dot: '🟡', rot: 'vence em ' + dif + 'd', ordem: 1, sub: dif };
+    return { k: 'verde', dot: '🟢', rot: 'em dia · próxima ' + dataBR(c.proxima_visita_prevista), ordem: 2, sub: dif };
+  }
+
   function vClientes(view) {
     const repId = repEfetivoId();
+    const hoje = hojeISO();
+    const avisoDias = Number(DB.config('alerta_vencendo_dias', 7));
     const busca = el('input', { class: 'input big', placeholder: 'Buscar por CNPJ, nome ou cidade…', oninput: render });
+    const chipsEl = el('div', { class: 'dias-scroll mt8' });
     const lista = el('div', { class: 'col gap8 mt8' });
     view.appendChild(el('h2', null, 'Clientes'));
     view.appendChild(el('div', { class: 'mt8' }, busca));
+    view.appendChild(chipsEl);
     view.appendChild(lista);
 
     function render() {
       const q = busca.value.trim().toLowerCase();
       const qNum = q.replace(/\D/g, '');
+      const todos = clientesDoRep(repId)
+        .map(c => ({ c, st: statusCliente(c, hoje, avisoDias) }))
+        .filter(({ c }) => {
+          if (!q) return true;
+          return (c.nome || '').toLowerCase().includes(q) || (c.cidade || '').toLowerCase().includes(q) ||
+            (qNum && (c.cnpj_cpf || '').replace(/\D/g, '').includes(qNum));
+        });
+      const cont = { todos: todos.length, vermelho: 0, amarelo: 0, verde: 0, cinza: 0 };
+      todos.forEach(({ st }) => cont[st.k]++);
+
+      chipsEl.innerHTML = '';
+      [['todos', 'Todos ' + cont.todos], ['vermelho', '🔴 Atrasados ' + cont.vermelho],
+       ['amarelo', '🟡 Vencendo ' + cont.amarelo], ['verde', '🟢 Em dia ' + cont.verde],
+       ['cinza', '⚪ Sem registro ' + cont.cinza]].forEach(([k, rot]) => {
+        chipsEl.appendChild(el('button', {
+          class: 'chip' + (filtroClientes === k ? ' ativo' : ''),
+          onclick: () => { filtroClientes = k; render(); }
+        }, rot));
+      });
+
+      // urgência primeiro: atrasados (mais atrasado no topo) → vencendo → em dia → sem registro
+      const vis = todos
+        .filter(({ st }) => filtroClientes === 'todos' || st.k === filtroClientes)
+        .sort((a, b) => (a.st.ordem - b.st.ordem) || (a.st.sub - b.st.sub) ||
+          (a.c.nome || '').localeCompare(b.c.nome || ''))
+        .slice(0, 300);
+
       lista.innerHTML = '';
-      const hoje = hojeISO();
-      const cls = clientesDoRep(repId).filter(c => {
-        if (!q) return true;
-        return (c.nome || '').toLowerCase().includes(q) || (c.cidade || '').toLowerCase().includes(q) ||
-          (qNum && (c.cnpj_cpf || '').replace(/\D/g, '').includes(qNum));
-      }).sort((a, b) => (a.nome || '').localeCompare(b.nome || '')).slice(0, 80);
-      for (const c of cls) {
-        let badge = null;
-        if (c.proxima_visita_prevista) {
-          const dif = Math.round((new Date(c.proxima_visita_prevista) - new Date(hoje)) / 86400000);
-          if (dif < 0) badge = el('span', { class: 'badge erro' }, (-dif) + 'd atrasado');
-          else if (dif <= Number(DB.config('alerta_vencendo_dias', 7))) badge = el('span', { class: 'badge aviso' }, 'vence em ' + dif + 'd');
-        }
-        lista.appendChild(el('button', { class: 'item-lista', onclick: () => fichaCliente(c.id) },
-          el('div', { class: 'row space w100' }, el('strong', null, c.nome), badge),
+      for (const { c, st } of vis) {
+        lista.appendChild(el('button', { class: 'item-lista st-' + st.k, onclick: () => fichaCliente(c.id) },
+          el('div', { class: 'row space w100' },
+            el('div', { class: 'row gap8' }, el('span', { class: 'st-dot' }, st.dot), el('strong', null, c.nome)),
+            el('span', { class: 'badge ' + (st.k === 'vermelho' ? 'erro' : st.k === 'amarelo' ? 'aviso' : st.k === 'verde' ? 'ok' : '') },
+              st.k === 'verde' ? 'em dia' : st.k === 'cinza' ? 'sem registro' : st.rot)),
           el('span', { class: 'sub' }, [c.cidade, c.uf].filter(Boolean).join(' - ') +
-            (c.rede ? ' · ' + c.rede : '') + ' · ciclo ' + (c.frequencia_dias || 60) + 'd')));
+            (c.rede ? ' · ' + c.rede : '') + ' · ciclo ' + (c.frequencia_dias || 60) + 'd' +
+            (st.k === 'verde' || st.k === 'cinza' ? '' : ' · ' + st.rot))));
       }
-      if (!cls.length) lista.appendChild(el('p', { class: 'vazio' }, 'Nenhum cliente encontrado.'));
+      if (!vis.length) lista.appendChild(el('p', { class: 'vazio' }, 'Nenhum cliente neste filtro.'));
     }
     render();
   }
