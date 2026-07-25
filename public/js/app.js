@@ -46,7 +46,7 @@
         }
       }, '⚙ Primeira instalação (carregar 255 clientes + catálogo)') : null);
     $('#view').innerHTML = ''; $('#view').appendChild(box);
-    $('#topbar').style.display = 'none'; $('#tabs').style.display = 'none';
+    $('#topbar').style.display = 'none'; $('#tabs').style.display = 'none'; $('#fab').style.display = 'none';
 
     async function entrar() {
       const em = email.value.trim().toLowerCase();
@@ -100,7 +100,7 @@
   let viewAtual = 'hoje';
 
   function iniciarApp() {
-    $('#topbar').style.display = ''; $('#tabs').style.display = '';
+    $('#topbar').style.display = ''; $('#tabs').style.display = ''; $('#fab').style.display = '';
     montarTopbar();
     nav(viewAtual);
     if (navigator.onLine && DB.configured()) DB.sync();
@@ -1060,7 +1060,7 @@
     if (!DB.configured()) {
       $('#view').innerHTML = '<div class="login-box"><h1>⚙ Configuração</h1>' +
         '<p class="sub">Preencha FIREBASE_PROJECT_ID e FIREBASE_API_KEY no bloco NS_CONFIG do index.html (projeto Firebase com Firestore ativado). Depois use "Primeira instalação" na tela de login para carregar os 255 clientes, o catálogo e os usuários.</p></div>';
-      $('#topbar').style.display = 'none'; $('#tabs').style.display = 'none';
+      $('#topbar').style.display = 'none'; $('#tabs').style.display = 'none'; $('#fab').style.display = 'none';
       return;
     }
     if (session && !DB.all('representantes').length && navigator.onLine) {
