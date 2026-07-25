@@ -75,10 +75,14 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   const seedInfo = await page.evaluate(() => ({
     clientes: window.NS_SEED.clientes.length,
     clamed: window.NS_SEED.clientes.filter(c => c.recebimento_dias === 45).length,
-    produtos: window.NS_SEED.produtos.length
+    produtos: window.NS_SEED.produtos.length,
+    roteirizados: window.NS_SEED.clientes.filter(c => c.semana_padrao != null).length,
+    comEndereco: window.NS_SEED.clientes.filter(c => c.endereco && c.cep).length
   }));
-  check('seed embutido: 255 clientes reais, 19 Clamed, 17 produtos',
-    seedInfo.clientes === 255 && seedInfo.clamed === 19 && seedInfo.produtos === 17);
+  check('seed: 314 clientes da lista nova, 25 Clamed, 17 produtos',
+    seedInfo.clientes === 314 && seedInfo.clamed === 25 && seedInfo.produtos === 17);
+  check('rotas organizadas: 294 roteirizados (7/dia) e todos com endereço',
+    seedInfo.roteirizados === 294 && seedInfo.comEndereco === 314);
 
   await page.fill('input[type=email]', 'denilson@newstar.com.br');
   await page.fill('input[type=password]', '123456');
@@ -291,10 +295,10 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   check('botão de primeira instalação aparece', await page3.isVisible('text=Primeira instalação'));
   await page3.click('text=Primeira instalação');
   await page3.waitForFunction(() =>
-    JSON.parse(localStorage.getItem('ns_c_clientes') || '[]').length === 255, null, { timeout: 20000 });
+    JSON.parse(localStorage.getItem('ns_c_clientes') || '[]').length === 314, null, { timeout: 20000 });
   await page3.waitForSelector('text=Primeira instalação', { state: 'detached', timeout: 10000 }); // tela re-renderizada
-  check('instalação carregou 255 clientes no Firestore e no cache',
-    (store.clientes && Object.keys(store.clientes).length === 255 &&
+  check('instalação carregou 314 clientes no Firestore e no cache',
+    (store.clientes && Object.keys(store.clientes).length === 314 &&
      store.produtos && Object.keys(store.produtos).length === 17 &&
      store.representantes && Object.keys(store.representantes).length === 2) === true);
 
@@ -310,13 +314,13 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   check('primeiro login define a senha e entra', true);
 
   await page3.click('#tabs button[data-v=clientes]');
-  await page3.fill('#view input', 'erechim');
-  await page3.waitForTimeout(200);
-  check('base real: busca por cidade acha farmácias de Erechim',
-    (await page3.textContent('#view')).includes('ERECHIM'));
+  await page3.fill('#view input', 'chapecó');
+  await page3.waitForTimeout(250);
+  check('base nova: busca por cidade acha clientes de Chapecó',
+    (await page3.textContent('#view')).toLowerCase().includes('chapec'));
   await page3.click('#tabs button[data-v=dash]');
   const dash3 = await page3.textContent('#view');
-  check('dashboard: 249 clientes ativos (255 − 6 inativos da migração)', dash3.includes('Clientes ativos249'));
+  check('dashboard: 294 clientes ativos (314 − 20 inativos da lista)', dash3.includes('Clientes ativos294'));
 
   await browser.close();
   server.close();
