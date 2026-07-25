@@ -670,7 +670,7 @@
     const s = sessao();
     view.appendChild(el('h2', null, 'Mais'));
     const item = (rot, fn) => el('button', { class: 'item-lista mt8', onclick: fn }, el('strong', null, rot));
-    view.appendChild(item('💸 Despesas de estrada', telaDespesas));
+    view.appendChild(item('💰 Financeiro — comissões a receber e despesas', telaFinanceiro));
     view.appendChild(item('📍 Geocodificar clientes', telaGeocode));
     if (s.papel === 'gestor') {
       view.appendChild(el('h3', { class: 'mt16' }, 'Administração'));
@@ -684,43 +684,124 @@
     view.appendChild(el('p', { class: 'sub mt8' }, 'New Star · PWA offline-first · v1'));
   }
 
-  // ---------- Despesas ----------
-  function telaDespesas() {
+  // ---------- Financeiro: comissões a receber + despesas (inclusive futuras) ----------
+  let mesFinOffset = 0;
+
+  function mesISOoffset(off) {
+    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + off);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  }
+  function rotuloMes(mes) {
+    const [a, m] = mes.split('-');
+    return ['', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho',
+      'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'][Number(m)] + ' ' + a;
+  }
+
+  const CATS_FIN = {
+    combustivel: '⛽ Combustível', pedagio: '🛣 Pedágio', hospedagem: '🛏 Hospedagem',
+    alimentacao: '🍽 Alimentação', manutencao: '🔧 Manutenção',
+    cartao_credito: '💳 Cartão de crédito', outro: '📦 Outro'
+  };
+
+  function telaFinanceiro() {
     const s = sessao();
     const repId = s.consolidado ? null : s.rep.id;
-    const CATS = { combustivel: '⛽ Combustível', pedagio: '🛣 Pedágio', hospedagem: '🛏 Hospedagem', alimentacao: '🍽 Alimentação', manutencao: '🔧 Manutenção', outro: '📦 Outro' };
+    const doRep = (r) => !repId || r.representante_id === repId;
     const wrap = el('div');
-    const m = modal(wrap, { titulo: 'Despesas de estrada', full: true });
+    const m = modal(wrap, { titulo: 'Financeiro', full: true });
     render();
+
+    function comissoesDoMes(mes) {
+      return DB.all('visitas').filter(doRep)
+        .filter(v => (v.comissao_recebimento_em || '').slice(0, 7) === mes && Number(v.comissao_valor) > 0)
+        .sort((a, b) => (a.comissao_recebimento_em || '').localeCompare(b.comissao_recebimento_em || ''));
+    }
+    function despesasDoMes(mes) {
+      return DB.all('despesas').filter(doRep)
+        .filter(d => (d.data_despesa || '').slice(0, 7) === mes)
+        .sort((a, b) => (b.data_despesa || '').localeCompare(a.data_despesa || ''));
+    }
+
     function render() {
       wrap.innerHTML = '';
-      const mes = mesISO();
-      const desps = DB.all('despesas').filter(d => (!repId || d.representante_id === repId) && (d.data_despesa || '').slice(0, 7) === mes)
-        .sort((a, b) => (b.data_despesa || '').localeCompare(a.data_despesa || ''));
-      const tot = desps.reduce((s2, d) => s2 + Number(d.valor || 0), 0);
-      const porCat = {};
-      desps.forEach(d => porCat[d.tipo] = (porCat[d.tipo] || 0) + Number(d.valor || 0));
-      wrap.appendChild(el('div', { class: 'total-bar' }, el('span', null, 'Total do mês'), el('strong', null, C.fmtMoney(tot))));
-      wrap.appendChild(el('div', { class: 'sub mt4' },
-        Object.entries(porCat).map(([c2, v]) => CATS[c2] + ' ' + C.fmtMoney(v)).join(' · ') || 'Sem lançamentos.'));
-      wrap.appendChild(el('button', { class: 'btn w100 mt12', onclick: nova }, '+ Lançar despesa'));
-      wrap.appendChild(el('div', { class: 'col gap4 mt12' },
-        desps.map(d => el('div', { class: 'hist-linha' },
-          el('span', null, dataBR(d.data_despesa) + ' · ' + (CATS[d.tipo] || d.tipo) + (d.km_rodado ? ' · ' + d.km_rodado + ' km' : '') + (d.descricao ? ' · ' + d.descricao : '')),
+      const mes = mesISOoffset(mesFinOffset);
+      const coms = comissoesDoMes(mes);
+      const desps = despesasDoMes(mes);
+      const totCom = coms.reduce((t, v) => t + Number(v.comissao_valor || 0), 0);
+      const totDesp = desps.reduce((t, d) => t + Number(d.valor || 0), 0);
+      const saldo = totCom - totDesp;
+
+      // navegação de mês
+      wrap.appendChild(el('div', { class: 'row space' },
+        el('button', { class: 'btn-mini', onclick: () => { mesFinOffset--; render(); } }, '←'),
+        el('h3', null, rotuloMes(mes) + (mesFinOffset === 0 ? ' · atual' : '')),
+        el('button', { class: 'btn-mini', onclick: () => { mesFinOffset++; render(); } }, '→')));
+
+      wrap.appendChild(el('div', { class: 'kpis mt8' },
+        el('div', { class: 'kpi destaque' },
+          el('span', { class: 'kpi-rot' }, 'Comissões a receber'),
+          el('strong', { class: 'kpi-val' }, C.fmtMoney(totCom))),
+        el('div', { class: 'kpi' },
+          el('span', { class: 'kpi-rot' }, 'Despesas do mês'),
+          el('strong', { class: 'kpi-val' }, C.fmtMoney(totDesp))),
+        el('div', { class: 'kpi ' + (saldo >= 0 ? 'ok' : 'erro'), style: 'grid-column:1/-1' },
+          el('span', { class: 'kpi-rot' }, 'Saldo projetado (comissões − despesas)'),
+          el('strong', { class: 'kpi-val' }, C.fmtMoney(saldo)))));
+
+      // visão dos próximos 6 meses
+      wrap.appendChild(el('h4', { class: 'mt12' }, 'A receber nos próximos meses'));
+      wrap.appendChild(el('div', { class: 'dias-scroll mt4' },
+        Array.from({ length: 7 }, (_, i) => {
+          const mIso = mesISOoffset(i);
+          const tot = comissoesDoMes(mIso).reduce((t, v) => t + Number(v.comissao_valor || 0), 0);
+          return el('button', {
+            class: 'chip' + (mIso === mes ? ' ativo' : ''),
+            onclick: () => { mesFinOffset = i; render(); }
+          }, mIso.split('-').reverse().join('/') + ' · ' + C.fmtMoney(tot));
+        })));
+
+      // comissões detalhadas
+      wrap.appendChild(el('h4', { class: 'mt12' }, `Comissões que caem em ${rotuloMes(mes)}`));
+      wrap.appendChild(el('div', { class: 'col gap4 mt4' },
+        coms.length ? coms.map(v => {
+          const cli = DB.byId('clientes', v.cliente_id) || {};
+          const clamed = Number(cli.recebimento_dias) > 0;
+          return el('div', { class: 'hist-linha' },
+            el('span', null, dataBR(v.comissao_recebimento_em) + ' · ' + (cli.nome || '—') +
+              ' · venda ' + dataBR(v.data_visita) + ' (' + C.fmtMoney(Number(v.valor_pedido)) + ' × ' + v.comissao_pct + '%)' +
+              (clamed ? ' · 🏷 ' + (cli.rede || 'prazo especial') : '')),
+            el('strong', null, C.fmtMoney(Number(v.comissao_valor))));
+        }) : el('p', { class: 'vazio' }, 'Nenhuma comissão prevista para este mês.')));
+
+      // despesas
+      wrap.appendChild(el('div', { class: 'row space mt12' },
+        el('h4', null, 'Despesas de ' + rotuloMes(mes)),
+        el('button', { class: 'btn', onclick: () => nova(mes) }, '+ Lançar despesa')));
+      wrap.appendChild(el('div', { class: 'col gap4 mt4' },
+        desps.length ? desps.map(d => el('div', { class: 'hist-linha' },
+          el('span', null, dataBR(d.data_despesa) + ' · ' + (CATS_FIN[d.tipo] || d.tipo) +
+            (d.km_rodado ? ' · ' + d.km_rodado + ' km' : '') + (d.descricao ? ' · ' + d.descricao : '')),
           el('div', { class: 'row gap8' },
             el('strong', null, C.fmtMoney(Number(d.valor))),
-            el('button', { class: 'btn-icon', onclick: async () => { if (await confirmar('Excluir lançamento?')) { DB.remove('despesas', d.id); render(); } } }, '🗑'))))));
+            el('button', { class: 'btn-icon', onclick: async () => { if (await confirmar('Excluir lançamento?')) { DB.remove('despesas', d.id); render(); } } }, '🗑'))))
+          : el('p', { class: 'vazio' }, 'Sem despesas lançadas neste mês.')));
     }
-    function nova() {
-      const cat = el('select', { class: 'input big' }, Object.entries(CATS).map(([v, r2]) => el('option', { value: v }, r2)));
+
+    function nova(mes) {
+      const hojeMes = mesISOoffset(0);
+      const dataPadrao = mes === hojeMes ? hojeISO() : mes + '-01';
+      const cat = el('select', { class: 'input big' }, Object.entries(CATS_FIN).map(([v, r2]) => el('option', { value: v }, r2)));
       const val = el('input', { class: 'input big', type: 'number', step: '0.01', inputmode: 'decimal', placeholder: 'Valor (R$)' });
       const km = el('input', { class: 'input big', type: 'number', step: '1', inputmode: 'numeric', placeholder: 'Km rodado (opcional)' });
-      const dt = el('input', { class: 'input big', type: 'date', value: hojeISO() });
-      const obs = el('input', { class: 'input big', placeholder: 'Observação (opcional)' });
-      const mm = modal(el('div', { class: 'col gap8' }, cat, val, km, dt, obs,
+      const dt = el('input', { class: 'input big', type: 'date', value: dataPadrao });
+      const obs = el('input', { class: 'input big', placeholder: 'Descrição (ex.: fatura do cartão, parcela…)' });
+      const mm = modal(el('div', { class: 'col gap8' },
+        el('p', { class: 'sub' }, 'Pode lançar em qualquer mês — inclusive futuros (contas a pagar).'),
+        cat, val, km, dt, obs,
         el('button', {
           class: 'btn big w100', onclick: () => {
             if (!Number(val.value)) return toast('Informe o valor.', 'erro');
+            if (!dt.value) return toast('Informe a data.', 'erro');
             DB.insert('despesas', {
               representante_id: repId || s.rep.id, data_despesa: dt.value, tipo: cat.value,
               valor: Number(val.value), km_rodado: km.value ? Number(km.value) : null, descricao: obs.value || null

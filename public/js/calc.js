@@ -33,12 +33,15 @@
     return t;
   }
 
-  // ---------- Comissão (espelho do trigger, p/ exibição offline) ----------
+  // ---------- Comissão ----------
+  // Regra de recebimento: venda do mês M é recebida no mês M+1 (dia 1);
+  // exceção: cliente com prazo próprio (rede Clamed = 45 dias corridos da venda).
   function calcComissao({ valor, clienteNovo, pctNovo, pctReposicao, dataPedido, recebimentoDias }) {
     const pct = clienteNovo ? (pctNovo ?? 15) : (pctReposicao ?? 10);
     const valorComissao = round2(valor * pct / 100);
     const d = new Date(dataPedido + 'T12:00:00');
-    d.setDate(d.getDate() + (recebimentoDias || 0));
+    if (recebimentoDias > 0) d.setDate(d.getDate() + recebimentoDias);
+    else d.setMonth(d.getMonth() + 1, 1); // mês seguinte ao da venda
     return { pct, valor: valorComissao, recebimentoEm: d.toISOString().slice(0, 10) };
   }
 
