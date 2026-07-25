@@ -5,6 +5,23 @@
   const { $, $$, el, escH, toast, modal, confirmar, dataBR, hojeISO, mesISO, baixar } = window.NSUI;
   const C = window.NSCalc, DB = window.NSDB, R = window.NSRota;
 
+  // ================= MARCA =================
+  const LOGO_SVG =
+    '<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+    '<defs><linearGradient id="nsgrad" x1="0" y1="0" x2="1" y2="1">' +
+    '<stop offset="0" stop-color="var(--ouro-claro)"/><stop offset=".55" stop-color="var(--ouro)"/>' +
+    '<stop offset="1" stop-color="var(--ouro-escuro)"/></linearGradient></defs>' +
+    '<path d="M32 3 C34.6 20.5 43.5 29.4 61 32 C43.5 34.6 34.6 43.5 32 61 C29.4 43.5 20.5 34.6 3 32 C20.5 29.4 29.4 20.5 32 3 Z" fill="url(#nsgrad)"/>' +
+    '<path d="M51 6 C51.9 11.4 55.1 14.6 60.5 15.5 C55.1 16.4 51.9 19.6 51 25 C50.1 19.6 46.9 16.4 41.5 15.5 C46.9 14.6 50.1 11.4 51 6 Z" fill="url(#nsgrad)" opacity=".8"/>' +
+    '<path d="M30 20 C31 26.5 34.5 30 41 31 C34.5 32 31 35.5 30 42 C29 35.5 25.5 32 19 31 C25.5 30 29 26.5 30 20 Z" fill="rgba(255,255,255,.35)"/>' +
+    '</svg>';
+  function logoMarca(soIcone) {
+    const { el } = window.NSUI;
+    const span = el('span', { class: 'logo-mark', html: LOGO_SVG });
+    if (!soIcone) span.appendChild(el('strong', null, 'New Star'));
+    return span;
+  }
+
   // ================= SESSÃO / LOGIN =================
   let session = JSON.parse(localStorage.getItem('ns_session') || 'null');
   let verRepId = localStorage.getItem('ns_ver_rep') || null; // seletor do gestor
@@ -27,7 +44,7 @@
     const email = el('input', { class: 'input big', type: 'email', placeholder: 'E-mail', autocomplete: 'username' });
     const senha = el('input', { class: 'input big', type: 'password', placeholder: 'Senha', autocomplete: 'current-password' });
     const box = el('div', { class: 'login-box' },
-      el('div', { class: 'login-logo' }, '⭐'),
+      el('div', { class: 'login-logo', html: LOGO_SVG }),
       el('h1', null, 'New Star'),
       el('p', { class: 'sub' }, 'Gestão do representante + talão digital'),
       msg ? el('p', { class: 'aviso' }, msg) : null,
@@ -44,7 +61,7 @@
             telaLogin();
           } catch (err) { toast('Falha na instalação: ' + err.message, 'erro'); e.currentTarget.disabled = false; }
         }
-      }, '⚙ Primeira instalação (carregar 255 clientes + catálogo)') : null);
+      }, '⚙ Primeira instalação (carregar ' + window.NS_SEED.clientes.length + ' clientes + catálogo)') : null);
     $('#view').innerHTML = ''; $('#view').appendChild(box);
     $('#topbar').style.display = 'none'; $('#tabs').style.display = 'none'; $('#fab').style.display = 'none';
 
@@ -117,7 +134,7 @@
     top.innerHTML = '';
     top.appendChild(el('div', { class: 'row space w100' },
       el('div', { class: 'row gap8' },
-        el('strong', null, '⭐ New Star'),
+        logoMarca(),
         s.papel === 'gestor' ? seletorRep() : el('span', { class: 'sub' }, s.eu.nome)),
       el('button', { class: 'sync-chip', id: 'syncChip', onclick: mostrarSync }, '…')));
     atualizarSyncChip(DB.status());
@@ -707,6 +724,7 @@
     const item = (rot, fn) => el('button', { class: 'item-lista mt8', onclick: fn }, el('strong', null, rot));
     view.appendChild(item('💰 Financeiro — comissões a receber e despesas', telaFinanceiro));
     view.appendChild(item('📍 Geocodificar clientes', telaGeocode));
+    view.appendChild(item('🎨 Aparência (cores do app)', telaAparencia));
     if (s.papel === 'gestor') {
       view.appendChild(el('h3', { class: 'mt16' }, 'Administração'));
       view.appendChild(item('👥 Clientes (CRUD / Importar CSV / Exportar)', telaAdminClientes));
@@ -1241,6 +1259,37 @@
     }
   }
 
+  // ================= APARÊNCIA (temas de cor) =================
+  const TEMAS = [
+    ['ouro', 'Ouro', '#d4af37'], ['esmeralda', 'Esmeralda', '#2ec27e'],
+    ['safira', 'Safira', '#4d8dff'], ['rubi', 'Rubi', '#f2545e'],
+    ['ametista', 'Ametista', '#a86bf5'], ['prata', 'Prata', '#aebdd6']
+  ];
+  function aplicarTema(t) {
+    if (t && t !== 'ouro') document.documentElement.dataset.tema = t;
+    else delete document.documentElement.dataset.tema;
+    localStorage.setItem('ns_tema', t || 'ouro');
+  }
+  function telaAparencia() {
+    const atual = localStorage.getItem('ns_tema') || 'ouro';
+    const grid = el('div', { class: 'tema-grid' });
+    const m = modal(el('div', null,
+      el('p', { class: 'sub mb12' }, 'Escolha a cor de destaque do aplicativo (vale para este aparelho).'),
+      grid), { titulo: '🎨 Aparência' });
+    TEMAS.forEach(([k, rot, cor]) => {
+      grid.appendChild(el('button', {
+        class: 'tema-opt' + ((localStorage.getItem('ns_tema') || 'ouro') === k ? ' ativo' : ''),
+        onclick: (e) => {
+          aplicarTema(k);
+          grid.querySelectorAll('.tema-opt').forEach(b => b.classList.remove('ativo'));
+          e.currentTarget.classList.add('ativo');
+          toast('Tema ' + rot + ' aplicado ✨');
+          montarTopbar();
+        }
+      }, el('span', { class: 'tema-bola', style: 'background:radial-gradient(circle at 32% 26%,#fff, ' + cor + ' 55%, #000c 140%)' }), rot));
+    });
+  }
+
   // ================= BOOT =================
   window.NSApp = {
     sessao, nav, recalcularCicloCliente,
@@ -1248,9 +1297,19 @@
   };
 
   document.addEventListener('DOMContentLoaded', async () => {
+    aplicarTema(localStorage.getItem('ns_tema') || 'ouro');
     $$('#tabs button').forEach(b => b.addEventListener('click', () => nav(b.dataset.v)));
     $('#fab').addEventListener('click', () => window.NSPedido.novo());
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+    if ('serviceWorker' in navigator) {
+      // autoatualização: quando uma versão nova assume, recarrega uma única vez
+      const tinhaControlador = !!navigator.serviceWorker.controller;
+      let recarregou = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!tinhaControlador || recarregou) return;
+        recarregou = true; location.reload();
+      });
+      navigator.serviceWorker.register('sw.js').then(r => { try { r.update(); } catch (e) {} }).catch(() => {});
+    }
     if (!DB.configured()) {
       $('#view').innerHTML = '<div class="login-box"><h1>⚙ Configuração</h1>' +
         '<p class="sub">Preencha FIREBASE_PROJECT_ID e FIREBASE_API_KEY no bloco NS_CONFIG do index.html (projeto Firebase com Firestore ativado). Depois use "Primeira instalação" na tela de login para carregar os 255 clientes, o catálogo e os usuários.</p></div>';

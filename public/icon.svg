@@ -1,4 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="96" fill="#16233b"/>
-  <path d="M256 96l38.8 106.7 113.5 4.1-89.4 70 31.2 109.2L256 322.6 161.9 386l31.2-109.2-89.4-70 113.5-4.1z" fill="#c9a227"/>
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f5e3a0"/><stop offset=".55" stop-color="#d4af37"/><stop offset="1" stop-color="#8f7114"/>
+    </linearGradient>
+    <radialGradient id="bg" cx=".85" cy=".05" r="1.2">
+      <stop offset="0" stop-color="#1b2647"/><stop offset=".5" stop-color="#0c1226"/><stop offset="1" stop-color="#070b16"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" rx="110" fill="url(#bg)"/>
+  <path d="M256 64 C274 186 326 238 448 256 C326 274 274 326 256 448 C238 326 186 274 64 256 C186 238 238 186 256 64 Z" fill="url(#g)"/>
+  <path d="M396 88 C402 124 424 146 460 152 C424 158 402 180 396 216 C390 180 368 158 332 152 C368 146 390 124 396 88 Z" fill="url(#g)" opacity=".8"/>
+  <path d="M242 172 C249 217 273 241 318 248 C273 255 249 279 242 324 C235 279 211 255 166 248 C211 241 235 217 242 172 Z" fill="rgba(255,255,255,.32)"/>
 </svg>
