@@ -1,7 +1,9 @@
-/* NEW STAR — camada de dados offline-first
+/* NEW STAR — camada de dados offline-first sobre o FIRESTORE (REST v1)
  * Cache local (localStorage) + fila de escrituras pendentes (outbox)
  * com sincronização automática ao voltar a conexão.
- * IDs são UUID gerados no cliente → escrever offline não gera conflito de chave. */
+ * IDs são gerados no cliente → escrever offline não gera conflito.
+ * Toda a regra de negócio (comissão, conclusão de pedido, ciclo) roda
+ * no app — o Firestore é o armazenamento sincronizado. */
 (function () {
   'use strict';
   const CFG = window.NS_CONFIG || {};
@@ -9,10 +11,6 @@
     'pernoites', 'despesas', 'configuracoes', 'produtos', 'cliente_produtos',
     'pedidos', 'pedido_itens'];
   const PK = { configuracoes: 'chave' }; // demais: id
-  const PULL_LIMIT = {
-    visitas: 8000, pedidos: 3000, pedido_itens: 20000, rotas: 400,
-    pernoites: 120, despesas: 3000, pendencias: 1000
-  };
 
   const mem = {}; // cache em memória (espelho do localStorage)
 
@@ -35,29 +33,104 @@
     });
   }
 
-  // ---------- REST (PostgREST) ----------
-  function configured() { return !!(CFG.SUPABASE_URL && CFG.SUPABASE_ANON_KEY); }
-  async function rest(path, opts) {
+  // ---------- Firestore REST ----------
+  function configured() { return !!(CFG.FIREBASE_PROJECT_ID && CFG.FIREBASE_API_KEY); }
+  const baseURL = () =>
+    'https://firestore.googleapis.com/v1/projects/' + CFG.FIREBASE_PROJECT_ID +
+    '/databases/(default)/documents';
+  const docPath = (table, id) =>
+    'projects/' + CFG.FIREBASE_PROJECT_ID + '/databases/(default)/documents/' +
+    table + '/' + id;
+
+  // JS ⇄ Firestore Value (datas ficam como string ISO)
+  function enc(v) {
+    if (v === null || v === undefined) return { nullValue: null };
+    if (typeof v === 'boolean') return { booleanValue: v };
+    if (typeof v === 'number')
+      return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
+    if (typeof v === 'string') return { stringValue: v };
+    if (Array.isArray(v)) return { arrayValue: { values: v.map(enc) } };
+    if (typeof v === 'object') return { mapValue: { fields: encFields(v) } };
+    return { stringValue: String(v) };
+  }
+  function encFields(obj) {
+    const f = {};
+    for (const [k, v] of Object.entries(obj)) f[k] = enc(v);
+    return f;
+  }
+  function dec(val) {
+    if (!val) return null;
+    if ('nullValue' in val) return null;
+    if ('booleanValue' in val) return val.booleanValue;
+    if ('integerValue' in val) return Number(val.integerValue);
+    if ('doubleValue' in val) return val.doubleValue;
+    if ('stringValue' in val) return val.stringValue;
+    if ('timestampValue' in val) return val.timestampValue;
+    if ('arrayValue' in val) return (val.arrayValue.values || []).map(dec);
+    if ('mapValue' in val) return decFields(val.mapValue.fields || {});
+    return null;
+  }
+  function decFields(fields) {
+    const o = {};
+    for (const [k, v] of Object.entries(fields || {})) o[k] = dec(v);
+    return o;
+  }
+
+  async function fs(path, opts) {
     opts = opts || {};
-    const res = await fetch(CFG.SUPABASE_URL + '/rest/v1/' + path, {
+    const sep = path.includes('?') ? '&' : '?';
+    const res = await fetch(baseURL() + path + sep + 'key=' + encodeURIComponent(CFG.FIREBASE_API_KEY), {
       method: opts.method || 'GET',
-      headers: Object.assign({
-        apikey: CFG.SUPABASE_ANON_KEY,
-        Authorization: 'Bearer ' + CFG.SUPABASE_ANON_KEY,
-        'Content-Type': 'application/json',
-        Prefer: opts.prefer || 'return=representation'
-      }, opts.headers || {}),
+      headers: { 'Content-Type': 'application/json' },
       body: opts.body ? JSON.stringify(opts.body) : undefined
     });
     if (!res.ok) {
       const txt = await res.text();
-      const err = new Error('Supabase ' + res.status + ': ' + txt.slice(0, 300));
+      const err = new Error('Firestore ' + res.status + ': ' + txt.slice(0, 300));
       err.status = res.status;
       throw err;
     }
-    if (res.status === 204) return null;
     const t = await res.text();
     return t ? JSON.parse(t) : null;
+  }
+
+  async function fsListAll(table) {
+    const pk = PK[table] || 'id';
+    const rows = [];
+    let pageToken = '';
+    do {
+      const r = await fs('/' + table + '?pageSize=300' + (pageToken ? '&pageToken=' + encodeURIComponent(pageToken) : ''));
+      for (const d of (r && r.documents) || []) {
+        const row = decFields(d.fields);
+        row[pk] = d.name.split('/').pop();
+        rows.push(row);
+      }
+      pageToken = (r && r.nextPageToken) || '';
+    } while (pageToken);
+    return rows;
+  }
+
+  // set = PATCH sem updateMask (substitui/cria o doc inteiro) — idempotente no retry
+  function fsSet(table, id, body) {
+    return fs('/' + table + '/' + encodeURIComponent(id), { method: 'PATCH', body: { fields: encFields(body) } });
+  }
+  // patch = PATCH com updateMask (só os campos alterados; cria se não existir)
+  function fsPatch(table, id, body) {
+    const mask = Object.keys(body).map(k => 'updateMask.fieldPaths=' + encodeURIComponent(k)).join('&');
+    return fs('/' + table + '/' + encodeURIComponent(id) + '?' + mask, { method: 'PATCH', body: { fields: encFields(body) } });
+  }
+  function fsDelete(table, id) {
+    return fs('/' + table + '/' + encodeURIComponent(id), { method: 'DELETE' });
+  }
+  // carga em lote (máx. 500 escritas por chamada) — usada na primeira instalação
+  async function fsBatchSet(table, rows) {
+    const pk = PK[table] || 'id';
+    for (let i = 0; i < rows.length; i += 400) {
+      const writes = rows.slice(i, i + 400).map(r => ({
+        update: { name: docPath(table, r[pk]), fields: encFields(r) }
+      }));
+      await fs(':batchWrite', { method: 'POST', body: { writes } });
+    }
   }
 
   // ---------- Outbox ----------
@@ -80,18 +153,15 @@
       while (outbox.length) {
         const op = outbox[0];
         try {
-          if (op.method === 'POST')
-            await rest(op.table, { method: 'POST', body: op.body, prefer: 'return=minimal,resolution=merge-duplicates' });
-          else if (op.method === 'PATCH')
-            await rest(op.table + '?' + op.match, { method: 'PATCH', body: op.body, prefer: 'return=minimal' });
-          else if (op.method === 'DELETE')
-            await rest(op.table + '?' + op.match, { method: 'DELETE', prefer: 'return=minimal' });
+          if (op.method === 'set') await fsSet(op.table, op.docId, op.body);
+          else if (op.method === 'patch') await fsPatch(op.table, op.docId, op.body);
+          else if (op.method === 'delete') await fsDelete(op.table, op.docId);
         } catch (e) {
-          if (e.status && e.status >= 400 && e.status < 500) {
-            // erro de dados: registrar e descartar para não travar a fila
-            erros.push({ op, erro: String(e.message), em: new Date().toISOString() });
+          if (e.status && e.status >= 400 && e.status < 500 && e.status !== 429) {
+            // erro de dados/permissão: registrar e descartar para não travar a fila
+            erros.push({ op: { table: op.table, method: op.method, docId: op.docId }, erro: String(e.message), em: new Date().toISOString() });
             lsSet('ns_sync_erros', erros.slice(-50));
-          } else throw e; // rede/5xx: parar e tentar depois
+          } else throw e; // rede/5xx/429: parar e tentar depois
         }
         outbox.shift(); lsSet('ns_outbox', outbox);
       }
@@ -103,10 +173,7 @@
   async function pullAll() {
     if (!navigator.onLine || !configured()) return false;
     for (const t of TABLES) {
-      const lim = PULL_LIMIT[t];
-      const order = (PK[t] || 'id') === 'id' && t !== 'configuracoes' ? '&order=criado_em.desc' : '';
-      const rows = await rest(t + '?select=*' + (order || '') + (lim ? '&limit=' + lim : ''));
-      mem[t] = rows || []; save(t);
+      mem[t] = await fsListAll(t); save(t);
     }
     lsSet('ns_last_sync', Date.now());
     notify();
@@ -115,7 +182,7 @@
 
   // ---------- API pública ----------
   const DB = {
-    uuid, configured, rest,
+    uuid, configured,
     all(table) { return load(table).slice(); },
     byId(table, id) {
       const pk = PK[table] || 'id';
@@ -123,10 +190,10 @@
     },
     insert(table, row) {
       const pk = PK[table] || 'id';
-      if (pk === 'id' && !row.id) row.id = uuid();
-      if (!row.criado_em && table !== 'configuracoes' && table !== 'cliente_produtos') row.criado_em = new Date().toISOString();
+      if (!row[pk]) row[pk] = uuid();
+      if (!row.criado_em && table !== 'configuracoes') row.criado_em = new Date().toISOString();
       load(table).unshift(row); save(table);
-      queue({ table, method: 'POST', body: row });
+      queue({ table, method: 'set', docId: row[pk], body: Object.assign({}, row) });
       return row;
     },
     update(table, id, patch) {
@@ -134,27 +201,41 @@
       const arr = load(table);
       const r = arr.find(x => x[pk] === id);
       if (r) { Object.assign(r, patch); save(table); }
-      queue({ table, method: 'PATCH', match: pk + '=eq.' + encodeURIComponent(id), body: patch });
+      queue({ table, method: 'patch', docId: id, body: patch });
       return r;
     },
     upsertConfig(chave, valor) {
       const arr = load('configuracoes');
       const r = arr.find(x => x.chave === chave);
-      if (r) { r.valor = valor; save('configuracoes'); DB.update('configuracoes', chave, { valor }); }
-      else DB.insert('configuracoes', { chave, valor });
+      if (r) {
+        r.valor = valor; save('configuracoes');
+        queue({ table: 'configuracoes', method: 'patch', docId: chave, body: { valor } });
+      } else DB.insert('configuracoes', { chave, valor });
     },
     remove(table, id) {
       const pk = PK[table] || 'id';
       mem[table] = load(table).filter(x => x[pk] !== id); save(table);
-      queue({ table, method: 'DELETE', match: pk + '=eq.' + encodeURIComponent(id) });
+      queue({ table, method: 'delete', docId: id });
     },
-    removeWhere(table, match, predicate) { // match: query PostgREST; predicate: filtro local
+    removeWhere(table, predicate) {
+      const pk = PK[table] || 'id';
+      const alvo = load(table).filter(predicate);
       mem[table] = load(table).filter(r => !predicate(r)); save(table);
-      queue({ table, method: 'DELETE', match });
+      for (const r of alvo) queue({ table, method: 'delete', docId: r[pk] });
     },
     config(chave, dft) {
       const r = load('configuracoes').find(x => x.chave === chave);
-      return r ? r.valor : dft;
+      return (r && r.valor !== undefined && r.valor !== null) ? r.valor : dft;
+    },
+    // Primeira instalação: grava usuários, 255 clientes, catálogo e
+    // configurações no Firestore em lote (requer conexão)
+    async seedInicial(seed) {
+      if (!navigator.onLine || !configured()) throw new Error('Necessário estar online e configurado.');
+      await fsBatchSet('representantes', seed.representantes);
+      await fsBatchSet('produtos', seed.produtos);
+      await fsBatchSet('configuracoes', seed.configuracoes);
+      await fsBatchSet('clientes', seed.clientes);
+      await pullAll();
     },
     status() {
       return {

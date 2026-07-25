@@ -1,8 +1,8 @@
 # NEW STAR — Gestão do Representante + Talão de Pedido Digital
 
 PWA offline-first para os representantes da New Star (placas de brincos/semijoias em
-consignação em farmácias no RS/SC/PR) e painel do gestor. Dois módulos integrados na
-mesma base:
+consignação em farmácias no RS/SC/PR) e painel do gestor. Backend: **Firebase
+(Firestore)**. Dois módulos integrados na mesma base:
 
 - **Módulo A — Gestão do Representante**: rota do dia pelo ciclo de 7 semanas com
   otimização (Nearest Neighbor + 2-opt sobre Google Distance Matrix, fallback
@@ -13,82 +13,92 @@ mesma base:
   Presumido) → placas P/G → devoluções (Display/Quebrada) → conferência → assinatura
   na tela → PDF (visualizar/compartilhar/imprimir) → histórico permanente.
 
-**Stack**: HTML/JS puro (sem build), Supabase (PostgreSQL + PostgREST), Google Maps
-APIs (Geocoding, Distance Matrix, JS), deploy estático em Netlify ou Vercel.
+**Stack**: HTML/JS puro (sem build), Firestore via REST (sem SDK — funciona com a
+fila offline própria), Google Maps APIs (Geocoding, Distance Matrix, JS), deploy
+estático em Firebase Hosting, Netlify ou Vercel.
 
 ## Estrutura
 
 ```
-├── supabase/
-│   ├── schema_v2.sql             # 1º — base original (tabelas + RLS + triggers)
-│   ├── migracao_clientes_v2.sql  # 2º — 255 clientes reais do Denilson + usuários
-│   ├── update_v3.sql             # 3º — linhas de produto, comissão dupla, prazo Clamed
-│   └── update_v4.sql             # 4º — talão digital (pedidos/itens/trigger), catálogo
-│                                 #      com preços e placas P/G, pendências, pernoites,
-│                                 #      configurações (evolui os 3 originais, não recria)
 ├── public/                       # o app (deploy é só publicar esta pasta)
-│   ├── index.html                # shell + CSS + bloco NS_CONFIG
+│   ├── index.html                # shell + CSS + bloco NS_CONFIG (Firebase)
+│   ├── js/seed.js                # dados iniciais: 255 clientes reais, usuários,
+│   │                             #   catálogo do talão e configurações
 │   ├── js/calc.js                # cálculos puros (placas, comissão, rotas, ciclo, CSV)
-│   ├── js/db.js                  # offline-first: cache local + fila de sync (PostgREST)
+│   ├── js/db.js                  # offline-first: cache + fila de sync (Firestore REST)
 │   ├── js/rota.js                # Google Geocoding/Distance Matrix + montagem da rota
 │   ├── js/pdf.js                 # gerador de PDF próprio (offline, assinatura embutida)
 │   ├── js/pedido.js              # wizard do talão + assinatura + ações de PDF
 │   ├── js/app.js                 # login, Hoje, clientes, dashboard, despesas, admin
 │   └── sw.js / manifest / icons  # PWA instalável
+├── firebase.json / firestore.rules  # deploy no Firebase Hosting + regras do Firestore
 ├── tests/
 │   ├── calc.test.cjs             # 30 testes de cálculo (node tests/calc.test.cjs)
-│   └── e2e.offline.cjs           # 29 testes E2E no Chromium (fluxo completo offline + sync)
+│   └── e2e.offline.cjs           # 36 testes E2E no Chromium (offline, sync, instalação)
+├── dados-origem-sql/             # SQLs originais (referência histórica dos dados/regras)
 └── docs_prompt_original.md       # especificação original do projeto
 ```
 
-## Setup
+## Setup (só Firebase — não precisa de Supabase)
 
-### 1. Supabase
-1. Criar projeto → SQL Editor → rodar **na ordem**: `schema_v2.sql`,
-   `migracao_clientes_v2.sql`, `update_v3.sql`, `update_v4.sql`.
-2. Anotar `Project URL` e `anon key` (Settings → API).
-3. Usuários criados pela migração: `denilson@newstar.com.br` (vendedor, base Passo
-   Fundo) e `guilherme@newstar.com.br` (gestor) — **a senha é definida no primeiro
-   login** (registro vem com hash placeholder).
-4. Os 255 clientes já entram com ciclo (semana 1-7 × dia da semana), coordenadas
-   aproximadas por cidade e as 19 farmácias Clamed marcadas com `recebimento_dias = 45`.
+### 1. Projeto Firebase
+1. [console.firebase.google.com](https://console.firebase.google.com) → **Adicionar
+   projeto** (plano Spark gratuito serve).
+2. Menu **Firestore Database** → *Criar banco de dados* (modo produção, região
+   `southamerica-east1`).
+3. Aba **Regras** → colar o conteúdo de `firestore.rules` → *Publicar*.
+4. ⚙ **Configurações do projeto → Geral**: anotar o **ID do projeto** e a
+   **Chave de API da Web** (se não houver app Web, clique em `</>` para criar um).
 
-> Nota de segurança: o padrão inicial é o do schema original — RLS habilitado com
-> policies abertas e filtro por representante no app (anon key). As policies
-> `auth.uid()` para migrar a Supabase Auth estão comentadas no fim do `schema_v2.sql`.
+### 2. Configurar e publicar o app
+1. Editar `public/index.html` → bloco `NS_CONFIG` → preencher `FIREBASE_PROJECT_ID`
+   e `FIREBASE_API_KEY`.
+2. Publicar a pasta `public/` como site estático:
+   - **Firebase Hosting**: `npm i -g firebase-tools && firebase login &&
+     firebase use SEU_PROJETO && firebase deploy`;
+   - ou **Netlify** (arrastar a pasta) / **Vercel** (Output Directory = `public`).
 
-### 2. Google Maps
+### 3. Primeira instalação (carga dos dados)
+Abrir o site → na tela de login, tocar em **"⚙ Primeira instalação"**. Isso grava no
+Firestore, em lote: os **255 clientes reais** (ciclo semana×dia, coordenadas por
+cidade, 19 farmácias Clamed já com `recebimento_dias = 45`, 6 inativos do legado),
+o **catálogo do talão** (códigos, unidades por placa P/G e os preços informados —
+os demais ficam a cadastrar no Admin), as **configurações** e os usuários
+`denilson@newstar.com.br` (vendedor) e `guilherme@newstar.com.br` (gestor).
+**A senha de cada um é definida no primeiro login.**
+
+### 4. Google Maps (opcional, recomendado)
 Criar chave com **Geocoding API**, **Distance Matrix API** e **Maps JavaScript API**
-habilitadas e informá-la dentro do app em **Mais → Configurações** (gestor). Sem
-chave o app segue funcionando com distâncias estimadas (haversine ×1,3). Use
-**Mais → Geocodificar clientes** para converter os endereços em posição precisa
-(status por cliente: preciso / aproximado / falhou).
+e informá-la no app em **Mais → Configurações** (gestor). Sem chave o app funciona
+com distâncias estimadas (haversine ×1,3). Use **Mais → Geocodificar clientes** para
+posição precisa (status por cliente: preciso / aproximado / falhou).
 
-### 3. Deploy (Netlify ou Vercel)
-1. Editar `public/index.html` → bloco `NS_CONFIG` → preencher `SUPABASE_URL` e
-   `SUPABASE_ANON_KEY`.
-2. Publicar a pasta `public/` como site estático
-   (Netlify: arrastar a pasta; Vercel: Output Directory = `public`).
-3. No celular: abrir o site → "Adicionar à tela inicial" (PWA instalável, funciona
-   100% offline; escrituras ficam na fila e sincronizam ao voltar o sinal).
+### 5. Celular
+Abrir o site → "Adicionar à tela inicial" (PWA instalável). Funciona 100% sem sinal:
+as escrituras ficam na fila local e sincronizam sozinhas ao voltar a conexão, com
+indicador visual no topo.
 
-## Regras de negócio no banco (triggers)
+> Nota de segurança: o padrão inicial são regras abertas no Firestore (equivalente
+> ao desenho original — o filtro por representante é feito no app). Para endurecer,
+> integre Firebase Auth e restrinja as regras por `request.auth`.
 
-- **Comissão**: 15% no primeiro pedido (cliente sem qualquer sinal de compra anterior:
-  sem último pedido, sem seed da listagem, status legado 'Novo'), 10% na reposição —
-  percentuais por representante. `comissao_recebimento_em = data + recebimento_dias`
-  (Clamed = 45; demais = 0). Calculada sobre o **valor efetivamente vendido**
-  (colocadas − devolvidas − quebradas) × preço da tabela do pedido.
-- **Conclusão de pedido** (`update_v4`): recalcula totais dos itens, registra/atualiza
-  a visita do dia (dispara a comissão), grava as linhas em `visitas.produtos` e
-  `cliente_produtos`.
-- **Visita realizada**: atualiza última visita/último pedido/próxima prevista do
-  cliente e resolve pendência aberta (fila de reencaixe).
+## Regras de negócio (no app, valem online e offline)
+
+- **Comissão**: 15% no primeiro pedido — cliente sem qualquer sinal de compra
+  anterior (sem último pedido, sem seed da listagem, status legado 'Novo') — e 10%
+  na reposição; percentuais configuráveis por representante.
+  `comissao_recebimento_em = data + recebimento_dias` (Clamed = 45; demais = 0).
+  Calculada sobre o **valor efetivamente vendido**: (colocadas − devolvidas −
+  quebradas) × preço da tabela do pedido.
+- **Conclusão de pedido**: soma os itens, registra/atualiza a visita do dia
+  (`fez_pedido`, valor vendido → comissão), alimenta `visitas.produtos` e
+  `cliente_produtos` (linhas que trabalha) e resolve pendência de reencaixe.
+- **Visita realizada**: atualiza última visita / último pedido / próxima prevista
+  pelo ciclo individual do cliente.
 
 ## Configurável no Admin (nunca hardcoded)
 
-Preços e unidades por placa de cada produto (os preços não informados ficaram NULL —
-o app bloqueia o lançamento e pede cadastro) · % comissão novo/reposição e custo/km
+Preços e unidades por placa de cada produto · % comissão novo/reposição e custo/km
 por vendedor · prazo de recebimento por cliente · condições de pagamento ·
 observações do rodapé do PDF · visitas/dia (6–8) · regra de pernoite (150 km / 60 km) ·
 desvio máximo de reencaixe · início do ciclo de 7 semanas.
@@ -97,12 +107,12 @@ desvio máximo de reencaixe · início do ciclo de 7 semanas.
 
 ```bash
 node tests/calc.test.cjs     # cálculos: placas P/G, devolução+quebra, comissão, ciclo, rota, pernoite
-node tests/e2e.offline.cjs   # Chromium: login offline → pedido → assinatura → PDF → sync posterior
+node tests/e2e.offline.cjs   # Chromium: instalação → login → pedido → assinatura → PDF → sync
 ```
 
 Cobrem a lista obrigatória da especificação: busca parcial (CNPJ/nome/cidade), troca
 de tabela refletindo preços, placa P vs G, devolução+quebra abatendo antes da
 comissão (48−5−2=41), 15% no 1º pedido / 10% na reposição, +45d só para Clamed,
-assinatura salva e embutida no PDF, pedido consultável depois, reencaixe de pendente
-e funcionamento offline com sincronização posterior. Os 4 SQLs + triggers foram
-validados em PostgreSQL 16 real com os 255 clientes carregados.
+assinatura salva e embutida no PDF, pedido consultável depois, reencaixe de
+pendente, funcionamento offline com sincronização posterior e a primeira instalação
+completa (255 clientes no Firestore simulado + primeiro login definindo senha).

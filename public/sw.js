@@ -1,9 +1,9 @@
 /* NEW STAR — service worker: app shell cache-first (offline 100%) */
-const VERSAO = 'newstar-v1';
+const VERSAO = 'newstar-v2';
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './icon.svg',
   './icon-192.png', './icon-512.png',
-  './js/calc.js', './js/ui.js', './js/db.js', './js/rota.js',
+  './js/calc.js', './js/seed.js', './js/ui.js', './js/db.js', './js/rota.js',
   './js/pdf.js', './js/pedido.js', './js/app.js'
 ];
 

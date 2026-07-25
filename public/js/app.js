@@ -32,7 +32,19 @@
       el('p', { class: 'sub' }, 'Gestão do representante + talão digital'),
       msg ? el('p', { class: 'aviso' }, msg) : null,
       email, senha,
-      el('button', { class: 'btn big w100 mt8', onclick: entrar }, 'Entrar'));
+      el('button', { class: 'btn big w100 mt8', onclick: entrar }, 'Entrar'),
+      (!DB.all('representantes').length && window.NS_SEED) ? el('button', {
+        class: 'btn-link mt8', onclick: async (e) => {
+          if (!navigator.onLine) return toast('Conecte-se à internet para a primeira instalação.', 'erro');
+          e.currentTarget.disabled = true;
+          toast('Carregando dados iniciais no Firestore…');
+          try {
+            await DB.seedInicial(window.NS_SEED);
+            toast('✅ ' + DB.all('clientes').length + ' clientes, catálogo e usuários carregados. Faça o primeiro login.');
+            telaLogin();
+          } catch (err) { toast('Falha na instalação: ' + err.message, 'erro'); e.currentTarget.disabled = false; }
+        }
+      }, '⚙ Primeira instalação (carregar 255 clientes + catálogo)') : null);
     $('#view').innerHTML = ''; $('#view').appendChild(box);
     $('#topbar').style.display = 'none'; $('#tabs').style.display = 'none';
 
@@ -419,12 +431,10 @@
             const btn = e.currentTarget;
             if (minhas.has(p.id)) {
               minhas.delete(p.id); btn.classList.remove('ativo');
-              DB.removeWhere('cliente_produtos',
-                'cliente_id=eq.' + id + '&produto_id=eq.' + p.id,
-                (r) => r.cliente_id === id && r.produto_id === p.id);
+              DB.removeWhere('cliente_produtos', (r) => r.cliente_id === id && r.produto_id === p.id);
             } else {
               minhas.add(p.id); btn.classList.add('ativo');
-              DB.insert('cliente_produtos', { cliente_id: id, produto_id: p.id, representante_id: (c.representante_id || s.rep.id) });
+              DB.insert('cliente_produtos', { id: id + '_' + p.id, cliente_id: id, produto_id: p.id, representante_id: (c.representante_id || s.rep.id) });
             }
           }
         }, (p.codigo ? p.codigo + ' ' : '') + p.nome + (p.variacao ? ' (' + p.variacao + ')' : ''))));
@@ -1049,7 +1059,7 @@
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
     if (!DB.configured()) {
       $('#view').innerHTML = '<div class="login-box"><h1>⚙ Configuração</h1>' +
-        '<p class="sub">Preencha SUPABASE_URL e SUPABASE_ANON_KEY no bloco NS_CONFIG do index.html e rode os 3 SQLs (schema_v2 → migracao_clientes_v2 → update_v3) no Supabase.</p></div>';
+        '<p class="sub">Preencha FIREBASE_PROJECT_ID e FIREBASE_API_KEY no bloco NS_CONFIG do index.html (projeto Firebase com Firestore ativado). Depois use "Primeira instalação" na tela de login para carregar os 255 clientes, o catálogo e os usuários.</p></div>';
       $('#topbar').style.display = 'none'; $('#tabs').style.display = 'none';
       return;
     }

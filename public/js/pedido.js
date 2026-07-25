@@ -325,8 +325,9 @@
 
       // 1) pedido rascunho → 2) itens → 3) visita → 4) concluir (ordem respeitada pela fila offline;
       // no servidor o trigger de conclusão recalcula tudo e reaproveita a visita do dia)
+      const numero = DB.all('pedidos').reduce((m, p) => Math.max(m, Number(p.numero) || 0), 0) + 1;
       DB.insert('pedidos', {
-        id: ped.id, cliente_id: ped.cliente_id, representante_id: rep.id,
+        id: ped.id, numero, cliente_id: ped.cliente_id, representante_id: rep.id,
         data_pedido: ped.data, tabela: ped.tabela, condicao_pagamento: ped.condicao_pagamento,
         status: 'rascunho', observacoes: ped.obs || null
       });
@@ -369,7 +370,7 @@
       const linhas = new Set(ped.itens.map(i => i.produto_id));
       const jaTem = new Set(DB.all('cliente_produtos').filter(cp => cp.cliente_id === cli.id).map(cp => cp.produto_id));
       for (const pid of linhas) if (!jaTem.has(pid))
-        DB.insert('cliente_produtos', { cliente_id: cli.id, produto_id: pid, representante_id: rep.id });
+        DB.insert('cliente_produtos', { id: cli.id + '_' + pid, cliente_id: cli.id, produto_id: pid, representante_id: rep.id });
 
       m.fechar();
       toast('Pedido concluído! Comissão de ' + com.pct + '% (' + C.fmtMoney(com.valor) + ') registrada.');

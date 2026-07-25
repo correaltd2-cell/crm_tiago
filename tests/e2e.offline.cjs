@@ -48,8 +48,8 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
     let body = fs.readFileSync(f);
     if (f.endsWith('index.html'))
       body = Buffer.from(body.toString()
-        .replace("SUPABASE_URL: ''", "SUPABASE_URL: 'https://fake.supabase.co'")
-        .replace("SUPABASE_ANON_KEY: ''", "SUPABASE_ANON_KEY: 'fake-key'"));
+        .replace("FIREBASE_PROJECT_ID: ''", "FIREBASE_PROJECT_ID: 'fake-proj'")
+        .replace("FIREBASE_API_KEY: ''", "FIREBASE_API_KEY: 'fake-key'"));
     res.writeHead(200, { 'Content-Type': MIME[path.extname(f)] || 'application/octet-stream' });
     res.end(body);
   }).listen(8899);
@@ -58,8 +58,8 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
   const erros = [];
   page.on('pageerror', (e) => erros.push('pageerror: ' + e.message));
-  page.on('console', (m) => { if (m.type() === 'error' && !m.text().includes('fake.supabase')) erros.push('console: ' + m.text()); });
-  await page.route('**/fake.supabase.co/**', (r) => r.abort()); // backend fora do ar = offline
+  page.on('console', (m) => { if (m.type() === 'error' && !m.text().includes('firestore.googleapis')) erros.push('console: ' + m.text()); });
+  await page.route('**/firestore.googleapis.com/**', (r) => r.abort()); // backend fora do ar = offline
 
   await page.addInitScript((s) => {
     for (const [k, v] of Object.entries(s)) localStorage.setItem(k, JSON.stringify(v));
@@ -72,6 +72,13 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page.goto('http://localhost:8899/');
   await page.waitForSelector('.login-box input[type=email]');
   check('tela de login aparece', true);
+  const seedInfo = await page.evaluate(() => ({
+    clientes: window.NS_SEED.clientes.length,
+    clamed: window.NS_SEED.clientes.filter(c => c.recebimento_dias === 45).length,
+    produtos: window.NS_SEED.produtos.length
+  }));
+  check('seed embutido: 255 clientes reais, 19 Clamed, 17 produtos',
+    seedInfo.clientes === 255 && seedInfo.clamed === 19 && seedInfo.produtos === 17);
 
   await page.fill('input[type=email]', 'denilson@newstar.com.br');
   await page.fill('input[type=password]', '123456');
@@ -136,6 +143,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
     cliProds: JSON.parse(localStorage.getItem('ns_c_cliente_produtos') || '[]')
   }));
   check('pedido salvo concluído, total 594,50', dados.pedido.status === 'concluido' && dados.pedido.total_valor === 594.5);
+  check('nº do pedido atribuído no app (nº 1)', dados.pedido.numero === 1);
   check('assinatura salva no pedido (PNG base64)', String(dados.pedido.assinatura || '').startsWith('data:image/png'));
   check('visita com fez_pedido e valor vendido', dados.visita.fez_pedido === true && dados.visita.valor_pedido === 594.5 && !!dados.visita.data_visita);
   check('comissão 15% no 1º pedido = 89,18', dados.visita.comissao_pct === 15 && dados.visita.comissao_valor === 89.18);
@@ -207,28 +215,91 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
 
   const reqs = [];
   const page2 = await browser.newPage();
-  await page2.route('**/fake.supabase.co/**', (r) => {
+  await page2.route('**/firestore.googleapis.com/**', (r) => {
     const req = r.request();
-    reqs.push(req.method() + ' ' + new URL(req.url()).pathname.replace('/rest/v1/', '') +
-      (req.method() === 'PATCH' ? '?' + new URL(req.url()).searchParams.toString().slice(0, 20) : ''));
-    if (req.method() === 'GET') return r.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
-    return r.fulfill({ status: 201, contentType: 'application/json', body: 'null' });
+    const u = new URL(req.url());
+    const col = u.pathname.split('/documents/')[1] ? u.pathname.split('/documents/')[1].split('/')[0] : u.pathname.split('/').pop();
+    const temMask = u.search.includes('updateMask');
+    reqs.push(req.method() + ' ' + col + (temMask ? '#mask' : ''));
+    if (req.method() === 'GET') return r.fulfill({ status: 200, contentType: 'application/json', body: '{"documents":[]}' });
+    return r.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
   });
   await page2.addInitScript((d) => { for (const [k, v] of Object.entries(d)) localStorage.setItem(k, v); }, dump);
   await page2.goto('http://localhost:8899/');
   await page2.waitForFunction(() => JSON.parse(localStorage.getItem('ns_outbox') || '[]').length === 0, null, { timeout: 15000 });
   check('fila sincronizada ao voltar a conexão (outbox vazio)', true);
   const posts = reqs.filter(x => !x.startsWith('GET'));
-  const iPostPed = posts.findIndex(x => x.startsWith('POST pedidos'));
-  const iPostIt = posts.findIndex(x => x.startsWith('POST pedido_itens'));
-  const iPostVis = posts.findIndex(x => x.startsWith('POST visitas'));
-  const iPatchPed = posts.findIndex(x => x.startsWith('PATCH pedidos'));
+  const iSetPed = posts.findIndex(x => x === 'PATCH pedidos');           // criação (doc inteiro)
+  const iSetIt = posts.findIndex(x => x === 'PATCH pedido_itens');
+  const iSetVis = posts.findIndex(x => x === 'PATCH visitas');
+  const iConcl = posts.findIndex(x => x === 'PATCH pedidos#mask');       // conclusão (updateMask)
   check('ordem do sync: pedido → itens → visita → conclusão',
-    iPostPed >= 0 && iPostIt > iPostPed && iPostVis > iPostIt && iPatchPed > iPostVis);
+    iSetPed >= 0 && iSetIt > iSetPed && iSetVis > iSetIt && iConcl > iSetVis);
   await page2.waitForFunction(() => document.querySelector('#syncChip') && document.querySelector('#syncChip').textContent.includes('sincronizado'), null, { timeout: 8000 }).catch(async () => {
     console.log('    chip atual:', await page2.textContent('#syncChip').catch(() => '(sem chip)'));
   });
   check('chip confirma sincronizado', (await page2.textContent('#syncChip').catch(() => '')).includes('sincronizado'));
+
+  await page2.close();
+
+  // ===== Cenário 3: primeira instalação (seed → Firestore) + primeiro login =====
+  const store = {}; // Firestore simulado com memória
+  const page3 = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  page3.on('pageerror', (e) => erros.push('pageerror3: ' + e.message));
+  await page3.route('**/firestore.googleapis.com/**', (r) => {
+    const req = r.request();
+    const u = new URL(req.url());
+    const json = (b) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
+    if (u.pathname.endsWith(':batchWrite')) {
+      for (const w of JSON.parse(req.postData()).writes) {
+        const parts = w.update.name.split('/documents/')[1].split('/');
+        (store[parts[0]] = store[parts[0]] || {})[parts[1]] = w.update.fields;
+      }
+      return json({});
+    }
+    const rest = u.pathname.split('/documents/')[1] || '';
+    const [col, id] = rest.split('/');
+    if (req.method() === 'GET')
+      return json({ documents: Object.entries(store[col] || {}).map(([did, fields]) =>
+        ({ name: 'projects/fake-proj/databases/(default)/documents/' + col + '/' + did, fields })) });
+    if (req.method() === 'PATCH') {
+      (store[col] = store[col] || {})[id] = Object.assign({}, (store[col] || {})[id], JSON.parse(req.postData()).fields);
+      return json({});
+    }
+    if (req.method() === 'DELETE') { if (store[col]) delete store[col][id]; return json({}); }
+    return json({});
+  });
+  await page3.goto('http://localhost:8899/');
+  await page3.waitForSelector('.login-box');
+  check('botão de primeira instalação aparece', await page3.isVisible('text=Primeira instalação'));
+  await page3.click('text=Primeira instalação');
+  await page3.waitForFunction(() =>
+    JSON.parse(localStorage.getItem('ns_c_clientes') || '[]').length === 255, null, { timeout: 20000 });
+  await page3.waitForSelector('text=Primeira instalação', { state: 'detached', timeout: 10000 }); // tela re-renderizada
+  check('instalação carregou 255 clientes no Firestore e no cache',
+    (store.clientes && Object.keys(store.clientes).length === 255 &&
+     store.produtos && Object.keys(store.produtos).length === 17 &&
+     store.representantes && Object.keys(store.representantes).length === 2) === true);
+
+  await page3.fill('input[type=email]', 'denilson@newstar.com.br');
+  await page3.fill('input[type=password]', '123456');
+  await page3.click('text=Entrar');
+  await page3.waitForSelector('.ns-modal'); // primeiro acesso → definir senha
+  const senhas = page3.locator('.ns-modal input[type=password]');
+  await senhas.nth(0).fill('123456');
+  await senhas.nth(1).fill('123456');
+  await page3.click('text=Salvar senha e entrar');
+  await page3.waitForSelector('#tabs', { state: 'visible' });
+  check('primeiro login define a senha e entra', true);
+
+  await page3.click('#tabs button[data-v=clientes]');
+  await page3.fill('#view input', 'erechim');
+  await page3.waitForTimeout(200);
+  check('base real: busca por cidade acha farmácias de Erechim',
+    (await page3.textContent('#view')).includes('ERECHIM'));
+  await page3.click('#tabs button[data-v=dash]');
+  const dash3 = await page3.textContent('#view');
+  check('dashboard: 249 clientes ativos (255 − 6 inativos da migração)', dash3.includes('Clientes ativos249'));
 
   await browser.close();
   server.close();

@@ -9,10 +9,10 @@
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
 <script>
-/* ===== CONFIG — preencher antes do deploy ===== */
+/* ===== CONFIG — preencher antes do deploy (Firebase) ===== */
 window.NS_CONFIG = {
-  SUPABASE_URL: '',       // ex.: https://xxxx.supabase.co
-  SUPABASE_ANON_KEY: ''   // anon key (Settings → API)
+  FIREBASE_PROJECT_ID: '', // ID do projeto no console do Firebase
+  FIREBASE_API_KEY: ''     // chave Web API (Configurações do projeto → Geral)
 };
 </script>
 <style>
@@ -153,6 +153,7 @@ h1{font-size:1.5rem}h2{font-size:1.2rem}h3{font-size:1.02rem}h4{font-size:.92rem
   <button data-v="mais"><span class="ico">☰</span>Mais</button>
 </nav>
 <script src="js/calc.js"></script>
+<script src="js/seed.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/db.js"></script>
 <script src="js/rota.js"></script>
