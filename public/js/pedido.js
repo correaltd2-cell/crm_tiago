@@ -33,11 +33,11 @@
         const q = busca.value.trim().toLowerCase();
         const qNum = q.replace(/\D/g, '');
         lista.innerHTML = '';
-        const cls = DB.all('clientes').filter(c => c.ativo !== false).filter(c => {
+        const cls = DB.all('clientes').filter(c => c.status !== 'inativo').filter(c => {
           if (!q) return true;
           return (c.nome || '').toLowerCase().includes(q) ||
             (c.cidade || '').toLowerCase().includes(q) ||
-            (qNum && (c.cnpj || '').replace(/\D/g, '').includes(qNum));
+            (qNum && (c.cnpj_cpf || '').replace(/\D/g, '').includes(qNum));
         }).slice(0, 40);
         for (const c of cls) {
           lista.appendChild(el('button', {
@@ -45,7 +45,7 @@
           },
             el('strong', null, c.nome),
             el('span', { class: 'sub' }, [c.cidade, c.uf].filter(Boolean).join(' - ') +
-              (c.cnpj ? ' · ' + c.cnpj : '') + (c.rede ? ' · ' + c.rede : ''))));
+              (c.cnpj_cpf ? ' · ' + c.cnpj_cpf : '') + (c.rede ? ' · ' + c.rede : ''))));
         }
         if (!cls.length) lista.appendChild(el('p', { class: 'vazio' }, 'Nenhum cliente encontrado.'));
       }
@@ -133,15 +133,18 @@
               .forEach(p => {
                 const preco = precoDe(p, ped.tabela);
                 const semPreco = preco == null;
+                const semUnid = p.unid_placa_p == null || p.unid_placa_g == null;
                 lista.appendChild(el('button', {
-                  class: 'item-lista' + (semPreco ? ' desabilitado' : ''),
+                  class: 'item-lista' + (semPreco || semUnid ? ' desabilitado' : ''),
                   onclick: () => {
+                    if (semUnid) return toast('Produto sem unidades por placa — cadastre no Admin → Produtos.', 'erro');
                     if (semPreco) return toast('Produto sem preço na tabela escolhida — cadastre no Admin → Produtos.', 'erro');
                     item.produto_id = p.id; formQtde();
                   }
                 },
                   el('strong', null, (p.codigo ? p.codigo + ' · ' : '') + nomeProd(p)),
-                  el('span', { class: 'sub' }, `P=${p.unid_placa_p}un · G=${p.unid_placa_g}un · ` +
+                  el('span', { class: 'sub' }, (semUnid ? '⚠ unidades por placa a cadastrar · '
+                    : `P=${p.unid_placa_p}un · G=${p.unid_placa_g}un · `) +
                     (semPreco ? '⚠ preço a cadastrar' : C.fmtMoney(preco)))));
               });
           }
@@ -324,27 +327,28 @@
       // no servidor o trigger de conclusão recalcula tudo e reaproveita a visita do dia)
       DB.insert('pedidos', {
         id: ped.id, cliente_id: ped.cliente_id, representante_id: rep.id,
-        data: ped.data, tabela: ped.tabela, condicao_pagamento: ped.condicao_pagamento,
-        status: 'rascunho', obs: ped.obs || null
+        data_pedido: ped.data, tabela: ped.tabela, condicao_pagamento: ped.condicao_pagamento,
+        status: 'rascunho', observacoes: ped.obs || null
       });
       for (const it of ped.itens) DB.insert('pedido_itens', Object.assign({ pedido_id: ped.id }, it));
 
-      const jaComprou = DB.all('visitas').some(v =>
-        v.cliente_id === ped.cliente_id && v.fez_pedido && Number(v.valor_pedido) > 0);
+      const jaComprou = C.clienteJaComprou(cli,
+        DB.all('visitas').filter(v => v.cliente_id === ped.cliente_id));
       const com = C.calcComissao({
         valor: tot.valor, clienteNovo: !jaComprou,
         pctNovo: rep.comissao_pct_novo, pctReposicao: rep.comissao_pct,
         dataPedido: ped.data, recebimentoDias: cli.recebimento_dias || 0
       });
-      const visitaHoje = DB.all('visitas').find(v => v.cliente_id === ped.cliente_id && v.data === ped.data);
+      const visitaHoje = DB.all('visitas').find(v => v.cliente_id === ped.cliente_id && v.data_visita === ped.data);
       const visitaBody = {
         realizada: true, fez_pedido: true, pedido_id: ped.id, valor_pedido: tot.valor,
         comissao_pct: com.pct, comissao_valor: com.valor, comissao_recebimento_em: com.recebimentoEm
       };
+      visitaBody.produtos = Array.from(new Set(ped.itens.map(i => i.produto_id)));
       let visitaId;
       if (visitaHoje) { DB.update('visitas', visitaHoje.id, visitaBody); visitaId = visitaHoje.id; }
       else visitaId = DB.insert('visitas', Object.assign({
-        cliente_id: ped.cliente_id, representante_id: rep.id, data: ped.data
+        cliente_id: ped.cliente_id, representante_id: rep.id, data_visita: ped.data
       }, visitaBody)).id;
 
       DB.update('pedidos', ped.id, {
@@ -352,20 +356,20 @@
         total_unid_colocadas: tot.colocadas, total_unid_dev_display: tot.devDisplay,
         total_unid_dev_quebrada: tot.devQuebrada, total_unid_vendidas: tot.vendidas,
         total_valor: tot.valor, assinatura: ped.assinatura, assinado_em: agora,
-        visita_id: visitaId, obs: ped.obs || null
+        visita_id: visitaId, observacoes: ped.obs || null
       });
 
       // espelho local do que os triggers fazem no servidor
       DB.update('clientes', cli.id, {
-        ultima_visita: ped.data,
-        proxima_visita: (() => { const d = new Date(ped.data + 'T12:00:00'); d.setDate(d.getDate() + (cli.frequencia_dias || 49)); return d.toISOString().slice(0, 10); })()
+        ultima_visita_em: ped.data, ultimo_pedido_em: ped.data,
+        proxima_visita_prevista: (() => { const d = new Date(ped.data + 'T12:00:00'); d.setDate(d.getDate() + (cli.frequencia_dias || 60)); return d.toISOString().slice(0, 10); })()
       });
       DB.all('pendencias').filter(p => p.cliente_id === cli.id && !p.resolvida_em)
         .forEach(p => DB.update('pendencias', p.id, { resolvida_em: agora }));
       const linhas = new Set(ped.itens.map(i => i.produto_id));
       const jaTem = new Set(DB.all('cliente_produtos').filter(cp => cp.cliente_id === cli.id).map(cp => cp.produto_id));
       for (const pid of linhas) if (!jaTem.has(pid))
-        DB.insert('cliente_produtos', { cliente_id: cli.id, produto_id: pid, adicionado_em: agora });
+        DB.insert('cliente_produtos', { cliente_id: cli.id, produto_id: pid, representante_id: rep.id });
 
       m.fechar();
       toast('Pedido concluído! Comissão de ' + com.pct + '% (' + C.fmtMoney(com.valor) + ') registrada.');
@@ -437,7 +441,7 @@
 
     modal(el('div', null,
       recemConcluido ? el('div', { class: 'sucesso-banner' }, '✅ Pedido concluído e assinado!') : null,
-      el('div', { class: 'sub' }, `Pedido nº ${p.numero || 'PENDENTE (aguardando sync)'} · ${dataBR(p.data)} · ` +
+      el('div', { class: 'sub' }, `Pedido nº ${p.numero || 'PENDENTE (aguardando sync)'} · ${dataBR(p.data_pedido)} · ` +
         `${p.status.toUpperCase()} · Tabela ${p.tabela === 'lucro' ? 'Lucro Presumido' : 'Simples'}` +
         (p.condicao_pagamento ? ' · ' + p.condicao_pagamento : '')),
       el('h3', { class: 'mt8' }, cli.nome || '—'),

@@ -44,7 +44,7 @@
       }
       const rep = DB.all('representantes').find(r => (r.email || '').toLowerCase() === em && r.ativo !== false);
       if (!rep) return toast('Usuário não encontrado' + (navigator.onLine ? '.' : ' no cache offline — conecte uma vez.'), 'erro');
-      if (rep.senha_hash === 'PLACEHOLDER') return definirSenha(rep, senha.value);
+      if (rep.senha_hash === 'PLACEHOLDER' || rep.senha_hash === 'TROCAR_NA_TELA_DE_LOGIN') return definirSenha(rep, senha.value);
       const h = await sha256(senha.value);
       if (h !== rep.senha_hash) return toast('Senha incorreta.', 'erro');
       autenticar(rep);
@@ -156,7 +156,7 @@
 
   // ================= HELPERS DE DOMÍNIO =================
   function clientesDoRep(repId) {
-    return DB.all('clientes').filter(c => c.ativo !== false &&
+    return DB.all('clientes').filter(c => c.status !== 'inativo' &&
       (!repId || c.representante_id === repId));
   }
   function repEfetivoId() {
@@ -168,8 +168,8 @@
     const avisoDias = Number(DB.config('alerta_vencendo_dias', 7));
     const out = { atrasados: [], vencendo: [] };
     for (const c of clientesDoRep(repId)) {
-      if (!c.proxima_visita) continue;
-      const dif = Math.round((new Date(c.proxima_visita) - new Date(hoje)) / 86400000);
+      if (!c.proxima_visita_prevista) continue;
+      const dif = Math.round((new Date(c.proxima_visita_prevista) - new Date(hoje)) / 86400000);
       if (dif < 0) out.atrasados.push({ c, dias: -dif });
       else if (dif <= avisoDias) out.vencendo.push({ c, dias: dif });
     }
@@ -178,11 +178,11 @@
     return out;
   }
   function visitouHoje(clienteId) {
-    return DB.all('visitas').find(v => v.cliente_id === clienteId && v.data === hojeISO() && v.realizada);
+    return DB.all('visitas').find(v => v.cliente_id === clienteId && v.data_visita === hojeISO() && v.realizada);
   }
 
   // ================= VIEW: HOJE =================
-  let rotaDia = null; // {sequencia, km_total, ...}
+  let rotaDia = null; // {sequencia, distancia_total_km, ...}
 
   async function vHoje(view) {
     const s = sessao();
@@ -194,7 +194,7 @@
     const hoje = hojeISO();
     const ciclo = C.cicloDoDia(hoje, DB.config('ciclo_inicio', '2026-01-05'));
     const doDia = clientesDoRep(rep.id).filter(c =>
-      c.semana_ciclo === ciclo.semana && c.dia_semana === ciclo.diaSemana);
+      c.semana_padrao === ciclo.semana && C.mesmoDia(c.dia_semana_padrao, ciclo.diaSemana));
     const pendencias = DB.all('pendencias').filter(p => !p.resolvida_em &&
       (p.representante_id === rep.id || !p.representante_id));
     const pendentes = pendencias.map(p => DB.byId('clientes', p.cliente_id)).filter(Boolean)
@@ -207,9 +207,9 @@
     const pernoite = DB.all('pernoites').find(p => p.representante_id === rep.id && p.data === ontem);
     const partida = pernoite
       ? { lat: pernoite.lat, lng: pernoite.lng, label: '📍 Pernoite: ' + (pernoite.local_desc || 'posição salva') }
-      : (rep.base_lat != null ? { lat: rep.base_lat, lng: rep.base_lng, label: '🏠 Base: ' + (rep.cidade_base || '') } : null);
+      : (rep.lat_base != null ? { lat: rep.lat_base, lng: rep.lng_base, label: '🏠 Base: ' + (rep.cidade_base || '') } : null);
 
-    const rotaSalva = DB.all('rotas').find(r => r.representante_id === rep.id && r.data === hoje);
+    const rotaSalva = DB.all('rotas').find(r => r.representante_id === rep.id && r.data_rota === hoje);
 
     const head = el('div', null,
       el('div', { class: 'row space' },
@@ -231,7 +231,7 @@
 
     if (rotaSalva)
       view.appendChild(el('div', { class: 'rota-info mt8' },
-        `🛣 ${rotaSalva.km_total} km · ⏱ ~${Math.round(rotaSalva.tempo_min)} min · 💰 ${C.fmtMoney(Number(rotaSalva.custo_estimado || 0))}` +
+        `🛣 ${rotaSalva.distancia_total_km} km · ⏱ ~${Math.round(rotaSalva.tempo_total_min)} min · 💰 ${C.fmtMoney(Number(rotaSalva.custo_estimado || 0))}` +
         (rotaSalva.fonte_matriz === 'google' ? ' · Google' : ' · estimado (offline)')));
 
     view.appendChild(el('div', { class: 'row gap8 mt8' },
@@ -261,7 +261,7 @@
               el('strong', null, `${i + 1}. ${c.nome}`),
               el('div', { class: 'sub' }, [c.endereco, c.cidade].filter(Boolean).join(' · ') +
                 (seqInfo && seqInfo.reencaixado ? ' · 🔁 reencaixado' : '') +
-                (c.geocode_status !== 'preciso' ? ' · 📍' + c.geocode_status : ''))),
+                (c.geocoding_status !== 'preciso' ? ' · 📍' + c.geocoding_status : ''))),
             v ? el('span', { class: 'badge ok' }, v.fez_pedido ? '✅ pedido' : '✅ visitado') : null),
           v ? null : el('div', { class: 'row gap8 mt8' },
             el('button', { class: 'btn-mini', onclick: () => abrirGPS(c) }, '🗺 GPS'),
@@ -285,11 +285,11 @@
       });
       R.salvarRota(rep.id, hoje, rota, start);
       // sugestão de pernoite
-      const base = rep.base_lat != null ? { lat: rep.base_lat, lng: rep.base_lng } : null;
+      const base = rep.lat_base != null ? { lat: rep.lat_base, lng: rep.lng_base } : null;
       if (base && rota.ultimoPonto) {
         const amanhaISO = (() => { const d = new Date(hoje + 'T12:00:00'); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); })();
         const cicloAm = C.cicloDoDia(amanhaISO, DB.config('ciclo_inicio', '2026-01-05'));
-        const amanha = clientesDoRep(rep.id).filter(c => c.semana_ciclo === cicloAm.semana && c.dia_semana === cicloAm.diaSemana && c.lat != null)[0];
+        const amanha = clientesDoRep(rep.id).filter(c => c.semana_padrao === cicloAm.semana && C.mesmoDia(c.dia_semana_padrao, cicloAm.diaSemana) && c.lat != null)[0];
         const dec = C.decidirPernoite({
           ultimo: rota.ultimoPonto, base, primeiroAmanha: amanha ? { lat: amanha.lat, lng: amanha.lng } : null,
           distMinKm: Number(DB.config('pernoite_dist_km', 150)),
@@ -315,7 +315,7 @@
 
     function visitaSemPedido(c) {
       DB.insert('visitas', {
-        cliente_id: c.id, representante_id: rep.id, data: hoje,
+        cliente_id: c.id, representante_id: rep.id, data_visita: hoje,
         realizada: true, fez_pedido: false, valor_pedido: 0
       });
       espelharVisitaLocal(c);
@@ -328,8 +328,8 @@
       const m = modal(el('div', { class: 'col gap8' },
         motivos.map(([val, rot]) => el('button', {
           class: 'btn btn-sec big', onclick: async () => {
-            DB.insert('visitas', { cliente_id: c.id, representante_id: rep.id, data: hoje, realizada: false, fez_pedido: false, motivo: val, valor_pedido: 0 });
-            DB.insert('pendencias', { cliente_id: c.id, representante_id: rep.id, motivo: val, criada_em: new Date().toISOString() });
+            DB.insert('visitas', { cliente_id: c.id, representante_id: rep.id, data_visita: hoje, realizada: false, fez_pedido: false, motivo_falta: val, valor_pedido: 0 });
+            DB.insert('pendencias', { cliente_id: c.id, representante_id: rep.id, motivo: val });
             m.fechar();
             toast(c.nome + ' entrou na fila de reencaixe. Recalculando a rota…');
             const idx = listaCls.findIndex(x => x.id === c.id);
@@ -342,14 +342,14 @@
 
   function espelharVisitaLocal(c) {
     const d = new Date(hojeISO() + 'T12:00:00');
-    d.setDate(d.getDate() + (c.frequencia_dias || 49));
-    DB.update('clientes', c.id, { ultima_visita: hojeISO(), proxima_visita: d.toISOString().slice(0, 10) });
+    d.setDate(d.getDate() + (c.frequencia_dias || 60));
+    DB.update('clientes', c.id, { ultima_visita_em: hojeISO(), proxima_visita_prevista: d.toISOString().slice(0, 10) });
     DB.all('pendencias').filter(p => p.cliente_id === c.id && !p.resolvida_em)
       .forEach(p => DB.update('pendencias', p.id, { resolvida_em: new Date().toISOString() }));
   }
 
   function abrirGPS(c) {
-    const dest = (c.lat != null && c.geocode_status !== 'falhou')
+    const dest = (c.lat != null && c.geocoding_status !== 'falhou')
       ? c.lat + ',' + c.lng
       : encodeURIComponent(R.enderecoCompleto(c));
     window.open('https://www.google.com/maps/dir/?api=1&destination=' + dest, '_blank');
@@ -372,19 +372,19 @@
       const cls = clientesDoRep(repId).filter(c => {
         if (!q) return true;
         return (c.nome || '').toLowerCase().includes(q) || (c.cidade || '').toLowerCase().includes(q) ||
-          (qNum && (c.cnpj || '').replace(/\D/g, '').includes(qNum));
+          (qNum && (c.cnpj_cpf || '').replace(/\D/g, '').includes(qNum));
       }).sort((a, b) => (a.nome || '').localeCompare(b.nome || '')).slice(0, 80);
       for (const c of cls) {
         let badge = null;
-        if (c.proxima_visita) {
-          const dif = Math.round((new Date(c.proxima_visita) - new Date(hoje)) / 86400000);
+        if (c.proxima_visita_prevista) {
+          const dif = Math.round((new Date(c.proxima_visita_prevista) - new Date(hoje)) / 86400000);
           if (dif < 0) badge = el('span', { class: 'badge erro' }, (-dif) + 'd atrasado');
           else if (dif <= Number(DB.config('alerta_vencendo_dias', 7))) badge = el('span', { class: 'badge aviso' }, 'vence em ' + dif + 'd');
         }
         lista.appendChild(el('button', { class: 'item-lista', onclick: () => fichaCliente(c.id) },
           el('div', { class: 'row space w100' }, el('strong', null, c.nome), badge),
           el('span', { class: 'sub' }, [c.cidade, c.uf].filter(Boolean).join(' - ') +
-            (c.rede ? ' · ' + c.rede : '') + ' · ciclo ' + (c.frequencia_dias || 49) + 'd')));
+            (c.rede ? ' · ' + c.rede : '') + ' · ciclo ' + (c.frequencia_dias || 60) + 'd')));
       }
       if (!cls.length) lista.appendChild(el('p', { class: 'vazio' }, 'Nenhum cliente encontrado.'));
     }
@@ -396,9 +396,9 @@
     if (!c) return;
     const s = sessao();
     const visitas = DB.all('visitas').filter(v => v.cliente_id === id)
-      .sort((a, b) => (b.data || '').localeCompare(a.data || ''));
+      .sort((a, b) => (b.data_visita || '').localeCompare(a.data_visita || ''));
     const pedidos = DB.all('pedidos').filter(p => p.cliente_id === id && p.status === 'concluido')
-      .sort((a, b) => (b.data || '').localeCompare(a.data || ''));
+      .sort((a, b) => (b.data_pedido || '').localeCompare(a.data_pedido || ''));
     const sug = c.frequencia_auto !== false ? C.sugestaoFrequencia(visitas, c.frequencia_dias || 49) : null;
 
     // linhas que trabalha (chips com toque)
@@ -424,27 +424,27 @@
                 (r) => r.cliente_id === id && r.produto_id === p.id);
             } else {
               minhas.add(p.id); btn.classList.add('ativo');
-              DB.insert('cliente_produtos', { cliente_id: id, produto_id: p.id, adicionado_em: new Date().toISOString() });
+              DB.insert('cliente_produtos', { cliente_id: id, produto_id: p.id, representante_id: (c.representante_id || s.rep.id) });
             }
           }
         }, (p.codigo ? p.codigo + ' ' : '') + p.nome + (p.variacao ? ' (' + p.variacao + ')' : ''))));
 
-    const dif = c.proxima_visita ? Math.round((new Date(c.proxima_visita) - new Date(hojeISO())) / 86400000) : null;
+    const dif = c.proxima_visita_prevista ? Math.round((new Date(c.proxima_visita_prevista) - new Date(hojeISO())) / 86400000) : null;
 
     modal(el('div', null,
       el('div', { class: 'sub' },
-        (c.cnpj ? 'CNPJ ' + c.cnpj + ' · ' : '') + [c.endereco, c.bairro, c.cidade, c.uf].filter(Boolean).join(', ')),
+        (c.cnpj_cpf ? 'CNPJ ' + c.cnpj_cpf + ' · ' : '') + [c.endereco, c.bairro, c.cidade, c.uf].filter(Boolean).join(', ')),
       el('div', { class: 'sub mt4' },
         'Contato: ' + (c.contato || '—') + ' · ' + (c.telefone || c.celular || '—') +
         (c.rede ? ' · Rede ' + c.rede + (c.recebimento_dias ? ' (comissão +' + c.recebimento_dias + 'd)' : '') : '')),
       el('div', { class: 'row gap8 mt8' },
-        el('button', { class: 'btn-mini', onclick: () => abrirGPS(c) }, '🗺 GPS (' + c.geocode_status + ')'),
+        el('button', { class: 'btn-mini', onclick: () => abrirGPS(c) }, '🗺 GPS (' + c.geocoding_status + ')'),
         el('button', { class: 'btn-mini', onclick: () => window.NSPedido.novo(c) }, '🧾 Novo pedido'),
         s.papel === 'gestor' ? el('button', { class: 'btn-mini', onclick: () => editarCliente(c.id) }, '✏ Editar') : null),
 
       el('h4', { class: 'mt12' }, 'Ciclo de visitas'),
       el('div', { class: 'sub' },
-        `A cada ${c.frequencia_dias || 49} dias · última: ${dataBR(c.ultima_visita)} · próxima: ${dataBR(c.proxima_visita)}` +
+        `A cada ${c.frequencia_dias || 49} dias · última: ${dataBR(c.ultima_visita_em)} · próxima: ${dataBR(c.proxima_visita_prevista)}` +
         (dif != null ? (dif < 0 ? ` · ⚠ ${-dif}d atrasado` : ` · vence em ${dif}d`) : '')),
       el('label', { class: 'row gap8 mt4 sub' },
         el('input', {
@@ -471,13 +471,13 @@
         visitas.slice(0, 12).map(v => {
           const ped = v.pedido_id ? DB.byId('pedidos', v.pedido_id) : null;
           return el('div', { class: 'hist-linha' + (v.realizada ? '' : ' apagado') },
-            el('span', null, dataBR(v.data) + ' · ' + (v.realizada
+            el('span', null, dataBR(v.data_visita) + ' · ' + (v.realizada
               ? (v.fez_pedido ? '🧾 pedido ' + C.fmtMoney(Number(v.valor_pedido)) +
                 (v.comissao_pct ? ` (${v.comissao_pct}%)` : '') +
                 (ped && (Number(ped.total_unid_dev_display) + Number(ped.total_unid_dev_quebrada)) > 0
                   ? ` · dev ${ped.total_unid_dev_display}+${ped.total_unid_dev_quebrada}q` : '')
                 : 'visita sem pedido')
-              : '✖ não realizada (' + (v.motivo || '') + ')')),
+              : '✖ não realizada (' + (v.motivo_falta || '') + ')')),
             ped ? el('button', { class: 'btn-link', onclick: () => window.NSPedido.abrir(ped.id) }, 'ver') : null);
         }),
         !visitas.length ? el('p', { class: 'vazio' }, 'Sem visitas registradas.') : null)
@@ -505,9 +505,9 @@
           if (!q) return true;
           const cli = DB.byId('clientes', p.cliente_id) || {};
           return (cli.nome || '').toLowerCase().includes(q) ||
-            String(p.numero || '').includes(q) || (p.data || '').includes(q);
+            String(p.numero || '').includes(q) || (p.data_pedido || '').includes(q);
         })
-        .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+        .sort((a, b) => (b.criado_em || '').localeCompare(a.criado_em || ''))
         .slice(0, 60);
       for (const p of peds) {
         const cli = DB.byId('clientes', p.cliente_id) || {};
@@ -515,7 +515,7 @@
           el('div', { class: 'row space w100' },
             el('strong', null, 'Nº ' + (p.numero || '⏳') + ' · ' + (cli.nome || '—')),
             el('strong', null, C.fmtMoney(Number(p.total_valor)))),
-          el('span', { class: 'sub' }, dataBR(p.data) + ' · ' + p.status +
+          el('span', { class: 'sub' }, dataBR(p.data_pedido) + ' · ' + p.status +
             (p.assinatura ? ' · ✍ assinado' : '') +
             ` · ${p.total_unid_vendidas} un vendidas`)));
       }
@@ -532,19 +532,19 @@
     const doRep = (r) => !repId || r.representante_id === repId;
 
     const visitas = DB.all('visitas').filter(doRep);
-    const vMes = visitas.filter(v => noMes(v.data));
-    const vHojeArr = visitas.filter(v => v.data === hojeISO() && v.realizada);
+    const vMes = visitas.filter(v => noMes(v.data_visita));
+    const vHojeArr = visitas.filter(v => v.data_visita === hojeISO() && v.realizada);
     const realizadasMes = vMes.filter(v => v.realizada);
     const comPedido = realizadasMes.filter(v => v.fez_pedido);
     const faturamento = comPedido.reduce((s, v) => s + Number(v.valor_pedido || 0), 0);
     const comissaoGerada = vMes.reduce((s, v) => s + Number(v.comissao_valor || 0), 0);
     const aReceber = visitas.filter(v => noMes(v.comissao_recebimento_em))
       .reduce((s, v) => s + Number(v.comissao_valor || 0), 0);
-    const despesas = DB.all('despesas').filter(doRep).filter(d => noMes(d.data));
+    const despesas = DB.all('despesas').filter(doRep).filter(d => noMes(d.data_despesa));
     const totDesp = despesas.reduce((s, d) => s + Number(d.valor || 0), 0);
-    const kmLanc = despesas.reduce((s, d) => s + Number(d.km || 0), 0);
-    const kmRotas = DB.all('rotas').filter(doRep).filter(r => noMes(r.data))
-      .reduce((s, r) => s + Number(r.km_total || 0), 0);
+    const kmLanc = despesas.reduce((s, d) => s + Number(d.km_rodado || 0), 0);
+    const kmRotas = DB.all('rotas').filter(doRep).filter(r => noMes(r.data_rota))
+      .reduce((s, r) => s + Number(r.distancia_total_km || 0), 0);
     const conversao = realizadasMes.length ? Math.round(comPedido.length / realizadasMes.length * 100) : 0;
     const alertas = alertasCiclo(repId);
     const custoRealKm = kmLanc > 0 ? totDesp / kmLanc : null;
@@ -569,7 +569,7 @@
 
     // Ranking de linhas mais vendidas no mês
     const pedMes = new Set(DB.all('pedidos').filter(doRep)
-      .filter(p => p.status === 'concluido' && noMes(p.data)).map(p => p.id));
+      .filter(p => p.status === 'concluido' && noMes(p.data_pedido)).map(p => p.id));
     const porLinha = {};
     DB.all('pedido_itens').filter(i => pedMes.has(i.pedido_id)).forEach(i => {
       const p = DB.byId('produtos', i.produto_id) || {};
@@ -630,18 +630,18 @@
     function render() {
       wrap.innerHTML = '';
       const mes = mesISO();
-      const desps = DB.all('despesas').filter(d => (!repId || d.representante_id === repId) && (d.data || '').slice(0, 7) === mes)
-        .sort((a, b) => (b.data || '').localeCompare(a.data || ''));
+      const desps = DB.all('despesas').filter(d => (!repId || d.representante_id === repId) && (d.data_despesa || '').slice(0, 7) === mes)
+        .sort((a, b) => (b.data_despesa || '').localeCompare(a.data_despesa || ''));
       const tot = desps.reduce((s2, d) => s2 + Number(d.valor || 0), 0);
       const porCat = {};
-      desps.forEach(d => porCat[d.categoria] = (porCat[d.categoria] || 0) + Number(d.valor || 0));
+      desps.forEach(d => porCat[d.tipo] = (porCat[d.tipo] || 0) + Number(d.valor || 0));
       wrap.appendChild(el('div', { class: 'total-bar' }, el('span', null, 'Total do mês'), el('strong', null, C.fmtMoney(tot))));
       wrap.appendChild(el('div', { class: 'sub mt4' },
         Object.entries(porCat).map(([c2, v]) => CATS[c2] + ' ' + C.fmtMoney(v)).join(' · ') || 'Sem lançamentos.'));
       wrap.appendChild(el('button', { class: 'btn w100 mt12', onclick: nova }, '+ Lançar despesa'));
       wrap.appendChild(el('div', { class: 'col gap4 mt12' },
         desps.map(d => el('div', { class: 'hist-linha' },
-          el('span', null, dataBR(d.data) + ' · ' + (CATS[d.categoria] || d.categoria) + (d.km ? ' · ' + d.km + ' km' : '') + (d.obs ? ' · ' + d.obs : '')),
+          el('span', null, dataBR(d.data_despesa) + ' · ' + (CATS[d.tipo] || d.tipo) + (d.km_rodado ? ' · ' + d.km_rodado + ' km' : '') + (d.descricao ? ' · ' + d.descricao : '')),
           el('div', { class: 'row gap8' },
             el('strong', null, C.fmtMoney(Number(d.valor))),
             el('button', { class: 'btn-icon', onclick: async () => { if (await confirmar('Excluir lançamento?')) { DB.remove('despesas', d.id); render(); } } }, '🗑'))))));
@@ -657,8 +657,8 @@
           class: 'btn big w100', onclick: () => {
             if (!Number(val.value)) return toast('Informe o valor.', 'erro');
             DB.insert('despesas', {
-              representante_id: repId || s.rep.id, data: dt.value, categoria: cat.value,
-              valor: Number(val.value), km: km.value ? Number(km.value) : null, obs: obs.value || null
+              representante_id: repId || s.rep.id, data_despesa: dt.value, tipo: cat.value,
+              valor: Number(val.value), km_rodado: km.value ? Number(km.value) : null, descricao: obs.value || null
             });
             mm.fechar(); render();
           }
@@ -669,7 +669,7 @@
   // ---------- Geocodificação em massa ----------
   function telaGeocode() {
     const repId = repEfetivoId();
-    const pend = clientesDoRep(repId).filter(c => c.geocode_status === 'pendente' || c.geocode_status === 'falhou' || c.lat == null);
+    const pend = clientesDoRep(repId).filter(c => c.geocoding_status === 'pendente' || c.geocoding_status === 'falhou' || c.lat == null);
     const info = el('p', { class: 'sub mt8' }, pend.length + ' cliente(s) sem coordenada precisa.');
     const barra = el('div', { class: 'sub mt8' });
     const m = modal(el('div', null,
@@ -688,8 +688,8 @@
   }
 
   // ---------- Admin: Clientes ----------
-  const CAMPOS_CLIENTE = ['nome', 'cnpj', 'inscricao_estadual', 'contato', 'email', 'telefone', 'celular',
-    'endereco', 'bairro', 'cidade', 'uf', 'cep', 'rede', 'semana_ciclo', 'dia_semana', 'frequencia_dias'];
+  const CAMPOS_CLIENTE = ['nome', 'razao_social', 'cnpj_cpf', 'inscricao_estadual', 'contato', 'email', 'telefone', 'celular',
+    'endereco', 'bairro', 'cidade', 'uf', 'cep', 'rede', 'semana_padrao', 'dia_semana_padrao', 'frequencia_dias'];
 
   function telaAdminClientes() {
     const wrap = el('div');
@@ -711,14 +711,14 @@
         DB.all('clientes').filter(c => !q || (c.nome || '').toLowerCase().includes(q) || (c.cidade || '').toLowerCase().includes(q))
           .sort((a, b) => (a.nome || '').localeCompare(b.nome || '')).slice(0, 100)
           .forEach(c => listaEl.appendChild(el('div', { class: 'hist-linha' },
-            el('span', null, (c.ativo === false ? '🚫 ' : '') + c.nome + ' · ' + (c.cidade || '') +
-              ' · S' + (c.semana_ciclo || '?') + 'D' + (c.dia_semana || '?')),
+            el('span', null, (c.status === 'inativo' ? '🚫 ' : '') + c.nome + ' · ' + (c.cidade || '') +
+              ' · S' + (c.semana_padrao || '?') + 'D' + (c.dia_semana_padrao || '?')),
             el('button', { class: 'btn-link', onclick: () => editarCliente(c.id, render) }, 'editar'))));
       }
       lista();
     }
     function exportarCSV() {
-      const linhas = [CAMPOS_CLIENTE.concat(['recebimento_dias', 'geocode_status', 'ultima_visita', 'proxima_visita'])];
+      const linhas = [CAMPOS_CLIENTE.concat(['recebimento_dias', 'geocoding_status', 'ultima_visita_em', 'proxima_visita_prevista'])];
       DB.all('clientes').forEach(c => linhas.push(linhas[0].map(k => c[k])));
       baixar(new Blob(['﻿' + C.toCSV(linhas)], { type: 'text/csv;charset=utf-8' }), 'clientes-newstar.csv');
     }
@@ -757,16 +757,16 @@
           class: 'btn big w100 mt12', onclick: () => {
             let n = 0;
             for (const linha of linhas.slice(1)) {
-              const row = { representante_id: repSel.value, ativo: true, geocode_status: 'pendente' };
+              const row = { representante_id: repSel.value, status: 'ativo', geocoding_status: 'pendente' };
               CAMPOS_CLIENTE.forEach((campo, i) => {
                 const idx = Number(sels[i].value);
                 if (idx >= 0 && linha[idx] != null && String(linha[idx]).trim() !== '') {
                   let v = String(linha[idx]).trim();
-                  if (['semana_ciclo', 'dia_semana', 'frequencia_dias'].includes(campo)) v = parseInt(v, 10) || null;
+                  if (['semana_padrao', 'frequencia_dias'].includes(campo)) v = parseInt(v, 10) || null;
                   row[campo] = v;
                 }
               });
-              if (!row.nome) continue;
+              if (!row.nome || !row.cidade || !row.uf) continue; // cidade/uf são not null no schema
               if (row.rede && String(row.rede).toUpperCase().includes('CLAMED')) row.recebimento_dias = 45;
               DB.insert('clientes', row); n++;
             }
@@ -786,33 +786,40 @@
     const repSel = el('select', { class: 'input' },
       DB.all('representantes').filter(r => r.papel === 'vendedor')
         .map(r => el('option', { value: r.id, selected: c.representante_id === r.id ? '' : null }, r.nome)));
-    const ativo = el('input', { type: 'checkbox', checked: c.ativo !== false ? '' : null });
+    const diaSel = el('select', { class: 'input' },
+      el('option', { value: '' }, '(sem dia fixo)'),
+      C.DIAS_SEMANA.slice(1, 7).map(d => el('option', { value: d, selected: C.normDia(c.dia_semana_padrao) === C.normDia(d) ? '' : null }, d)));
+    const statusSel = el('select', { class: 'input' },
+      ['ativo', 'prospect', 'inativo'].map(st => el('option', { value: st, selected: (c.status || 'ativo') === st ? '' : null }, st)));
     const mm = modal(el('div', { class: 'col gap8' },
-      inp('nome', 'Nome *'), inp('cnpj', 'CNPJ/CPF'), inp('inscricao_estadual', 'Inscrição Estadual'),
+      inp('nome', 'Nome *'), inp('razao_social', 'Razão social'), inp('cnpj_cpf', 'CNPJ/CPF'),
+      inp('inscricao_estadual', 'Inscrição Estadual'),
       inp('contato', 'Contato'), inp('email', 'E-mail', 'email'), inp('telefone', 'Telefone'), inp('celular', 'Celular'),
-      inp('endereco', 'Endereço'), inp('bairro', 'Bairro'), inp('cidade', 'Cidade'), inp('uf', 'UF'), inp('cep', 'CEP'),
+      inp('endereco', 'Endereço'), inp('bairro', 'Bairro'), inp('cidade', 'Cidade *'), inp('uf', 'UF *'), inp('cep', 'CEP'),
       inp('rede', 'Rede (ex.: Clamed)'), inp('recebimento_dias', 'Prazo comissão (dias — Clamed = 45)', 'number'),
-      inp('semana_ciclo', 'Semana do ciclo (1-7)', 'number'), inp('dia_semana', 'Dia (1=Seg…6=Sáb)', 'number'),
+      inp('semana_padrao', 'Semana do ciclo (1-7)', 'number'),
+      el('label', { class: 'campo' }, el('span', { class: 'sub' }, 'Dia da semana'), diaSel),
       inp('frequencia_dias', 'Frequência (dias)', 'number'),
       el('label', { class: 'campo' }, el('span', { class: 'sub' }, 'Representante'), repSel),
-      el('label', { class: 'row gap8' }, ativo, 'Ativo'),
+      el('label', { class: 'campo' }, el('span', { class: 'sub' }, 'Status'), statusSel),
       el('button', {
         class: 'btn big w100', onclick: () => {
           if (!campos.nome.value.trim()) return toast('Nome é obrigatório.', 'erro');
-          const body = { representante_id: repSel.value, ativo: ativo.checked };
+          if (!campos.cidade.value.trim() || !campos.uf.value.trim()) return toast('Cidade e UF são obrigatórios.', 'erro');
+          const body = { representante_id: repSel.value, status: statusSel.value, dia_semana_padrao: diaSel.value || null };
           for (const [k, elInp] of Object.entries(campos)) {
             let v = elInp.value.trim();
-            if (['semana_ciclo', 'dia_semana', 'frequencia_dias', 'recebimento_dias'].includes(k))
+            if (['semana_padrao', 'frequencia_dias', 'recebimento_dias'].includes(k))
               v = v === '' ? null : parseInt(v, 10);
             body[k] = v === '' ? null : v;
           }
           if (body.rede && String(body.rede).toUpperCase().includes('CLAMED') && !body.recebimento_dias)
             body.recebimento_dias = 45;
-          if (body.frequencia_dias == null) body.frequencia_dias = 49;
+          if (body.frequencia_dias == null) body.frequencia_dias = 60;
           if (body.recebimento_dias == null) body.recebimento_dias = 0;
           const antigo = id ? DB.byId('clientes', id) : null;
           if (antigo && (antigo.endereco !== body.endereco || antigo.cidade !== body.cidade || antigo.cep !== body.cep))
-            body.geocode_status = 'pendente';
+            body.geocoding_status = 'pendente';
           if (id) DB.update('clientes', id, body); else DB.insert('clientes', body);
           mm.fechar(); toast('Cliente salvo.');
           if (aoSalvar) aoSalvar();
@@ -902,14 +909,14 @@
         inp('comissao_pct', '% comissão reposição', 'number', '0.1'),
         inp('custo_km', 'Custo por km (R$)', 'number', '0.01'),
         inp('cidade_base', 'Cidade base'),
-        inp('base_lat', 'Base — latitude', 'number', 'any'), inp('base_lng', 'Base — longitude', 'number', 'any'),
+        inp('lat_base', 'Base — latitude', 'number', 'any'), inp('lng_base', 'Base — longitude', 'number', 'any'),
         el('label', { class: 'campo' }, el('span', { class: 'sub' }, 'Papel'), papel),
         el('label', { class: 'row gap8' }, ativo, 'Ativo'),
         el('div', { class: 'row gap8' },
           r.id ? el('button', {
             class: 'btn btn-sec grow', onclick: async () => {
               if (await confirmar('Resetar a senha de ' + r.nome + '? Ele definirá uma nova no próximo login.')) {
-                DB.update('representantes', r.id, { senha_hash: 'PLACEHOLDER' });
+                DB.update('representantes', r.id, { senha_hash: 'TROCAR_NA_TELA_DE_LOGIN' });
                 toast('Senha resetada.');
               }
             }
@@ -924,12 +931,12 @@
                 comissao_pct: Number(f.comissao_pct.value) || 10,
                 custo_km: Number(f.custo_km.value) || 0.8,
                 cidade_base: f.cidade_base.value.trim() || null,
-                base_lat: f.base_lat.value === '' ? null : Number(f.base_lat.value),
-                base_lng: f.base_lng.value === '' ? null : Number(f.base_lng.value),
+                lat_base: f.lat_base.value === '' ? null : Number(f.lat_base.value),
+                lng_base: f.lng_base.value === '' ? null : Number(f.lng_base.value),
                 papel: papel.value, ativo: ativo.checked
               };
               if (r.id) DB.update('representantes', r.id, body);
-              else DB.insert('representantes', Object.assign({ senha_hash: 'PLACEHOLDER' }, body));
+              else DB.insert('representantes', Object.assign({ senha_hash: 'TROCAR_NA_TELA_DE_LOGIN' }, body));
               mm.fechar(); render();
             }
           }, 'Salvar'))), { titulo: r.id ? 'Editar vendedor' : 'Novo vendedor', full: true });
@@ -982,7 +989,7 @@
     const m = modal(el('div', null,
       el('p', null, 'Redistribui os clientes de ' + rep.nome + ' pelo ciclo de 7 semanas respeitando a frequência individual, ' +
         DB.config('visitas_dia_min', 6) + '–' + DB.config('visitas_dia_max', 8) + ' visitas/dia e proximidade geográfica (menor km).'),
-      el('p', { class: 'aviso mt8' }, 'Isso regrava semana_ciclo e dia_semana de todos os clientes ativos do representante.'),
+      el('p', { class: 'aviso mt8' }, 'Isso regrava semana e dia do ciclo de todos os clientes ativos do representante.'),
       el('button', {
         class: 'btn big w100 mt12', onclick: async () => {
           const res = replanejar(rep.id);
@@ -996,7 +1003,7 @@
       const minDia = Number(DB.config('visitas_dia_min', 6));
       const cls = clientesDoRep(repId).slice();
       // urgência: quem está mais perto de estourar o ciclo primeiro
-      cls.sort((a, b) => (a.proxima_visita || '9999').localeCompare(b.proxima_visita || '9999'));
+      cls.sort((a, b) => (a.proxima_visita_prevista || '9999').localeCompare(b.proxima_visita_prevista || '9999'));
       const slots = []; // 7 semanas × 6 dias
       for (let ss = 1; ss <= 7; ss++) for (let dd = 1; dd <= 6; dd++) slots.push({ s: ss, d: dd, membros: [] });
       const alvo = Math.min(maxDia, Math.max(minDia, Math.ceil(cls.length / slots.length)));
@@ -1024,7 +1031,7 @@
       for (const slot of slots) {
         if (!slot.membros.length) continue;
         dias++;
-        for (const c2 of slot.membros) { DB.update('clientes', c2.id, { semana_ciclo: slot.s, dia_semana: slot.d }); n++; }
+        for (const c2 of slot.membros) { DB.update('clientes', c2.id, { semana_padrao: slot.s, dia_semana_padrao: C.DIAS_SEMANA[slot.d] }); n++; }
       }
       return { n, dias, media: dias ? Math.round(n / dias * 10) / 10 : 0 };
     }

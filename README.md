@@ -1,106 +1,108 @@
-# CRM — Dr. Tiago Franco Martins (Oculoplástica)
+# NEW STAR — Gestão do Representante + Talão de Pedido Digital
 
-CRM de leads com Kanban, atendimento por IA (padrão) com assunção humana, integração com anúncios click-to-WhatsApp e encaminhamento automático de pacientes qualificados para a secretária do hospital. Stack: **Vercel (front + serverless) + Supabase + Z-API (WhatsApp) + Google Gemini**.
+PWA offline-first para os representantes da New Star (placas de brincos/semijoias em
+consignação em farmácias no RS/SC/PR) e painel do gestor. Dois módulos integrados na
+mesma base:
 
-## Fluxo
-1. Paciente clica no anúncio do Meta → cai no WhatsApp oficial → webhook cria o lead em **Novo Lead** (card piscando) com a campanha de origem.
-2. A **IA responde por padrão** (informações básicas, qualificação, condução p/ consulta). Ela mesma escala para humano em: pedido insistente de preço, assunto clínico, reclamação.
-3. Humano pode **assumir a conversa** a qualquer momento (toggle ou simplesmente enviando uma mensagem — isso pausa a IA).
-4. Arrastar o card para **Qualificado** → dispara template com o resumo do lead para o WhatsApp da secretária do hospital + avisa o paciente.
-5. Arrastar para **Follow-up** → agenda cadência automática D+2 / D+7 / D+15 / D+30 (templates aprovados, cron diário).
-6. **Perdido** exige motivo (relatório de conversão) e **Fechado**/Perdido cancelam follow-ups pendentes.
+- **Módulo A — Gestão do Representante**: rota do dia pelo ciclo de 7 semanas com
+  otimização (Nearest Neighbor + 2-opt sobre Google Distance Matrix, fallback
+  haversine ×1,3 offline), reencaixe automático de visitas não realizadas, pernoite
+  ("📍 Estou aqui"), frequência que aprende, comissões 15%/10% com prazo Clamed +45d,
+  despesas de estrada, linhas de produto/upsell e dashboard.
+- **Módulo B — Talão de Pedido Digital**: cliente → tabela de preço (Simples/Lucro
+  Presumido) → placas P/G → devoluções (Display/Quebrada) → conferência → assinatura
+  na tela → PDF (visualizar/compartilhar/imprimir) → histórico permanente.
+
+**Stack**: HTML/JS puro (sem build), Supabase (PostgreSQL + PostgREST), Google Maps
+APIs (Geocoding, Distance Matrix, JS), deploy estático em Netlify ou Vercel.
+
+## Estrutura
+
+```
+├── supabase/
+│   ├── schema_v2.sql             # 1º — base original (tabelas + RLS + triggers)
+│   ├── migracao_clientes_v2.sql  # 2º — 255 clientes reais do Denilson + usuários
+│   ├── update_v3.sql             # 3º — linhas de produto, comissão dupla, prazo Clamed
+│   └── update_v4.sql             # 4º — talão digital (pedidos/itens/trigger), catálogo
+│                                 #      com preços e placas P/G, pendências, pernoites,
+│                                 #      configurações (evolui os 3 originais, não recria)
+├── public/                       # o app (deploy é só publicar esta pasta)
+│   ├── index.html                # shell + CSS + bloco NS_CONFIG
+│   ├── js/calc.js                # cálculos puros (placas, comissão, rotas, ciclo, CSV)
+│   ├── js/db.js                  # offline-first: cache local + fila de sync (PostgREST)
+│   ├── js/rota.js                # Google Geocoding/Distance Matrix + montagem da rota
+│   ├── js/pdf.js                 # gerador de PDF próprio (offline, assinatura embutida)
+│   ├── js/pedido.js              # wizard do talão + assinatura + ações de PDF
+│   ├── js/app.js                 # login, Hoje, clientes, dashboard, despesas, admin
+│   └── sw.js / manifest / icons  # PWA instalável
+├── tests/
+│   ├── calc.test.cjs             # 30 testes de cálculo (node tests/calc.test.cjs)
+│   └── e2e.offline.cjs           # 29 testes E2E no Chromium (fluxo completo offline + sync)
+└── docs_prompt_original.md       # especificação original do projeto
+```
 
 ## Setup
 
 ### 1. Supabase
-1. Criar projeto novo → SQL Editor → rodar `supabase/schema.sql`.
-2. Authentication → Users → criar os usuários da equipe (e-mail + senha).
-3. Anotar: `Project URL`, `anon key`, `service_role key` (Settings → API).
+1. Criar projeto → SQL Editor → rodar **na ordem**: `schema_v2.sql`,
+   `migracao_clientes_v2.sql`, `update_v3.sql`, `update_v4.sql`.
+2. Anotar `Project URL` e `anon key` (Settings → API).
+3. Usuários criados pela migração: `denilson@newstar.com.br` (vendedor, base Passo
+   Fundo) e `guilherme@newstar.com.br` (gestor) — **a senha é definida no primeiro
+   login** (registro vem com hash placeholder).
+4. Os 255 clientes já entram com ciclo (semana 1-7 × dia da semana), coordenadas
+   aproximadas por cidade e as 19 farmácias Clamed marcadas com `recebimento_dias = 45`.
 
-### 2. Z-API (WhatsApp)
-1. Criar conta em z-api.io → criar uma instância.
-2. Conectar o **número novo dedicado aos anúncios** lendo o QR code (não usar o número pessoal/oficial do Dr. Tiago).
-3. Anotar: **Instance ID**, **Token da instância** e o **Client-Token** (menu Segurança da conta).
-4. Na instância → Webhooks → **"Ao receber"** → colar `https://SEU-PROJETO.vercel.app/api/webhook`.
-5. Preencher os três valores no CRM em **Config IA → Integrações**.
+> Nota de segurança: o padrão inicial é o do schema original — RLS habilitado com
+> policies abertas e filtro por representante no app (anon key). As policies
+> `auth.uid()` para migrar a Supabase Auth estão comentadas no fim do `schema_v2.sql`.
 
-⚠️ Estratégia anti-banimento: número dedicado só pros anúncios, volume baixo, conversa sempre iniciada pelo paciente, sem disparo em massa. Lead qualificado é encaminhado para o WhatsApp da secretária (número oficial, fora de risco).
+### 2. Google Maps
+Criar chave com **Geocoding API**, **Distance Matrix API** e **Maps JavaScript API**
+habilitadas e informá-la dentro do app em **Mais → Configurações** (gestor). Sem
+chave o app segue funcionando com distâncias estimadas (haversine ×1,3). Use
+**Mais → Geocodificar clientes** para converter os endereços em posição precisa
+(status por cliente: preciso / aproximado / falhou).
 
-💡 Rastreio de campanha: configure uma mensagem pré-preenchida DIFERENTE em cada anúncio ("Olá! Vi o anúncio sobre olhar descansado…") — o CRM grava a 1ª mensagem como origem do lead.
+### 3. Deploy (Netlify ou Vercel)
+1. Editar `public/index.html` → bloco `NS_CONFIG` → preencher `SUPABASE_URL` e
+   `SUPABASE_ANON_KEY`.
+2. Publicar a pasta `public/` como site estático
+   (Netlify: arrastar a pasta; Vercel: Output Directory = `public`).
+3. No celular: abrir o site → "Adicionar à tela inicial" (PWA instalável, funciona
+   100% offline; escrituras ficam na fila e sincronizam ao voltar o sinal).
 
-### 3. Vercel
-1. Subir esta pasta num repositório GitHub → importar no Vercel.
-2. Environment Variables:
+## Regras de negócio no banco (triggers)
 
-| Variável | Valor |
-|---|---|
-| `SUPABASE_URL` | URL do projeto |
-| `SUPABASE_SERVICE_ROLE_KEY` | service_role key |
-| `CRON_SECRET` | string aleatória (protege o cron) |
-| `META_APP_ID` | ID do app Meta da Alcance 360 (Tech Provider) — só necessário se algum cliente usar API Oficial |
-| `META_APP_SECRET` | Chave secreta do mesmo app — **nunca vai no banco, só aqui** |
+- **Comissão**: 15% no primeiro pedido (cliente sem qualquer sinal de compra anterior:
+  sem último pedido, sem seed da listagem, status legado 'Novo'), 10% na reposição —
+  percentuais por representante. `comissao_recebimento_em = data + recebimento_dias`
+  (Clamed = 45; demais = 0). Calculada sobre o **valor efetivamente vendido**
+  (colocadas − devolvidas − quebradas) × preço da tabela do pedido.
+- **Conclusão de pedido** (`update_v4`): recalcula totais dos itens, registra/atualiza
+  a visita do dia (dispara a comissão), grava as linhas em `visitas.produtos` e
+  `cliente_produtos`.
+- **Visita realizada**: atualiza última visita/último pedido/próxima prevista do
+  cliente e resolve pendência aberta (fila de reencaixe).
 
-**Só isso.** Todas as credenciais de integração (token do Meta, Phone Number ID, verify token do webhook, WhatsApp da secretária, chave e modelo do Gemini) são preenchidas **dentro do CRM**, no botão **Config IA → seção Integrações** — salvou, já está valendo (sem redeploy).
+## Configurável no Admin (nunca hardcoded)
 
-3. Em `public/index.html`, preencher `SUPABASE_URL` e `SUPABASE_ANON_KEY` no bloco CONFIG.
-4. Deploy. O cron de follow-ups roda todo dia às 10h (Brasília) — configurado em `vercel.json`.
+Preços e unidades por placa de cada produto (os preços não informados ficaram NULL —
+o app bloqueia o lançamento e pede cadastro) · % comissão novo/reposição e custo/km
+por vendedor · prazo de recebimento por cliente · condições de pagamento ·
+observações do rodapé do PDF · visitas/dia (6–8) · regra de pernoite (150 km / 60 km) ·
+desvio máximo de reencaixe · início do ciclo de 7 semanas.
 
-### 4. Anúncios
-Nas campanhas click-to-WhatsApp do Meta, apontar para o número conectado na Z-API, com mensagem pré-preenchida diferente por campanha — o CRM grava a 1ª mensagem como origem do lead.
+## Testes
 
-## Mensagens automáticas
-Sem templates pra aprovar: os textos dos follow-ups (D+2/D+7/D+15/D+30), da retomada e do aviso à secretária estão em `api/_lib/core.js` (constante `AUTO_TEXTS`) — edite lá se quiser mudar o tom.
-
-## Estrutura
+```bash
+node tests/calc.test.cjs     # cálculos: placas P/G, devolução+quebra, comissão, ciclo, rota, pernoite
+node tests/e2e.offline.cjs   # Chromium: login offline → pedido → assinatura → PDF → sync posterior
 ```
-api/webhook.js        → recebe mensagens do Meta, cria leads, roda a IA
-api/send.js           → envio humano (com tratamento da janela de 24h)
-api/stage.js          → movimentação de etapa + automações (secretária, follow-ups, perda)
-api/cron-followups.js → cron diário dos follow-ups
-api/_lib/core.js      → Supabase, Meta API, auth, janela 24h
-api/_lib/agent.js     → agente de IA (prompt + base de conhecimento editáveis no CRM)
-public/index.html     → o CRM (Kanban + chat + Config IA)
-supabase/schema.sql   → banco completo
-templates-meta.md     → textos dos templates para aprovar no Meta
-```
 
-## Antes de entregar ao Dr. Tiago
-- [ ] Preencher a seção **Integrações** (Config IA no painel): Instance ID/Token/Client-Token da Z-API, WhatsApp da secretária e chave do Gemini.
-- [ ] Preencher a base de conhecimento (Config IA no painel): cidade, hospital, particularidades.
-- [ ] Confirmar o nome da agente de IA (padrão: **Maia**) — editável em Config IA.
-- [ ] Testar o fluxo completo com seu próprio número antes de ligar os anúncios.
-
-
-## WhatsApp: Z-API ou API Oficial (por cliente)
-
-O sistema suporta os dois transportes, escolhidos em **Config IA → Integrações → WhatsApp · Provedor**, sem precisar trocar código:
-
-- **Z-API** (padrão): chip dedicado, QR code, sem burocracia — ver seção anterior.
-- **API Oficial (Meta)**: para clientes que exigem o canal oficial. Como a Alcance 360 é **Tech Provider** do Meta, a conexão usa **Embedded Signup**: o médico clica em "Conectar número via Facebook", loga, escolhe/cria o WABA e o número — e o sistema recebe e salva tudo sozinho (token, WABA ID, Phone Number ID). Nada de copiar token manualmente.
-
-  Pré-requisitos (uma vez só, por conta da Alcance 360, não por cliente):
-  1. App em modo **Live** no developers.facebook.com, com App Review aprovado para `whatsapp_business_management` e `whatsapp_business_messaging`.
-  2. Uma **Embedded Signup Configuration** criada em WhatsApp → Embedded Signup → Configurations (gera um Configuration ID).
-  3. `META_APP_ID` e `META_APP_SECRET` nas env vars da Vercel (App Dashboard → Configurações → Básico).
-
-  Por cliente, em Config IA → Integrações → API Oficial: é só clicar em **Conectar número via Facebook** — App ID, Configuration ID e Verify Token já vêm embutidos no código (`ALCANCE360_META_APP_ID`, `ALCANCE360_META_CONFIG_ID`, `ALCANCE360_META_VERIFY_TOKEN` no topo do `public/index.html`), compartilhados entre todos os clientes que usarem API Oficial neste mesmo app Tech Provider. O cliente/secretária nunca precisa ver nem preencher esses valores.
-  O webhook (`https://SEU-PROJETO.vercel.app/api/webhook`) e o Verify Token (`alcance360-webhook`) são configurados **uma única vez** no App Dashboard da Alcance 360 — não repete por cliente.
-  Templates (`templates-meta.md`) precisam ser submetidos e aprovados por WABA/cliente. Os textos exatos ficam visíveis (somente leitura) em Config IA → "Mensagens fixas (templates aprovados)".
-
-
-## Reativação por inatividade (2h / 2 dias / 15 dias)
-
-Enquanto um lead está sendo atendido pela IA (Novo Lead, Em Atendimento ou Follow-up) e para de responder, o sistema reengaja sozinho com mensagens **fixas, curtas e leves** (não geradas por IA de propósito — controle de conteúdo na área da saúde). Cadência ÚNICA, sem duplicação:
-- **2h** sem resposta → toque bem leve, pergunta se ficou dúvida específica
-- **2 dias** → reforça disponibilidade, mencionando a blefaroplastia
-- **15 dias** → mensagem final, educada, avisando que encerra o atendimento automático por aqui mas segue à disposição (não força nenhuma mudança de etapa — o card continua onde está)
-
-Cobre automaticamente os leads que estão na etapa Follow-up também — não é mais preciso nenhuma cadência separada por etapa. Textos em `api/_lib/core.js` (`AUTO_TEXTS`) e prontos como rascunho de template em `templates-meta.md`. Se o paciente responder a qualquer momento, o relógio zera e o ciclo recomeça do zero na próxima vez que ficar em silêncio.
-
-### Frequência do cron
-
-O endpoint é `/api/cron-reactivation`, protegido pelo mesmo `CRON_SECRET`. Substitui o antigo `/api/cron-followups` (removido) — agora é um único mecanismo para toda cadência de reativação. Com o **plano Pro da Vercel**, roda nativamente a cada **30 minutos**, configurado em `vercel.json` (schedule `"*/30 * * * *"`) — sem depender de nenhum serviço externo.
-
-(No plano Hobby, o cron nativo só roda 1x/dia; nesse caso seria necessário um agendador externo gratuito como cron-job.org apontando para este endpoint com o header `Authorization: Bearer SEU_CRON_SECRET`.)
-
-Pode ligar ou desligar essa reativação a qualquer momento em Config IA → "Reativação por inatividade", sem precisar mexer no código.
+Cobrem a lista obrigatória da especificação: busca parcial (CNPJ/nome/cidade), troca
+de tabela refletindo preços, placa P vs G, devolução+quebra abatendo antes da
+comissão (48−5−2=41), 15% no 1º pedido / 10% na reposição, +45d só para Clamed,
+assinatura salva e embutida no PDF, pedido consultável depois, reencaixe de pendente
+e funcionamento offline com sincronização posterior. Os 4 SQLs + triggers foram
+validados em PostgreSQL 16 real com os 255 clientes carregados.

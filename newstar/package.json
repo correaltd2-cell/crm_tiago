@@ -1,5 +1,0 @@
-{
-  "name": "newstar",
-  "private": true,
-  "scripts": { "test": "node tests/calc.test.cjs" }
-}

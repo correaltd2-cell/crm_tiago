@@ -104,7 +104,7 @@
     if (!navigator.onLine || !configured()) return false;
     for (const t of TABLES) {
       const lim = PULL_LIMIT[t];
-      const order = (PK[t] || 'id') === 'id' && t !== 'configuracoes' ? '&order=created_at.desc' : '';
+      const order = (PK[t] || 'id') === 'id' && t !== 'configuracoes' ? '&order=criado_em.desc' : '';
       const rows = await rest(t + '?select=*' + (order || '') + (lim ? '&limit=' + lim : ''));
       mem[t] = rows || []; save(t);
     }
@@ -124,7 +124,7 @@
     insert(table, row) {
       const pk = PK[table] || 'id';
       if (pk === 'id' && !row.id) row.id = uuid();
-      if (!row.created_at && table !== 'configuracoes' && table !== 'cliente_produtos') row.created_at = new Date().toISOString();
+      if (!row.criado_em && table !== 'configuracoes' && table !== 'cliente_produtos') row.criado_em = new Date().toISOString();
       load(table).unshift(row); save(table);
       queue({ table, method: 'POST', body: row });
       return row;

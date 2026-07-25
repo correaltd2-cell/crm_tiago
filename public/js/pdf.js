@@ -139,7 +139,7 @@
     pg.text(M + 10, y - 20, 'NEW STAR', 16, true);
     pg.text(M + 10, y - 36, 'Talão de Pedido — Consignação', 8.5);
     pg.text(W - M - 10, y - 20, 'PEDIDO Nº ' + (pedido.numero || 'PENDENTE'), 12, true, 'right');
-    pg.text(W - M - 10, y - 36, 'Data: ' + dataBR(pedido.data), 9, false, 'right');
+    pg.text(W - M - 10, y - 36, 'Data: ' + dataBR(pedido.data_pedido), 9, false, 'right');
     y -= 58;
 
     // Vendedor / tabela
@@ -154,7 +154,7 @@
     pg.rect(M, y - 62, W - 2 * M, 62);
     let cy = y - 12;
     pg.text(M + 8, cy, (cliente.nome || ''), 10, true);
-    pg.text(W - M - 8, cy, 'CNPJ/CPF: ' + (cliente.cnpj || '—'), 9, false, 'right');
+    pg.text(W - M - 8, cy, 'CNPJ/CPF: ' + (cliente.cnpj_cpf || '—'), 9, false, 'right');
     cy -= 13;
     pg.text(M + 8, cy, 'Contato: ' + (cliente.contato || '—') + '   Tel: ' + (cliente.telefone || '—') + '   Cel: ' + (cliente.celular || '—'), 8.5);
     cy -= 12;
@@ -213,8 +213,8 @@
     pg.text(W - M - 8, y - 14, 'TOTAL: ' + C.fmtMoney(Number(pedido.total_valor)), 12, true, 'right');
     y -= 34;
 
-    if (pedido.obs) {
-      const l = wrap('Observações do pedido: ' + pedido.obs, 8.5, W - 2 * M);
+    if (pedido.observacoes) {
+      const l = wrap('Observações do pedido: ' + pedido.observacoes, 8.5, W - 2 * M);
       l.forEach(t => { pg.text(M, y, t, 8.5); y -= 11; });
       y -= 4;
     }

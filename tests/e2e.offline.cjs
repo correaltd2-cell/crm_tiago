@@ -18,13 +18,14 @@ const seed = {
     id: REP_ID, nome: 'Denilson', email: 'denilson@newstar.com.br',
     senha_hash: sha256('123456'), papel: 'vendedor', contato: '(49) 99999-0000',
     comissao_pct: 10, comissao_pct_novo: 15, custo_km: 0.8,
-    cidade_base: 'Chapecó', base_lat: -27.1, base_lng: -52.61, ativo: true
+    cidade_base: 'Passo Fundo', lat_base: -28.2622, lng_base: -52.4083, ativo: true
   }],
   ns_c_clientes: [{
     id: CLI_ID, representante_id: REP_ID, nome: 'FARMACIA TESTE LTDA',
-    cnpj: '11.222.333/0001-44', cidade: 'Chapecó', uf: 'SC', rede: 'Clamed',
-    recebimento_dias: 45, semana_ciclo: 1, dia_semana: 1, frequencia_dias: 49,
-    geocode_status: 'pendente', ativo: true
+    cnpj_cpf: '11.222.333/0001-44', cidade: 'Passo Fundo', uf: 'RS', rede: 'Clamed',
+    recebimento_dias: 45, semana_padrao: 1, dia_semana_padrao: 'Segunda', frequencia_dias: 60,
+    status: 'ativo', status_legado: 'Novo', geocoding_status: 'aproximado',
+    lat: -28.2622, lng: -52.4083
   }],
   ns_c_produtos: [{
     id: PROD_ID, codigo: '4109', nome: 'BRAG — Argolinha', variacao: null,
@@ -136,9 +137,9 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   }));
   check('pedido salvo concluído, total 594,50', dados.pedido.status === 'concluido' && dados.pedido.total_valor === 594.5);
   check('assinatura salva no pedido (PNG base64)', String(dados.pedido.assinatura || '').startsWith('data:image/png'));
-  check('visita com fez_pedido e valor vendido', dados.visita.fez_pedido === true && dados.visita.valor_pedido === 594.5);
+  check('visita com fez_pedido e valor vendido', dados.visita.fez_pedido === true && dados.visita.valor_pedido === 594.5 && !!dados.visita.data_visita);
   check('comissão 15% no 1º pedido = 89,18', dados.visita.comissao_pct === 15 && dados.visita.comissao_valor === 89.18);
-  const dt = new Date(dados.pedido.data + 'T12:00:00'); dt.setDate(dt.getDate() + 45);
+  const dt = new Date(dados.pedido.data_pedido + 'T12:00:00'); dt.setDate(dt.getDate() + 45);
   check('recebimento Clamed +45 dias', dados.visita.comissao_recebimento_em === dt.toISOString().slice(0, 10));
   check('linha do produto virou "linha que trabalha"', dados.cliProds.some(cp => cp.produto_id === PROD_ID));
   check('escrituras na fila offline (sync posterior)', dados.outbox >= 4);
@@ -184,8 +185,8 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   // 2º pedido do mesmo cliente = reposição 10% (testar via lógica local)
   const com2 = await page.evaluate(() => {
     const rep = JSON.parse(localStorage.getItem('ns_c_representantes'))[0];
-    const jaComprou = JSON.parse(localStorage.getItem('ns_c_visitas'))
-      .some(v => v.fez_pedido && Number(v.valor_pedido) > 0);
+    const cli = JSON.parse(localStorage.getItem('ns_c_clientes'))[0];
+    const jaComprou = NSCalc.clienteJaComprou(cli, JSON.parse(localStorage.getItem('ns_c_visitas')));
     return NSCalc.calcComissao({ valor: 1000, clienteNovo: !jaComprou, pctNovo: rep.comissao_pct_novo, pctReposicao: rep.comissao_pct, dataPedido: '2026-07-25', recebimentoDias: 45 });
   });
   check('reposição usa 10% (cliente já comprou)', com2.pct === 10 && com2.valor === 100);

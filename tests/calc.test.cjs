@@ -78,5 +78,16 @@ const itens = [
 ];
 eq('soma dos itens', C.calcTotais(itens), { colocadas: 70, devDisplay: 5, devQuebrada: 3, vendidas: 62, valor: 1073.10 });
 
+console.log('Ciclo com dia em texto (migração real):');
+eq('Segunda == dia 1', C.mesmoDia('Segunda', 1), true);
+eq('terça-feira == dia 2 (acento/feira)', C.mesmoDia('terça-feira', 2), true);
+eq('Sexta != dia 3', C.mesmoDia('Sexta', 3), false);
+
+console.log('Cliente novo (regra do trigger):');
+eq('status legado Novo sem histórico → novo', C.clienteJaComprou({ status_legado: 'Novo' }, []), false);
+eq('status legado Ativo → já comprou (10%)', C.clienteJaComprou({ status_legado: 'Ativo' }, []), true);
+eq('seed da listagem → já comprou', C.clienteJaComprou({ seed_dias_sem_pedido: 30 }, []), true);
+eq('visita com pedido → já comprou', C.clienteJaComprou({ status_legado: 'Novo' }, [{ fez_pedido: true, valor_pedido: 100 }]), true);
+
 console.log(`\n${ok} ok, ${fail} falhas`);
 process.exit(fail ? 1 : 0);

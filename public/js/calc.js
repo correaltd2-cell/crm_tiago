@@ -43,6 +43,25 @@
   }
 
   // ---------- Ciclo de 7 semanas ----------
+  // Na migração o dia vem como texto ('Segunda'…'Sexta') em dia_semana_padrao
+  const DIAS_SEMANA = ['', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
+  function normDia(s) {
+    return String(s || '').toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/-feira$/, '').trim();
+  }
+  function mesmoDia(diaTexto, diaNum) { return normDia(diaTexto) === normDia(DIAS_SEMANA[diaNum]); }
+
+  // Regra de "cliente novo" — espelho do trigger fn_calcular_comissao:
+  // qualquer sinal de compra anterior (último pedido, seed da listagem,
+  // status legado ≠ 'Novo' ou visita com pedido) = reposição
+  function clienteJaComprou(cliente, visitasDoCliente) {
+    return !!(cliente.ultimo_pedido_em ||
+      cliente.seed_dias_sem_pedido != null ||
+      (cliente.status_legado && cliente.status_legado !== 'Novo') ||
+      (visitasDoCliente || []).some(v => v.fez_pedido && Number(v.valor_pedido) > 0));
+  }
+
   // cicloInicio = segunda-feira da semana 1 (ISO yyyy-mm-dd)
   function cicloDoDia(dateISO, cicloInicio) {
     const d = new Date(dateISO + 'T12:00:00');
@@ -201,6 +220,7 @@
 
   const api = {
     round2, fmtMoney, calcItem, calcTotais, calcComissao, cicloDoDia,
+    DIAS_SEMANA, normDia, mesmoDia, clienteJaComprou,
     haversineKm, matrizHaversine, nearestNeighbor, comprimentoRota, doisOpt,
     otimizarRota, detourInsercao, decidirPernoite, sugestaoFrequencia,
     parseCSV, toCSV, CICLOS

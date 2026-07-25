@@ -1,1230 +1,163 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt-BR">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>CRM · Dr. Tiago Franco Martins</title>
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=Hanken+Grotesk:wght@400;500;600;700&family=Spline+Sans+Mono:wght@400;500&display=swap" rel="stylesheet" />
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#16233b">
+<title>New Star — Representante</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
 <script>
-  window.fbAsyncInit = function() {
-    FB.init({ appId: window.__META_APP_ID__ || '', cookie: false, xfbml: false, version: 'v21.0' });
-  };
+/* ===== CONFIG — preencher antes do deploy ===== */
+window.NS_CONFIG = {
+  SUPABASE_URL: '',       // ex.: https://xxxx.supabase.co
+  SUPABASE_ANON_KEY: ''   // anon key (Settings → API)
+};
 </script>
-<script async defer src="https://connect.facebook.net/pt_BR/sdk.js"></script>
 <style>
 :root{
-  --ivory:#F3F0E9; --ivory-deep:#EDE9DF; --surface:#FFFFFF; --ink:#13292E; --ink-soft:#5C6C69;
-  --line:#E1DCCF; --hairline:#D8D2C2;
-  --viridian:#2C685F; --viridian-soft:#E7EEEA;
-  --gold:#A8842E; --gold-deep:#8A6B1F; --gold-soft:#F3EBD6;
-  --alert:#96422B; --alert-soft:#F5E6DE;
-  --radius:14px;
-  --shadow:0 1px 2px rgba(19,41,46,.05),0 10px 30px rgba(19,41,46,.07);
-  --shadow-elevated:0 1px 1px rgba(19,41,46,.04),0 4px 10px rgba(19,41,46,.07),0 20px 44px -14px rgba(19,41,46,.22);
-  --shadow-hover:0 2px 4px rgba(19,41,46,.06),0 10px 22px rgba(19,41,46,.10),0 32px 64px -18px rgba(168,132,46,.28);
-  --sheen:inset 0 1px 0 rgba(255,255,255,.75);
+  --azul:#16233b; --azul2:#22365c; --dourado:#c9a227; --fundo:#f4f5f8;
+  --card:#fff; --texto:#1c2536; --sub:#68738a; --borda:#e3e6ee;
+  --ok:#2f7a46; --erro:#9c3333; --aviso:#b98a2f;
 }
-*{margin:0;padding:0;box-sizing:border-box}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%}
-body{font-family:'Hanken Grotesk',sans-serif;background:
-  radial-gradient(1200px 600px at 85% -10%, #F8F5EE 0%, transparent 60%),
-  var(--ivory);
-  color:var(--ink);font-size:13.5px;overflow:hidden;-webkit-font-smoothing:antialiased}
-button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
-input,textarea,select{font-family:inherit;font-size:13.5px;color:var(--ink)}
-.mono{font-family:'Spline Sans Mono',monospace}
-::-webkit-scrollbar{height:9px;width:9px}
-::-webkit-scrollbar-thumb{background:#CFC8B6;border-radius:6px;border:2px solid var(--ivory)}
+body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;background:var(--fundo);
+  color:var(--texto);display:flex;flex-direction:column;overscroll-behavior:none}
+button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
+input,select,textarea{font:inherit}
 
-/* ===== Marca: serifa editorial + arco de pálpebra dourado ===== */
-.wordmark{font-family:'Cormorant Garamond',serif;font-weight:600;font-size:23px;letter-spacing:.03em;position:relative;display:inline-block;padding-top:9px;line-height:1}
-.wordmark::before{content:'';position:absolute;top:0;left:6%;right:6%;height:13px;border-top:1.4px solid transparent;border-image:linear-gradient(90deg,transparent,var(--gold) 20%,var(--gold) 80%,transparent) 1;border-radius:50%/100% 100% 0 0}
-.eyebrow{font-size:9.5px;font-weight:700;letter-spacing:.22em;text-transform:uppercase;color:var(--gold-deep)}
+#topbar{background:var(--azul);color:#fff;padding:10px 14px;padding-top:calc(10px + env(safe-area-inset-top));
+  display:flex;align-items:center;position:sticky;top:0;z-index:20}
+#topbar .sub{color:#b9c2d8}
+.sel-rep{background:var(--azul2);color:#fff;border:1px solid #3a4f7d;border-radius:8px;padding:4px 8px;max-width:180px}
+.sync-chip{font-size:.72rem;padding:4px 10px;border-radius:999px;background:#2c3d63;color:#cfd8ec;white-space:nowrap}
+.sync-chip.ok{background:#1e4d31;color:#bfe8cd}
+.sync-chip.off{background:#5c4a1e;color:#f0dfae}
+.sync-chip.erro{background:#5c2626;color:#f2c5c5}
 
-/* ===== Login ===== */
-.login-wrap{height:100vh;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:30px}
-.login-card{background:var(--surface);border:1px solid var(--line);border-top:2px solid var(--gold);border-radius:16px;box-shadow:var(--shadow-elevated),var(--sheen);padding:38px;width:min(370px,90vw);display:flex;flex-direction:column;gap:12px;position:relative;z-index:1}
-.login-card input{padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:#FBF9F4}
-.login-card input:focus{outline:2px solid var(--viridian);outline-offset:1px;background:#fff}
-.btn-primary{background:linear-gradient(160deg,#1E3A40,#13292E);color:#F4EFE4;padding:12px 18px;border-radius:999px;font-weight:600;letter-spacing:.04em;box-shadow:0 1px 1px rgba(19,41,46,.15),0 6px 14px rgba(19,41,46,.22),var(--sheen);transition:background .18s,box-shadow .18s,transform .12s}
-.btn-primary:hover{background:linear-gradient(160deg,#2C685F,#1E4A42);box-shadow:0 2px 3px rgba(19,41,46,.18),0 10px 22px rgba(19,41,46,.26),var(--sheen);transform:translateY(-1px)}
-.btn-primary:active{transform:translateY(0);box-shadow:0 1px 1px rgba(19,41,46,.15),0 3px 7px rgba(19,41,46,.2)}
-.login-sub{color:var(--ink-soft);font-size:13px}
-.login-err{color:var(--alert);font-size:13px;min-height:16px}
+#view{flex:1;overflow-y:auto;padding:14px;padding-bottom:90px;max-width:640px;width:100%;margin:0 auto}
+#tabs{position:fixed;bottom:0;left:0;right:0;display:flex;background:#fff;border-top:1px solid var(--borda);
+  padding-bottom:env(safe-area-inset-bottom);z-index:20}
+#tabs button{flex:1;padding:10px 2px 8px;font-size:.68rem;color:var(--sub);display:flex;flex-direction:column;gap:2px;align-items:center}
+#tabs button .ico{font-size:1.25rem}
+#tabs button.ativo{color:var(--azul);font-weight:700}
+#fab{position:fixed;right:16px;bottom:74px;width:58px;height:58px;border-radius:50%;background:var(--dourado);
+  color:#fff;font-size:1.7rem;box-shadow:0 6px 18px rgba(0,0,0,.28);z-index:19;display:flex;align-items:center;justify-content:center}
 
-/* ===== Topbar ===== */
-.topbar{height:66px;background:rgba(255,255,255,.75);backdrop-filter:blur(6px);border-bottom:1px solid var(--hairline);display:flex;align-items:center;gap:22px;padding:0 26px}
-.topbar .spacer{flex:1}
-.stat{display:flex;align-items:baseline;gap:7px;color:var(--ink-soft);font-size:12px;letter-spacing:.01em}
-.stat b{font-family:'Spline Sans Mono',monospace;font-size:15px;color:var(--ink)}
-.btn-ghost{border:1px solid var(--hairline);border-radius:999px;padding:9px 16px;font-weight:600;font-size:12.5px;letter-spacing:.03em;background:linear-gradient(180deg,#FFFFFF,#FBF9F5);box-shadow:0 1px 2px rgba(19,41,46,.04),var(--sheen);transition:border-color .15s,background .15s,color .15s,box-shadow .15s,transform .12s}
-.btn-ghost:hover{border-color:var(--gold);background:var(--gold-soft);color:var(--gold-deep);box-shadow:0 2px 4px rgba(19,41,46,.05),0 6px 14px rgba(168,132,46,.15);transform:translateY(-1px)}
+h1{font-size:1.5rem}h2{font-size:1.2rem}h3{font-size:1.02rem}h4{font-size:.92rem;color:var(--azul)}
+.sub{font-size:.8rem;color:var(--sub)}
+.row{display:flex;align-items:center}.col{display:flex;flex-direction:column}
+.space{justify-content:space-between}.gap4{gap:4px}.gap8{gap:8px}.grow{flex:1}
+.w100{width:100%}.c{text-align:center}.r{text-align:right}
+.mt4{margin-top:4px}.mt8{margin-top:8px}.mt12{margin-top:12px}.mt16{margin-top:16px}.mb12{margin-bottom:12px}
 
-/* ===== Board em duas faixas (IA em cima, gestão manual embaixo) ===== */
-.board{display:flex;flex-direction:column;gap:18px;padding:18px 24px;overflow:auto;height:calc(100vh - 66px)}
-.band{flex:1;min-height:0;display:flex;flex-direction:column}
-.band-label{font-size:9.5px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--gold-deep);margin-bottom:9px;display:flex;align-items:center;gap:10px;flex-shrink:0}
-.band-label::after{content:'';flex:1;height:1px;background:var(--hairline)}
-.band-cols{flex:1;min-height:0;display:grid;gap:14px}
-.band-cols.auto{grid-template-columns:repeat(5,minmax(196px,1fr))}
-.band-cols.manual{grid-template-columns:repeat(4,minmax(196px,1fr))}
-.col{min-width:0;display:flex;flex-direction:column;min-height:0}
-.col.dragover .col-body{outline:1.5px dashed var(--gold);outline-offset:6px;border-radius:12px}
-.col-head{padding:2px 2px 10px;display:flex;align-items:baseline;gap:9px;border-bottom:1px solid var(--hairline);position:relative;margin-bottom:12px}
-.col-head::after{content:'';position:absolute;left:0;bottom:-1px;width:34px;height:2px;background:var(--col-color,var(--viridian))}
-.col-dot{display:none}
-.col-title{font-size:10.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-soft)}
-.col-count{margin-left:auto;font-family:'Cormorant Garamond',serif;font-weight:600;font-size:19px;color:var(--ink);line-height:1}
-.col-body{flex:1;min-height:0;display:flex;flex-direction:column;gap:10px;overflow-y:auto;padding:2px 4px 2px 2px}
-.col-empty{color:#A9A492;font-style:italic;font-family:'Cormorant Garamond',serif;font-size:15px;padding:14px 4px}
+.input{width:100%;padding:10px 12px;border:1px solid var(--borda);border-radius:10px;background:#fff}
+.input.big{padding:14px;font-size:1.05rem}
+.input.num{width:70px;text-align:center;padding:10px 4px}
+.campo{display:flex;flex-direction:column;gap:3px}
+.btn{background:var(--azul);color:#fff;border-radius:12px;padding:12px 18px;font-weight:700;
+  box-shadow:0 2px 6px rgba(22,35,59,.25)}
+.btn:disabled{opacity:.4}
+.btn.big{padding:16px;font-size:1.06rem}
+.btn-sec{background:#fff;color:var(--azul);border:1.5px solid var(--azul)}
+.btn-link{color:var(--azul);text-decoration:underline;font-size:.85rem;padding:4px}
+.btn-icon{font-size:1.05rem;padding:6px}
+.btn-mini{background:#eef1f7;border-radius:9px;padding:9px 12px;font-size:.82rem;font-weight:600}
+.btn-mini.vermelho{background:#f7e7e7;color:var(--erro)}
+.btn-step{width:46px;height:46px;border-radius:10px;background:#eef1f7;font-size:1.3rem;font-weight:700}
+.btn-tam{flex:1;padding:14px;border:1.5px solid var(--borda);border-radius:12px;background:#fff;font-weight:700}
+.btn-tam.ativo{border-color:var(--azul);background:var(--azul);color:#fff}
 
-/* ===== Card ===== */
-.card{background:linear-gradient(180deg,#FFFFFF,#FDFCFA);border:1px solid var(--line);border-radius:var(--radius);padding:13px 14px 12px;box-shadow:var(--shadow-elevated),var(--sheen);cursor:grab;transition:box-shadow .22s cubic-bezier(.2,.8,.3,1),transform .22s cubic-bezier(.2,.8,.3,1),border-color .18s;position:relative}
-.card:hover{box-shadow:var(--shadow-hover),var(--sheen);transform:translateY(-3px);border-color:#D3CCBA}
-.card:active{cursor:grabbing}
-.card-name{font-family:'Cormorant Garamond',serif;font-weight:600;font-size:18.5px;line-height:1.1;display:flex;align-items:center;gap:8px;padding-right:34px}
-.card-phone{font-family:'Spline Sans Mono',monospace;font-size:10.5px;letter-spacing:.03em;color:var(--ink-soft);margin-top:4px}
-.card-source{font-size:11.5px;color:var(--ink-soft);margin-top:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.card-tags{display:flex;gap:5px;margin-top:9px;flex-wrap:wrap}
-.tag{font-size:9px;font-weight:700;padding:3px 8px;border-radius:999px;letter-spacing:.1em;text-transform:uppercase}
-.tag-ai{background:var(--viridian-soft);color:var(--viridian)}
-.tag-human{background:var(--alert-soft);color:var(--alert)}
-.tag-ready{background:var(--gold-soft);color:var(--gold-deep)}
-.card-time{position:absolute;top:13px;right:14px;font-family:'Spline Sans Mono',monospace;font-size:10px;color:#ABA692}
+.lista{margin-top:10px;display:flex;flex-direction:column;gap:6px;max-height:60vh;overflow-y:auto}
+.item-lista{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:12px 14px;
+  text-align:left;display:flex;flex-direction:column;gap:2px;width:100%}
+.item-lista.compacto{flex-direction:row;justify-content:space-between;align-items:center;padding:9px 12px}
+.item-lista.desabilitado{opacity:.55}
+.vazio{color:var(--sub);text-align:center;padding:26px 8px}
+.badge{font-size:.7rem;background:#e8ecf5;color:var(--azul);border-radius:999px;padding:3px 9px;white-space:nowrap}
+.badge.ok{background:#e2f2e7;color:var(--ok)}
+.badge.erro{background:#f7e2e2;color:var(--erro)}
+.badge.aviso{background:#f7efd9;color:var(--aviso)}
 
-/* ===== Assinatura: pulso de íris vetorizada nos leads não lidos ===== */
-.iris{width:12px;height:12px;position:relative;flex-shrink:0;
-  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M1 12C4 6 8 3 12 3s8 3 11 9c-3 6-7 9-11 9s-8-3-11-9Z' fill='none' stroke='%23A8842E' stroke-width='1.6'/%3E%3Ccircle cx='12' cy='12' r='4.2' fill='none' stroke='%23A8842E' stroke-width='1.6'/%3E%3Ccircle cx='12' cy='12' r='1.6' fill='%23A8842E'/%3E%3C/svg%3E");
-  background-size:contain;background-repeat:no-repeat;background-position:center}
-.iris::before,.iris::after{content:'';position:absolute;inset:-5px;border-radius:50%;border:1.4px solid var(--gold);opacity:0;animation:iris 2.2s ease-out infinite}
-.iris::after{animation-delay:1.1s}
-@keyframes iris{0%{transform:scale(.55);opacity:.9}100%{transform:scale(2.15);opacity:0}}
-.card.unread{border-color:var(--gold)}
-@media (prefers-reduced-motion:reduce){.iris::before,.iris::after{animation:none;opacity:.5;transform:scale(1.4)}}
+.card-visita{background:var(--card);border:1px solid var(--borda);border-radius:14px;padding:12px 14px}
+.card-visita.feito{opacity:.6}
+.card-item{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:10px 12px}
+.card-escolha{background:#fff;border:1.5px solid var(--borda);border-radius:14px;padding:16px;text-align:left;
+  display:flex;flex-direction:column;gap:3px}
+.card-escolha.ativo{border-color:var(--dourado);background:#fdf8ea}
+.chip-cliente{background:#eef1f7;border-radius:12px;padding:10px 14px;display:flex;flex-direction:column;gap:2px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--borda);border-radius:999px;padding:7px 12px;font-size:.78rem;background:#fff}
+.chip.ativo{background:var(--azul);border-color:var(--azul);color:#fff}
+.sugestao{background:#fdf8ea;border:1px solid #ecd9a0;border-radius:10px;padding:10px 12px;
+  display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:.85rem}
+.aviso{color:var(--erro);font-size:.85rem}
+.hist-linha{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#fff;
+  border:1px solid var(--borda);border-radius:10px;padding:9px 12px;font-size:.85rem}
+.hist-linha.apagado{opacity:.6}
 
-/* ===== Drawer (conversa) ===== */
-.drawer-veil{position:fixed;inset:0;background:rgba(19,41,46,.32);opacity:0;pointer-events:none;transition:opacity .2s;z-index:40}
-.drawer{position:fixed;top:0;right:0;bottom:0;width:min(780px,100vw);background:var(--surface);border-left:1px solid var(--line);transform:translateX(102%);transition:transform .28s cubic-bezier(.3,.8,.3,1);z-index:41;display:flex}
-.drawer.open{transform:none}
-.drawer-veil.open{opacity:1;pointer-events:auto}
-.drawer-info{width:292px;border-right:1px solid var(--line);padding:24px 20px;overflow-y:auto;background:#FBF9F3}
-.drawer-chat{flex:1;display:flex;flex-direction:column;min-width:0}
-.d-title{font-family:'Cormorant Garamond',serif;font-weight:600;font-size:25px;line-height:1.05;margin-bottom:3px;word-break:break-word}
-.d-phone{font-family:'Spline Sans Mono',monospace;font-size:11.5px;letter-spacing:.03em;color:var(--ink-soft);margin-bottom:18px}
-.field{margin-bottom:12px}
-.field label{display:block;font-size:9.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--gold-deep);margin-bottom:5px}
-.field input,.field textarea,.field select{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:#fff}
-.field textarea{resize:vertical;min-height:64px}
-.field input:focus,.field textarea:focus,.field select:focus{outline:2px solid var(--viridian);outline-offset:1px}
-.d-section{font-size:9.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--gold-deep);margin:20px 0 9px;border-top:1px solid var(--hairline);padding-top:16px}
-.fu-row{display:flex;justify-content:space-between;font-size:12.5px;padding:5px 0;color:var(--ink-soft)}
-.fu-row .mono{font-size:11px}
-.fu-sent{color:var(--viridian)} .fu-failed{color:var(--alert)}
+.progresso-info{font-size:.85rem;font-weight:600;margin-bottom:4px}
+.progresso-barra{height:10px;border-radius:999px;background:#e3e6ee;overflow:hidden}
+.progresso-fill{height:100%;background:linear-gradient(90deg,var(--azul),var(--dourado));transition:width .4s}
+.rota-info{background:#eef1f7;border-radius:10px;padding:9px 12px;font-size:.85rem;font-weight:600}
+.total-bar{background:var(--azul);color:#fff;border-radius:12px;padding:13px 16px;display:flex;
+  justify-content:space-between;align-items:center;font-size:1rem}
+.calc-live{background:#f2f4f9;border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:5px;font-size:.9rem}
+.calc-live .destaque{font-size:1rem;color:var(--azul)}
+.kpis{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.kpi{background:#fff;border:1px solid var(--borda);border-radius:12px;padding:11px 13px;display:flex;flex-direction:column;gap:3px}
+.kpi-rot{font-size:.68rem;color:var(--sub);text-transform:uppercase;letter-spacing:.03em}
+.kpi-val{font-size:1.05rem}
+.kpi.destaque{border-color:var(--dourado);background:#fdf8ea}
+.kpi.ok .kpi-val{color:var(--ok)}.kpi.erro .kpi-val{color:var(--erro)}.kpi.aviso .kpi-val{color:var(--aviso)}
 
-/* Chat */
-.chat-head{padding:15px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px}
-.chat-head .who{font-family:'Cormorant Garamond',serif;font-weight:600;font-size:19px;line-height:1}
-.ai-switch{display:flex;align-items:center;gap:9px;margin-left:auto;font-size:12px;color:var(--ink-soft)}
-.switch{width:40px;height:23px;border-radius:20px;background:#CBC5B3;position:relative;transition:background .15s}
-.switch.on{background:var(--viridian)}
-.switch::after{content:'';position:absolute;top:2.5px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform .15s}
-.switch.on::after{transform:translateX(16px)}
-.chat-body{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:9px;background:linear-gradient(180deg,#F7F4EC,#F2EFE6)}
-.msg{max-width:72%;padding:10px 13px;border-radius:14px;font-size:13.5px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
-.msg.in{align-self:flex-start;background:#fff;border:1px solid var(--line);border-bottom-left-radius:5px}
-.msg.out{align-self:flex-end;background:linear-gradient(160deg,#1A3238,#13292E);color:#EFEAE0;border-bottom-right-radius:5px}
-.msg.sys{align-self:center;background:transparent;color:var(--ink-soft);font-size:11.5px;max-width:90%;text-align:center;font-style:italic}
-.msg-meta{display:block;font-size:9.5px;opacity:.6;margin-top:5px;font-family:'Spline Sans Mono',monospace}
-.msg.out .msg-meta{text-align:right}
-.msg-ai-tag{display:inline-block;font-size:8.5px;font-weight:700;letter-spacing:.12em;background:var(--gold);color:#fff;border-radius:4px;padding:1.5px 6px;margin-right:6px;vertical-align:1.5px}
-.chat-foot{border-top:1px solid var(--line);padding:13px 18px;display:flex;gap:10px;align-items:flex-end;background:#fff}
-.chat-foot textarea{flex:1;border:1px solid var(--line);border-radius:999px;padding:11px 17px;resize:none;max-height:110px;background:#FBF9F4}
-.chat-foot textarea:focus{outline:2px solid var(--viridian);background:#fff}
-.send-btn{background:linear-gradient(160deg,#1E3A40,#13292E);color:#F4EFE4;border-radius:999px;padding:11px 20px;font-weight:600;letter-spacing:.03em;box-shadow:0 1px 1px rgba(19,41,46,.15),0 5px 12px rgba(19,41,46,.2),var(--sheen);transition:background .15s,box-shadow .15s,transform .12s}
-.send-btn:hover{background:linear-gradient(160deg,#2C685F,#1E4A42);transform:translateY(-1px)}
-.send-btn:active{transform:translateY(0)}
-.send-btn:disabled{opacity:.45;cursor:default}
-.window-banner{background:var(--gold-soft);border-top:1px solid #E4D8B6;color:#6E5518;font-size:12.5px;padding:10px 18px;display:flex;align-items:center;gap:12px}
-.window-banner button{background:var(--gold);color:#fff;border-radius:999px;padding:7px 13px;font-weight:600;font-size:11.5px;letter-spacing:.03em}
-.close-x{font-size:22px;color:var(--ink-soft);padding:4px 9px;border-radius:8px}
-.close-x:hover{background:var(--ivory)}
+.tabela-scroll{overflow-x:auto;border:1px solid var(--borda);border-radius:10px;background:#fff}
+.tabela{border-collapse:collapse;width:100%;font-size:.72rem;min-width:560px}
+.tabela th,.tabela td{padding:6px 7px;border-bottom:1px solid var(--borda);text-align:left}
+.tabela th{background:#eef1f7;font-size:.68rem;white-space:nowrap}
 
-/* ===== Modais ===== */
-.modal-veil{position:fixed;inset:0;background:rgba(19,41,46,.38);display:none;align-items:center;justify-content:center;z-index:60}
-.modal-veil.open{display:flex}
-.modal{background:var(--surface);border-top:2px solid var(--gold);border-radius:16px;box-shadow:var(--shadow-elevated),var(--sheen);width:min(660px,92vw);max-height:88vh;overflow-y:auto;padding:28px}
-.modal h3{font-family:'Cormorant Garamond',serif;font-weight:600;font-size:24px;margin-bottom:18px}
-.modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:20px}
-.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#F4EFE4;padding:12px 20px;border-radius:999px;font-size:13px;transition:transform .25s;z-index:99;max-width:90vw;box-shadow:var(--shadow)}
-.toast.show{transform:translateX(-50%) translateY(0)}
-/* ===== Shell com sidebar ===== */
-.shell{display:flex;height:calc(100vh - 66px)}
-.sidebar{width:190px;flex-shrink:0;border-right:1px solid var(--hairline);background:rgba(255,255,255,.45);padding:18px 12px;display:flex;flex-direction:column;gap:4px}
-.nav-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;font-size:12px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-soft);cursor:pointer;border-left:2px solid transparent;transition:background .15s,color .15s}
-.nav-item:hover{background:var(--gold-soft);color:var(--gold-deep)}
-.nav-item.active{background:#fff;color:var(--ink);border-left-color:var(--gold);box-shadow:0 1px 2px rgba(19,41,46,.05)}
-.nav-dot{width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.65}
-.main{flex:1;min-width:0;display:flex;flex-direction:column}
-.board{height:auto;flex:1}
-@media(max-width:1100px){.band-cols.auto,.band-cols.manual{grid-template-columns:repeat(auto-fill,minmax(200px,1fr))}.band{flex:none}}
+.assinatura-area{border:2px dashed var(--borda);border-radius:14px;background:#fff;margin-top:10px;touch-action:none}
+.assinatura-cv{display:block;width:100%;height:220px;touch-action:none}
+.assinatura-preview img{max-width:100%;max-height:110px;display:block;margin:0 auto;border:1px solid var(--borda);border-radius:8px;background:#fff}
+.sucesso-banner{background:#e2f2e7;color:var(--ok);border-radius:12px;padding:12px 14px;font-weight:700;margin-bottom:8px}
 
-/* ===== Relatórios ===== */
-.reports{flex:1;overflow-y:auto;padding:24px 28px}
-.rep-filters{display:flex;gap:12px;align-items:center;margin-bottom:20px;flex-wrap:wrap}
-.rep-filters select{padding:9px 13px;border:1px solid var(--line);border-radius:999px;background:#fff;font-size:12.5px;font-weight:600}
-.rep-filters .rep-title{font-family:'Cormorant Garamond',serif;font-weight:600;font-size:24px;margin-right:auto}
-.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:22px}
-.kpi{background:linear-gradient(180deg,#FFFFFF,#FDFCFA);border:1px solid var(--line);border-radius:14px;padding:15px 16px;box-shadow:var(--shadow-elevated),var(--sheen)}
-.kpi b{display:block;font-family:'Cormorant Garamond',serif;font-weight:600;font-size:30px;line-height:1}
-.kpi span{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft)}
-.kpi.gold b{color:var(--gold-deep)} .kpi.green b{color:#2F7A46} .kpi.red b{color:var(--alert)}
-.rep-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:14px}
-@media(max-width:900px){.rep-grid{grid-template-columns:1fr}}
-.panel{background:linear-gradient(180deg,#FFFFFF,#FDFCFA);border:1px solid var(--line);border-radius:14px;padding:18px;box-shadow:var(--shadow-elevated),var(--sheen)}
-.panel h4{font-size:10.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--gold-deep);margin-bottom:14px}
-.chart{display:flex;align-items:flex-end;gap:3px;height:150px}
-.chart .bar{flex:1;background:var(--viridian);border-radius:4px 4px 0 0;min-height:2px;opacity:.85;transition:opacity .15s}
-.chart .bar:hover{opacity:1}
-.chart-labels{display:flex;gap:3px;margin-top:6px}
-.chart-labels span{flex:1;text-align:center;font-family:'Spline Sans Mono',monospace;font-size:8.5px;color:var(--ink-soft)}
-.hbar-row{display:flex;align-items:center;gap:10px;margin-bottom:9px;font-size:12.5px}
-.hbar-label{width:44%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)}
-.hbar-track{flex:1;height:9px;background:var(--ivory);border-radius:6px;overflow:hidden}
-.hbar-fill{height:100%;background:var(--gold);border-radius:6px}
-.hbar-n{font-family:'Spline Sans Mono',monospace;font-size:11px;color:var(--ink-soft);width:26px;text-align:right}
-.panel .empty{color:#A9A492;font-style:italic;font-family:'Cormorant Garamond',serif;font-size:15px}
-@media(max-width:720px){.drawer-info{display:none}.sidebar{width:56px;padding:18px 8px}.nav-item span.nav-txt{display:none}}
+.ns-overlay{position:fixed;inset:0;background:rgba(12,18,32,.5);z-index:40;display:flex;align-items:flex-end;justify-content:center}
+.ns-modal{background:var(--fundo);width:100%;max-width:640px;max-height:92vh;border-radius:18px 18px 0 0;
+  display:flex;flex-direction:column;animation:sobe .22s ease-out}
+.ns-modal.full{height:96vh}
+@keyframes sobe{from{transform:translateY(40px);opacity:.5}to{transform:none;opacity:1}}
+.ns-modal-head{display:flex;justify-content:space-between;align-items:center;padding:14px 16px 8px}
+.ns-modal-body{padding:10px 16px 26px;overflow-y:auto}
+#ns-toast{position:fixed;left:50%;transform:translateX(-50%) translateY(20px);bottom:96px;background:var(--azul);
+  color:#fff;padding:11px 18px;border-radius:12px;font-size:.88rem;opacity:0;pointer-events:none;
+  transition:.25s;z-index:60;max-width:92vw;text-align:center}
+#ns-toast.show{opacity:1;transform:translateX(-50%)}
+#ns-toast.erro{background:var(--erro)}
 
+.login-box{max-width:360px;margin:12vh auto 0;display:flex;flex-direction:column;gap:10px;text-align:center;padding:0 8px}
+.login-logo{font-size:3rem}
+.login-box .input{text-align:center}
 </style>
 </head>
 <body>
-
-<!-- ===================== LOGIN ===================== -->
-<div class="login-wrap" id="loginView" style="position:relative;overflow:hidden">
-  <svg class="login-watermark" viewBox="0 0 400 400" aria-hidden="true" style="position:absolute;top:50%;left:50%;width:min(720px,140vw);height:auto;transform:translate(-50%,-52%);opacity:.05;pointer-events:none;z-index:0">
-    <path d="M20 200C70 90 140 40 200 40s130 50 180 160c-50 110-120 160-180 160S70 310 20 200Z" fill="none" stroke="#A8842E" stroke-width="1.4"/>
-    <circle cx="200" cy="200" r="70" fill="none" stroke="#A8842E" stroke-width="1.4"/>
-    <circle cx="200" cy="200" r="26" fill="#A8842E"/>
-  </svg>
-  <div style="position:relative;z-index:1">
-    <span class="wordmark">Dr. Tiago Franco Martins</span>
-    <div class="eyebrow" style="text-align:center;margin-top:6px">Cirurgia Oculoplástica · Gestão de Pacientes</div>
-  </div>
-  <div class="login-card">
-    <input type="email" id="loginEmail" placeholder="E-mail" autocomplete="email" />
-    <input type="password" id="loginPass" placeholder="Senha" autocomplete="current-password" />
-    <input id="loginCode" placeholder="Código de acesso" style="display:none;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:#FBF9F4" />
-    <div class="login-err" id="loginErr"></div>
-    <button class="btn-primary" id="loginBtn" onclick="submitLogin()">Entrar</button>
-    <button style="font-size:12.5px;color:var(--ink-soft);text-decoration:underline;margin-top:2px" id="loginToggle" onclick="toggleSignup()">Primeiro acesso? Criar login</button>
-  </div>
-</div>
-
-<!-- ===================== APP ===================== -->
-<div id="appView" style="display:none">
-  <div class="topbar">
-    <div>
-      <span class="wordmark">Dr. Tiago Franco Martins</span>
-      <div class="eyebrow" style="margin-top:3px">Cirurgia Oculoplástica</div>
-    </div>
-    <div class="spacer"></div>
-    <div class="stat"><b id="statNew">0</b> aguardando 1º contato</div>
-    <div class="stat"><b id="statHuman">0</b> precisam de humano</div>
-    <div class="stat"><b id="statTotal">0</b> leads no funil</div>
-    <button class="btn-ghost" style="border-color:var(--viridian);color:var(--viridian)" onclick="openNewLead()">+ Novo Lead</button>
-    <button class="btn-ghost" onclick="openConfig()">Config IA</button>
-    <button class="btn-ghost" onclick="logout()">Sair</button>
-  </div>
-  <div class="shell">
-    <nav class="sidebar">
-      <div class="nav-item active" id="navFunil" onclick="switchView('funil')"><span class="nav-dot"></span><span class="nav-txt">Funil</span></div>
-      <div class="nav-item" id="navRel" onclick="switchView('relatorios')"><span class="nav-dot"></span><span class="nav-txt">Relatórios</span></div>
-      <div class="nav-item" id="navSim" onclick="switchView('simulador')"><span class="nav-dot"></span><span class="nav-txt">Simulador</span></div>
-      <div class="nav-item" id="navCamp" onclick="switchView('campanhas')"><span class="nav-dot"></span><span class="nav-txt">Campanhas</span></div>
-    </nav>
-    <main class="main">
-      <div class="board" id="board"></div>
-      <div class="reports" id="reports" style="display:none">
-        <div class="rep-filters">
-          <span class="rep-title">Relatórios</span>
-          <select id="repMonth" onchange="renderReports()"></select>
-          <select id="repProc" onchange="renderReports()"></select>
-          <select id="repSource" onchange="renderReports()"></select>
-        </div>
-        <div class="kpis" id="repKpis"></div>
-        <div class="rep-grid">
-          <div class="panel">
-            <h4 id="chartTitle">Novos leads</h4>
-            <div class="chart" id="repChart"></div>
-            <div class="chart-labels" id="repChartLabels"></div>
-          </div>
-          <div>
-            <div class="panel" style="margin-bottom:14px">
-              <h4>Origem dos leads</h4>
-              <div id="repSources"></div>
-            </div>
-            <div class="panel">
-              <h4>Motivos de perda</h4>
-              <div id="repLoss"></div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="reports" id="simView" style="display:none;padding:0;overflow:hidden;flex-direction:column">
-        <div style="display:flex;align-items:center;gap:12px;padding:16px 24px;border-bottom:1px solid var(--hairline)">
-          <span class="rep-title" style="font-family:'Cormorant Garamond',serif;font-weight:600;font-size:24px">Simulador</span>
-          <span style="font-size:12px;color:var(--ink-soft)">Converse como se fosse a paciente — a Maia responde com o cérebro real do sistema. Nada é gravado.</span>
-          <button class="btn-ghost" style="margin-left:auto" onclick="simReset()">↺ Nova conversa</button>
-        </div>
-        <div id="simFicha" style="padding:8px 24px;font-size:11.5px;color:var(--gold-deep);border-bottom:1px solid var(--hairline);display:none"></div>
-        <div class="chat-body" id="simBody" style="flex:1"></div>
-        <div class="chat-foot">
-          <textarea id="simComposer" rows="1" placeholder="Escreva como a paciente… (ex: Oi, vi o anúncio sobre a cirurgia das pálpebras)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();simSend()}"></textarea>
-          <button class="send-btn" id="simSendBtn" onclick="simSend()">Enviar</button>
-        </div>
-      </div>
-      <div class="reports" id="campView" style="display:none">
-        <div class="rep-filters">
-          <span class="rep-title">Campanhas</span>
-          <button class="btn-primary" style="border-radius:999px" onclick="openNewCampaign()">+ Nova campanha</button>
-        </div>
-        <div style="font-size:12px;color:var(--ink-soft);margin-bottom:14px;max-width:640px">Crie uma campanha para cada anúncio. Copie o link gerado e use como destino do anúncio (Meta Ads → clique para WhatsApp). Cada lead que chegar por ele já entra no funil identificado — sem precisar adivinhar a origem.</div>
-        <div class="field" style="max-width:280px;margin-bottom:18px"><label>Número do WhatsApp dos anúncios</label><input id="campWaNumber" placeholder="5554999999999" oninput="saveWaNumberForLinks(this.value)" /></div>
-        <div id="campList" style="display:flex;flex-direction:column;gap:10px"></div>
-      </div>
-    </main>
-  </div>
-</div>
-
-<!-- ===================== MODAL: nova campanha ===================== -->
-<div class="modal-veil" id="newCampModal">
-  <div class="modal" style="width:min(440px,92vw)">
-    <h3>Nova campanha</h3>
-    <div class="field"><label>Nome da campanha</label><input id="ncName" placeholder="Ex: Blefaroplastia — Instagram Julho" /></div>
-    <div class="field"><label>Código (curto, sem espaços)</label><input id="ncCode" placeholder="ex: blefa-jul26" /></div>
-    <div class="field"><label>Procedimento (opcional)</label><input id="ncProc" placeholder="Blefaroplastia" /></div>
-    <div class="login-err" id="ncErr"></div>
-    <div class="modal-actions">
-      <button class="btn-ghost" onclick="document.getElementById('newCampModal').classList.remove('open')">Cancelar</button>
-      <button class="btn-primary" onclick="createCampaign()">Criar</button>
-    </div>
-  </div>
-</div>
-
-<!-- ===================== DRAWER ===================== -->
-<div class="drawer-veil" id="drawerVeil" onclick="closeDrawer()"></div>
-<aside class="drawer" id="drawer">
-  <div class="drawer-info">
-    <div class="d-title" id="dName">—</div>
-    <div class="d-phone" id="dPhone">—</div>
-    <div class="field"><label>Nome</label><input id="fName" onchange="saveLeadField('name',this.value)" /></div>
-    <div class="field"><label>Cidade</label><input id="fCity" onchange="saveLeadField('city',this.value)" /></div>
-    <div class="field"><label>Idade</label><input id="fAge" type="number" onchange="saveLeadField('age',this.value?parseInt(this.value):null)" /></div>
-    <div class="field"><label>Procedimento de interesse</label><input id="fProc" onchange="saveLeadField('procedure_interest',this.value)" /></div>
-    <div class="field"><label>Origem</label><input id="fSource" disabled /></div>
-    <div class="field"><label>Anotações</label><textarea id="fNotes" onchange="saveLeadField('notes',this.value)"></textarea></div>
-  </div>
-  <div class="drawer-chat">
-    <div class="chat-head">
-      <div>
-        <div class="who" id="chName">—</div>
-        <div class="mono" style="font-size:11px;color:var(--ink-soft)" id="chStage">—</div>
-      </div>
-      <div class="ai-switch">
-        <span id="aiLabel">IA responde</span>
-        <div class="switch" id="aiSwitch" role="switch" tabindex="0" onclick="toggleAI()" onkeydown="if(event.key==='Enter')toggleAI()"></div>
-      </div>
-      <button class="close-x" onclick="closeDrawer()" aria-label="Fechar">×</button>
-    </div>
-    <div class="chat-body" id="chatBody"></div>
-    <div class="window-banner" id="windowBanner" style="display:none">
-      Janela de 24h fechada — o paciente precisa responder para reabrir.
-      <button onclick="sendReopen()">Enviar template de retomada</button>
-    </div>
-    <div class="chat-foot">
-      <textarea id="composer" rows="1" placeholder="Escreva como humano… (enviar assume a conversa)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendHuman()}"></textarea>
-      <button class="send-btn" id="sendBtn" onclick="sendHuman()">Enviar</button>
-    </div>
-  </div>
-</aside>
-
-<!-- ===================== MODAL: novo lead manual ===================== -->
-<div class="modal-veil" id="newLeadModal">
-  <div class="modal" style="width:min(440px,92vw)">
-    <h3>Cadastrar lead</h3>
-    <div class="field"><label>Nome</label><input id="nlName" placeholder="Nome do paciente" /></div>
-    <div class="field"><label>WhatsApp (com DDD)</label><input id="nlPhone" placeholder="54 99999-9999" inputmode="tel" /></div>
-    <div class="field"><label>Cidade</label><input id="nlCity" /></div>
-    <div class="field"><label>Procedimento de interesse</label><input id="nlProc" value="Blefaroplastia" /></div>
-    <div class="field"><label>Origem</label>
-      <select id="nlSource">
-        <option>Indicação</option><option>Telefone / consultório</option><option>Instagram</option>
-        <option>Site</option><option>Outro</option>
-      </select>
-    </div>
-    <div class="login-err" id="nlErr"></div>
-    <div class="modal-actions">
-      <button class="btn-ghost" onclick="document.getElementById('newLeadModal').classList.remove('open')">Cancelar</button>
-      <button class="btn-primary" onclick="createLead()">Cadastrar</button>
-    </div>
-  </div>
-</div>
-
-<!-- ===================== MODAL: motivo de perda ===================== -->
-<div class="modal-veil" id="lossModal">
-  <div class="modal" style="width:min(420px,92vw)">
-    <h3>Marcar como perdido</h3>
-    <div class="field"><label>Motivo da perda</label>
-      <select id="lossReason">
-        <option>Preço</option><option>Sem resposta / sumiu</option><option>Fechou com outro profissional</option>
-        <option>Adiou a decisão</option><option>Sem perfil / fora da área</option><option>Outro</option>
-      </select>
-    </div>
-    <div class="modal-actions">
-      <button class="btn-ghost" onclick="closeLoss()">Cancelar</button>
-      <button class="btn-primary" onclick="confirmLoss()">Confirmar</button>
-    </div>
-  </div>
-</div>
-
-<!-- ===================== MODAL: Config IA ===================== -->
-<div class="modal-veil" id="configModal">
-  <div class="modal">
-    <h3>Configuração da IA</h3>
-    <div class="field"><label>Nome da agente</label><input id="cfgName" /></div>
-    <div class="field"><label>Instruções (system prompt)</label><textarea id="cfgPrompt" style="min-height:180px"></textarea></div>
-    <div class="field"><label>Base de conhecimento</label><textarea id="cfgKb" style="min-height:180px"></textarea></div>
-    <div class="d-section" style="border-top:1px solid var(--hairline)">Reativação por inatividade</div>
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-      <div class="switch" id="reactSwitch" role="switch" tabindex="0" onclick="toggleReactivation()" onkeydown="if(event.key==='Enter')toggleReactivation()"></div>
-      <span id="reactSwitchLabel" style="font-size:12.5px;color:var(--ink-soft)">Ativada</span>
-    </div>
-    <div class="callout" style="font-size:11.5px;color:var(--ink-soft);margin-bottom:10px">Quando ativada, pacientes silenciosos recebem a cadência automática de 2 horas, 2 dias e 15 dias (ver textos abaixo). Precisa de um agendador externo configurado (ver README) para funcionar de fato — desligar aqui pausa o envio imediatamente, mesmo com o agendador ativo.</div>
-    <div class="d-section" style="border-top:1px solid var(--hairline)">Mensagens fixas (templates aprovados)</div>
-    <div class="callout" style="font-size:11.5px;color:var(--ink-soft);margin-bottom:10px">Textos fixos usados pelo sistema — na API Oficial, precisam estar aprovados como template no Meta com este texto exato (variável {{1}} = primeiro nome). Assim que o paciente responde a qualquer uma delas, a conversa volta para a Maia normalmente.</div>
-    <div id="fixedTemplatesView"></div>
-    <div class="d-section" style="border-top:1px solid var(--hairline)">Integrações</div>
-    <div class="field"><label>WhatsApp · Provedor</label>
-      <select id="cfgWaProvider" onchange="waProviderChanged()">
-        <option value="zapi">Z-API (rápido, sem burocracia)</option>
-        <option value="meta">API Oficial (Meta Cloud API)</option>
-      </select>
-    </div>
-
-    <div id="zapiFields">
-      <div class="field"><label>Z-API · Instance ID</label><input id="cfgZapiInstance" placeholder="3D0A..." autocomplete="off" /></div>
-      <div class="field"><label>Z-API · Token da instância</label><input id="cfgZapiToken" type="password" placeholder="F2C9..." autocomplete="off" /></div>
-      <div class="field"><label>Z-API · Client-Token (Segurança da conta)</label><input id="cfgZapiClient" type="password" placeholder="Fa1b..." autocomplete="off" /></div>
-    </div>
-
-    <div id="metaFields" style="display:none">
-      <div id="metaConnectBox" style="margin:6px 0 14px">
-        <button class="btn-primary" type="button" id="metaConnectBtn" onclick="startEmbeddedSignup()" style="width:100%">📶 Conectar número via Facebook</button>
-        <div id="metaConnectStatus" style="font-size:11.5px;color:var(--ink-soft);margin-top:7px;text-align:center"></div>
-      </div>
-    </div>
-    <div class="field"><label>WhatsApp da secretária (55DDDNÚMERO)</label><input id="cfgSecretary" placeholder="5554999999999" /></div>
-    <div class="field"><label>WhatsApp p/ relatório semanal (número principal)</label><input id="cfgReport" placeholder="5554999999999" /></div>
-    <div class="field"><label>Código p/ criar novos logins</label><input id="cfgSignup" placeholder="ex: drtiago2026" /></div>
-    <div class="field"><label>IA · Provedor</label>
-      <select id="cfgAiProvider" onchange="aiProviderChanged()">
-        <option value="openai">OpenAI</option>
-        <option value="anthropic">Anthropic (Claude)</option>
-        <option value="gemini">Google Gemini</option>
-      </select>
-    </div>
-    <div class="field"><label>IA · Chave da API</label><input id="cfgAiKey" type="password" placeholder="cole a chave aqui" autocomplete="off" /></div>
-    <div class="field"><label>IA · Modelo</label>
-      <input id="cfgAiModel" list="aiModels" placeholder="gpt-5-mini" />
-      <datalist id="aiModels"></datalist>
-    </div>
-    <div id="auditResult" style="display:none;position:relative;white-space:pre-wrap;background:#FBF9F3;border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:10px;padding:14px 34px 14px 14px;margin-top:14px;font-size:12.5px;line-height:1.55">
-      <button type="button" onclick="closeAuditResult()" style="position:absolute;top:8px;right:10px;font-size:16px;line-height:1;color:var(--ink-soft);padding:2px 6px;border-radius:6px" title="Fechar">✕</button>
-      <div id="auditResultText"></div>
-    </div>
-    <div class="modal-actions">
-      <button class="btn-ghost" id="auditBtn" onclick="analyzePrompts()">🔍 Analisar prompts com IA</button>
-      <button class="btn-ghost" onclick="document.getElementById('configModal').classList.remove('open')">Cancelar</button>
-      <button class="btn-primary" onclick="saveConfig()">Salvar</button>
-    </div>
-  </div>
-</div>
-
-<div class="toast" id="toast"></div>
-
-<script>
-/* ================= CONFIG ================= */
-// Credenciais do Tech Provider Alcance 360 — mesmas para TODOS os clientes
-// em API Oficial. Não são segredo (App ID e Configuration ID são públicos
-// por natureza; o App Secret fica só no servidor, nunca aqui).
-const ALCANCE360_META_APP_ID = '1605901547762349';
-const ALCANCE360_META_CONFIG_ID = '432863104115833';
-const ALCANCE360_META_VERIFY_TOKEN = 'alcance360-webhook';
-const SUPABASE_URL = 'https://jztvtfpinnudavccoxgh.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6dHZ0ZnBpbm51ZGF2Y2NveGdoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5MTM1MTMsImV4cCI6MjA5MzQ4OTUxM30.5HSIbNoj8XBn9jRUn_ZWnKgvSSX-1jsclyygzIwNNNk';
-const API = ''; // mesmo domínio (Vercel)
-
-const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-let stages = [], leads = [], currentLead = null, pendingLoss = null, session = null;
-
-/* ================= AUTH ================= */
-let signupMode = false;
-function toggleSignup(){
-  signupMode = !signupMode;
-  document.getElementById('loginCode').style.display = signupMode ? 'block' : 'none';
-  document.getElementById('loginBtn').textContent = signupMode ? 'Criar acesso' : 'Entrar';
-  document.getElementById('loginToggle').textContent = signupMode ? 'Já tenho login — entrar' : 'Primeiro acesso? Criar login';
-  document.getElementById('loginErr').textContent = '';
-}
-async function submitLogin(){
-  const err = document.getElementById('loginErr');
-  const email = document.getElementById('loginEmail').value.trim();
-  const password = document.getElementById('loginPass').value;
-  if(!email || !password){ err.textContent='Preencha e-mail e senha.'; return; }
-
-  if(signupMode){
-    const code = document.getElementById('loginCode').value.trim();
-    if(!code){ err.textContent='Informe o código de acesso.'; return; }
-    err.textContent=''; document.getElementById('loginBtn').textContent='Criando…';
-    const r = await fetch('/api/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password,code})});
-    const d = await r.json().catch(()=>({}));
-    document.getElementById('loginBtn').textContent='Criar acesso';
-    if(!r.ok){ err.textContent = d.error||'Não foi possível criar o acesso.'; return; }
-    // criado → entra direto
-  }
-  const { data, error } = await sb.auth.signInWithPassword({ email, password });
-  if (error){ err.textContent = signupMode ? 'Acesso criado, mas o login falhou — tente entrar.' : 'E-mail ou senha incorretos.'; return; }
-  session = data.session; boot();
-}
-async function logout(){ await sb.auth.signOut(); location.reload(); }
-
-// ===== MODO TESTE: login automático (sem tela de login) =====
-// Para reativar o login normal mais pra frente, é só trocar para false.
-const AUTO_LOGIN = true;
-const AUTO_LOGIN_EMAIL = 'demo@crm-tiago.local';
-const AUTO_LOGIN_PASSWORD = 'Demo-CrmTiago-2026!';
-const AUTO_LOGIN_CODE = 'drtiago2026'; // precisa bater com signup_code no banco
-
-async function tryAutoLogin(){
-  let { data, error } = await sb.auth.signInWithPassword({ email: AUTO_LOGIN_EMAIL, password: AUTO_LOGIN_PASSWORD });
-  if (error) {
-    // primeira vez: cria a conta compartilhada de teste
-    await fetch('/api/signup', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ email: AUTO_LOGIN_EMAIL, password: AUTO_LOGIN_PASSWORD, code: AUTO_LOGIN_CODE })
-    }).catch(()=>{});
-    ({ data, error } = await sb.auth.signInWithPassword({ email: AUTO_LOGIN_EMAIL, password: AUTO_LOGIN_PASSWORD }));
-  }
-  if (!error && data.session) { session = data.session; boot(); return true; }
-  return false;
-}
-
-sb.auth.getSession().then(async ({data})=>{
-  if(data.session){ session=data.session; boot(); return; }
-  if(AUTO_LOGIN){ const ok = await tryAutoLogin(); if(ok) return; }
-});
-
-async function authed(path, body){
-  const { data } = await sb.auth.getSession();
-  const res = await fetch(API + path, {
-    method:'POST',
-    headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${data.session.access_token}` },
-    body: JSON.stringify(body)
-  });
-  return { ok: res.ok, status: res.status, data: await res.json().catch(()=>({})) };
-}
-
-/* ================= BOOT + REALTIME ================= */
-async function boot(){
-  document.getElementById('loginView').style.display='none';
-  document.getElementById('appView').style.display='block';
-  sb.from('crm_settings').select('value').eq('key','wa_provider').single()
-    .then(({data})=>{ currentWaProvider = data?.value || 'zapi'; });
-  const [s, l] = await Promise.all([
-    sb.from('crm_stages').select('*').order('position'),
-    sb.from('crm_leads').select('*').order('last_message_at',{ascending:false,nullsFirst:false})
-  ]);
-  stages = s.data||[]; leads = l.data||[];
-  render();
-
-  sb.channel('crm')
-    .on('postgres_changes',{event:'*',schema:'public',table:'crm_leads'},payload=>{
-      if(payload.eventType==='INSERT') leads.unshift(payload.new);
-      if(payload.eventType==='UPDATE'){
-        const i = leads.findIndex(x=>x.id===payload.new.id);
-        if(i>-1) leads[i]=payload.new;
-        if(currentLead && currentLead.id===payload.new.id){ currentLead=payload.new; refreshDrawerHead(); }
-      }
-      if(payload.eventType==='DELETE') leads = leads.filter(x=>x.id!==payload.old.id);
-      render();
-    })
-    .on('postgres_changes',{event:'INSERT',schema:'public',table:'crm_messages'},payload=>{
-      if(currentLead && payload.new.lead_id===currentLead.id) appendMsg(payload.new, true);
-    })
-    .subscribe();
-}
-
-/* ================= BOARD ================= */
-const AUTO_STAGE_IDS = ['novo_lead','em_atendimento','followup','qualificado','consulta_agendada'];
-
-function render(){
-  const board = document.getElementById('board');
-  board.innerHTML = '';
-  const autoS = stages.filter(s=>AUTO_STAGE_IDS.includes(s.id));
-  const manS  = stages.filter(s=>!AUTO_STAGE_IDS.includes(s.id));
-  board.appendChild(bandEl('Atendimento automático · IA', autoS, 'auto'));
-  board.appendChild(bandEl('Gestão manual · pós-qualificação', manS, 'manual'));
-  document.getElementById('statNew').textContent = leads.filter(l=>l.stage_id==='novo_lead').length;
-  document.getElementById('statHuman').textContent = leads.filter(l=>l.needs_human).length;
-  document.getElementById('statTotal').textContent = leads.filter(l=>!['fechado','perdido'].includes(l.stage_id)).length;
-}
-
-function bandEl(label, sts, kind){
-  const band = document.createElement('div');
-  band.className = 'band';
-  const lbl = document.createElement('div');
-  lbl.className = 'band-label'; lbl.textContent = label;
-  band.appendChild(lbl);
-  const wrap = document.createElement('div');
-  wrap.className = 'band-cols ' + kind;
-  for(const st of sts) wrap.appendChild(colEl(st));
-  band.appendChild(wrap);
-  return band;
-}
-
-function colEl(st){
-  const col = document.createElement('div');
-  col.className='col'; col.dataset.stage=st.id;
-  col.ondragover = e=>{e.preventDefault();col.classList.add('dragover')};
-  col.ondragleave = ()=>col.classList.remove('dragover');
-  col.ondrop = e=>{e.preventDefault();col.classList.remove('dragover');onDrop(e.dataTransfer.getData('id'), st.id)};
-  const items = leads.filter(l=>l.stage_id===st.id);
-  col.style.setProperty('--col-color', st.color);
-  col.innerHTML = `<div class="col-head">
-      <span class="col-dot" style="background:${st.color}"></span>
-      <span class="col-title">${st.label}</span>
-      <span class="col-count">${items.length}</span>
-    </div><div class="col-body"></div>`;
-  const body = col.querySelector('.col-body');
-  if(!items.length) body.innerHTML = '<div class="col-empty">Sem leads aqui</div>';
-  for(const l of items) body.appendChild(cardEl(l));
-  return col;
-}
-
-function cardEl(l){
-  const el = document.createElement('div');
-  el.className = 'card' + (l.unread?' unread':'');
-  el.draggable = true;
-  el.ondragstart = e=>e.dataTransfer.setData('id', l.id);
-  el.onclick = ()=>openDrawer(l);
-  const tags = [];
-  if(l.needs_human) tags.push('<span class="tag tag-human">Precisa de humano</span>');
-  else if(l.ai_enabled) tags.push('<span class="tag tag-ai">IA ativa</span>');
-  if(l.qualify_ready) tags.push('<span class="tag tag-ready">Pronto p/ qualificar</span>');
-  el.innerHTML = `
-    <div class="card-name">${l.unread?'<span class="iris" title="Aguardando leitura"></span>':''}${esc(l.name)||'Sem nome'}</div>
-    <span class="card-time">${ago(l.last_message_at)}</span>
-    <div class="card-phone">${fmtPhone(l.wa_id)}</div>
-    <div class="card-source">${esc(l.source)||''}</div>
-    <div class="card-tags">${tags.join('')}</div>`;
-  return el;
-}
-
-async function onDrop(leadId, toStage){
-  const lead = leads.find(l=>l.id===leadId);
-  if(!lead || lead.stage_id===toStage) return;
-  if(toStage==='perdido'){ pendingLoss = lead; document.getElementById('lossModal').classList.add('open'); return; }
-  await moveLead(lead, toStage);
-}
-async function moveLead(lead, toStage, lossReason){
-  const prev = lead.stage_id;
-  lead.stage_id = toStage; render(); // otimista
-  const r = await authed('/api/stage', { leadId: lead.id, toStage, lossReason });
-  if(!r.ok){ lead.stage_id = prev; render(); toast('Não consegui mover: '+(r.data.error||'erro')); return; }
-  (r.data.notices||[]).forEach(n=>toast(n));
-}
-function closeLoss(){ pendingLoss=null; document.getElementById('lossModal').classList.remove('open'); render(); }
-async function confirmLoss(){
-  const reason = document.getElementById('lossReason').value;
-  const lead = pendingLoss; closeLoss();
-  if(lead) await moveLead(lead, 'perdido', reason);
-}
-
-/* ================= DRAWER ================= */
-async function openDrawer(l){
-  currentLead = l;
-  document.getElementById('drawer').classList.add('open');
-  document.getElementById('drawerVeil').classList.add('open');
-  refreshDrawerHead();
-  document.getElementById('fName').value = l.name||'';
-  document.getElementById('fCity').value = l.city||'';
-  document.getElementById('fAge').value = l.age||'';
-  document.getElementById('fProc').value = l.procedure_interest||'';
-  document.getElementById('fSource').value = l.source||'';
-  document.getElementById('fNotes').value = l.notes||'';
-
-  const body = document.getElementById('chatBody'); body.innerHTML='';
-  const { data: msgs } = await sb.from('crm_messages').select('*').eq('lead_id', l.id).order('created_at');
-  (msgs||[]).forEach(m=>appendMsg(m,false));
-  body.scrollTop = body.scrollHeight;
-
-  checkWindow();
-  if(l.unread){ l.unread=false; render(); await sb.from('crm_leads').update({unread:false}).eq('id', l.id); }
-}
-function refreshDrawerHead(){
-  const l = currentLead; if(!l) return;
-  document.getElementById('dName').textContent = l.name||'Sem nome';
-  document.getElementById('dPhone').textContent = fmtPhone(l.wa_id);
-  document.getElementById('chName').textContent = l.name||'Sem nome';
-  const st = stages.find(s=>s.id===l.stage_id);
-  document.getElementById('chStage').textContent = st?st.label:l.stage_id;
-  const sw = document.getElementById('aiSwitch');
-  sw.classList.toggle('on', !!l.ai_enabled);
-  document.getElementById('aiLabel').textContent = l.ai_enabled?'IA responde':'Humano no comando';
-}
-function closeDrawer(){
-  currentLead=null;
-  document.getElementById('drawer').classList.remove('open');
-  document.getElementById('drawerVeil').classList.remove('open');
-}
-async function saveLeadField(field, value){
-  if(!currentLead) return;
-  currentLead[field]=value;
-  await sb.from('crm_leads').update({[field]:value}).eq('id', currentLead.id);
-  render();
-}
-async function toggleAI(){
-  if(!currentLead) return;
-  const on = !currentLead.ai_enabled;
-  currentLead.ai_enabled = on;
-  if(on) currentLead.needs_human = false;
-  refreshDrawerHead(); render();
-  await sb.from('crm_leads').update({ai_enabled:on, ...(on?{needs_human:false}:{})}).eq('id', currentLead.id);
-  toast(on?'IA reativada nesta conversa':'Você assumiu a conversa — IA pausada');
-}
-let currentWaProvider = 'zapi';
-function checkWindow(){
-  const l = currentLead;
-  if(currentWaProvider !== 'meta'){
-    document.getElementById('windowBanner').style.display = 'none';
-    document.getElementById('composer').disabled = false;
-    document.getElementById('sendBtn').disabled = false;
-    return;
-  }
-  const open = l.last_inbound_at && (Date.now()-new Date(l.last_inbound_at).getTime() < 24*3600*1000);
-  document.getElementById('windowBanner').style.display = open?'none':'flex';
-  document.getElementById('composer').disabled = !open;
-  document.getElementById('sendBtn').disabled = !open;
-}
-function appendMsg(m, scroll){
-  const body = document.getElementById('chatBody');
-  const div = document.createElement('div');
-  if(m.sender==='system'){ div.className='msg sys'; div.textContent=m.body; }
-  else{
-    div.className = 'msg ' + (m.direction==='in'?'in':'out');
-    const tag = m.sender==='ai'?'<span class="msg-ai-tag">IA</span>':'';
-    div.innerHTML = tag + esc(m.body) + `<span class="msg-meta">${fmtTime(m.created_at)}</span>`;
-  }
-  body.appendChild(div);
-  if(scroll) body.scrollTop = body.scrollHeight;
-}
-async function sendHuman(){
-  const ta = document.getElementById('composer');
-  const text = ta.value.trim();
-  if(!text || !currentLead) return;
-  ta.value=''; 
-  // enviar como humano pausa a IA automaticamente
-  if(currentLead.ai_enabled){
-    currentLead.ai_enabled=false; refreshDrawerHead();
-    await sb.from('crm_leads').update({ai_enabled:false}).eq('id', currentLead.id);
-  }
-  const r = await authed('/api/send',{ leadId: currentLead.id, body:text });
-  if(r.status===409){ checkWindow(); toast(r.data.message); return; }
-  if(!r.ok) toast('Falha no envio: '+(r.data.error||'erro'));
-}
-async function sendReopen(){
-  const r = await authed('/api/send',{ leadId: currentLead.id, useReopenTemplate:true });
-  toast(r.ok?'Template de retomada enviado':'Falha: '+(r.data.error||r.data.message||'erro'));
-}
-
-/* ================= RELATÓRIOS ================= */
-let stageEvents = null;
-const MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-
-async function switchView(v){
-  document.getElementById('navFunil').classList.toggle('active', v==='funil');
-  document.getElementById('navRel').classList.toggle('active', v==='relatorios');
-  document.getElementById('navSim').classList.toggle('active', v==='simulador');
-  document.getElementById('navCamp').classList.toggle('active', v==='campanhas');
-  document.getElementById('board').style.display = v==='funil'?'flex':'none';
-  document.getElementById('reports').style.display = v==='relatorios'?'block':'none';
-  document.getElementById('simView').style.display = v==='simulador'?'flex':'none';
-  document.getElementById('campView').style.display = v==='campanhas'?'block':'none';
-  if(v==='campanhas'){ renderCampaigns(); }
-  if(v==='relatorios'){
-    if(!stageEvents){
-      const { data } = await sb.from('crm_stage_events').select('lead_id,to_stage,created_at');
-      stageEvents = data||[];
-    }
-    buildReportFilters();
-    renderReports();
-  }
-}
-
-function monthKey(d){ const x=new Date(d); return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0'); }
-function monthLabel(k){ const [y,m]=k.split('-'); return MESES[+m-1]+'/'+y.slice(2); }
-
-function buildReportFilters(){
-  const mSel = document.getElementById('repMonth');
-  const keep = mSel.value;
-  const months = [...new Set(leads.map(l=>monthKey(l.created_at)))].sort().reverse();
-  const cur = monthKey(new Date().toISOString());
-  if(!months.includes(cur)) months.unshift(cur);
-  mSel.innerHTML = '<option value="all">Todos os meses</option>' + months.map(k=>`<option value="${k}">${monthLabel(k)}</option>`).join('');
-  mSel.value = keep && [...mSel.options].some(o=>o.value===keep) ? keep : cur;
-
-  const pSel = document.getElementById('repProc'); const keepP = pSel.value;
-  const procs = [...new Set(leads.map(l=>l.procedure_interest).filter(Boolean))].sort();
-  pSel.innerHTML = '<option value="all">Todos os procedimentos</option>' + procs.map(x=>`<option>${esc(x)}</option>`).join('');
-  if(keepP && [...pSel.options].some(o=>o.value===keepP)) pSel.value=keepP;
-
-  const sSel = document.getElementById('repSource'); const keepS = sSel.value;
-  const srcs = [...new Set(leads.map(l=>l.source).filter(Boolean))].sort();
-  sSel.innerHTML = '<option value="all">Todas as origens</option>' + srcs.map(x=>`<option>${esc(x)}</option>`).join('');
-  if(keepS && [...sSel.options].some(o=>o.value===keepS)) sSel.value=keepS;
-}
-
-function renderReports(){
-  const month = document.getElementById('repMonth').value;
-  const proc = document.getElementById('repProc').value;
-  const src = document.getElementById('repSource').value;
-
-  const leadOk = l => (proc==='all' || l.procedure_interest===proc) && (src==='all' || l.source===src);
-  const inPeriod = d => month==='all' || monthKey(d)===month;
-  const leadById = Object.fromEntries(leads.map(l=>[l.id,l]));
-
-  const novos = leads.filter(l=>leadOk(l) && inPeriod(l.created_at));
-  const ev = (stageEvents||[]).filter(e=>{
-    const l = leadById[e.lead_id];
-    return l && leadOk(l) && inPeriod(e.created_at);
-  });
-  const count = st => ev.filter(e=>e.to_stage===st).length;
-  const qualificados = count('qualificado');
-  const agendadas = count('consulta_agendada');
-  const fechados = count('fechado');
-  const perdidos = count('perdido');
-  const conv = novos.length ? Math.round(fechados/novos.length*100) : 0;
-
-  document.getElementById('repKpis').innerHTML = `
-    <div class="kpi"><b>${novos.length}</b><span>Novos leads</span></div>
-    <div class="kpi gold"><b>${qualificados}</b><span>Qualificados</span></div>
-    <div class="kpi"><b>${agendadas}</b><span>Consultas agendadas</span></div>
-    <div class="kpi green"><b>${fechados}</b><span>Cirurgias fechadas</span></div>
-    <div class="kpi red"><b>${perdidos}</b><span>Perdidos</span></div>
-    <div class="kpi"><b>${conv}%</b><span>Conversão lead→cirurgia</span></div>`;
-
-  // Gráfico: por dia (mês selecionado) ou por mês (todos)
-  const chart = document.getElementById('repChart');
-  const labels = document.getElementById('repChartLabels');
-  let buckets=[], lbls=[];
-  if(month==='all'){
-    document.getElementById('chartTitle').textContent='Novos leads por mês';
-    const keys=[...new Set(novos.map(l=>monthKey(l.created_at)))].sort();
-    buckets = keys.map(k=>novos.filter(l=>monthKey(l.created_at)===k).length);
-    lbls = keys.map(monthLabel);
-  } else {
-    document.getElementById('chartTitle').textContent='Novos leads por dia';
-    const [y,m]=month.split('-').map(Number);
-    const days=new Date(y,m,0).getDate();
-    for(let d=1;d<=days;d++){
-      buckets.push(novos.filter(l=>{const x=new Date(l.created_at);return x.getDate()===d;}).length);
-      lbls.push(d%5===0||d===1?String(d):'');
-    }
-  }
-  const max=Math.max(1,...buckets);
-  chart.innerHTML = buckets.map((n,i)=>`<div class="bar" style="height:${Math.round(n/max*100)}%" title="${lbls[i]||''}: ${n}"></div>`).join('') || '<div class="empty">Sem dados no período</div>';
-  labels.innerHTML = lbls.map(x=>`<span>${x}</span>`).join('');
-
-  // Origem
-  const bySrc={}; novos.forEach(l=>{const s=l.source||'Sem origem';bySrc[s]=(bySrc[s]||0)+1;});
-  const srcRows=Object.entries(bySrc).sort((a,b)=>b[1]-a[1]).slice(0,7);
-  const smax=Math.max(1,...srcRows.map(r=>r[1]));
-  document.getElementById('repSources').innerHTML = srcRows.length
-    ? srcRows.map(([s,n])=>`<div class="hbar-row"><div class="hbar-label" title="${esc(s)}">${esc(s)}</div><div class="hbar-track"><div class="hbar-fill" style="width:${Math.round(n/smax*100)}%"></div></div><div class="hbar-n">${n}</div></div>`).join('')
-    : '<div class="empty">Sem leads no período</div>';
-
-  // Motivos de perda
-  const lostIds = new Set(ev.filter(e=>e.to_stage==='perdido').map(e=>e.lead_id));
-  const byReason={}; [...lostIds].forEach(id=>{const l=leadById[id];const r=(l&&l.loss_reason)||'Não informado';byReason[r]=(byReason[r]||0)+1;});
-  const lr=Object.entries(byReason).sort((a,b)=>b[1]-a[1]);
-  const lmax=Math.max(1,...lr.map(r=>r[1]));
-  document.getElementById('repLoss').innerHTML = lr.length
-    ? lr.map(([s,n])=>`<div class="hbar-row"><div class="hbar-label">${esc(s)}</div><div class="hbar-track"><div class="hbar-fill" style="width:${Math.round(n/lmax*100)}%;background:var(--alert)"></div></div><div class="hbar-n">${n}</div></div>`).join('')
-    : '<div class="empty">Nenhuma perda no período 🎉</div>';
-}
-
-function waProviderChanged(){
-  const isMeta = document.getElementById('cfgWaProvider').value === 'meta';
-  document.getElementById('zapiFields').style.display = isMeta ? 'none' : 'block';
-  document.getElementById('metaFields').style.display = isMeta ? 'block' : 'none';
-  currentWaProvider = document.getElementById('cfgWaProvider').value;
-}
-
-/* ================= EMBEDDED SIGNUP (conectar WhatsApp oficial) ================= */
-let embeddedSignupData = null;
-window.addEventListener('message', (event)=>{
-  if(!event.origin.endsWith('facebook.com')) return;
-  try{
-    const data = JSON.parse(event.data);
-    if(data.type === 'WA_EMBEDDED_SIGNUP' && data.event === 'FINISH'){
-      embeddedSignupData = data.data; // { waba_id, phone_number_id }
-    }
-  }catch(e){/* mensagens irrelevantes do FB, ignorar */}
-});
-
-function startEmbeddedSignup(){
-  const appId = ALCANCE360_META_APP_ID;
-  const configId = ALCANCE360_META_CONFIG_ID;
-  const status = document.getElementById('metaConnectStatus');
-  if(!window.FB){ status.textContent = 'Carregando o Facebook… tente novamente em 2 segundos.'; return; }
-  FB.init({ appId, cookie:false, xfbml:false, version:'v21.0' });
-  embeddedSignupData = null;
-  status.textContent = 'Abrindo o Facebook…';
-
-  FB.login(function(response){
-    if(!response.authResponse || !response.authResponse.code){
-      status.textContent = 'Conexão cancelada ou sem permissão concedida.';
-      return;
-    }
-    const code = response.authResponse.code;
-    // pequena espera: o evento postMessage às vezes chega um instante depois do callback
-    setTimeout(async ()=>{
-      if(!embeddedSignupData || !embeddedSignupData.waba_id || !embeddedSignupData.phone_number_id){
-        status.textContent = 'Não recebi os dados do WhatsApp — tente novamente (verifique se o Configuration ID está certo).';
-        return;
-      }
-      status.textContent = 'Finalizando conexão…';
-      const r = await authed('/api/embedded-signup-exchange', {
-        code, wabaId: embeddedSignupData.waba_id, phoneNumberId: embeddedSignupData.phone_number_id
-      });
-      if(!r.ok){ status.textContent = 'Erro: '+(r.data.error||'falha ao concluir'); return; }
-      status.textContent = `✅ Conectado — WABA ${r.data.wabaId} · Phone Number ID ${r.data.phoneNumberId}`;
-      toast('WhatsApp oficial conectado com sucesso!');
-    }, 800);
-  }, {
-    config_id: configId,
-    response_type: 'code',
-    override_default_response_type: true,
-    extras: { setup: {}, featureType: '', sessionInfoVersion: '3' }
-  });
-}
-
-/* ================= MENSAGENS FIXAS (visualização) ================= */
-// Cópia de exibição — a fonte real é AUTO_TEXTS em api/_lib/core.js.
-// Editar o texto de verdade lá (e resubmeter o template no Meta se já aprovado).
-const FIXED_TEMPLATES_VIEW = [
-  { key:'aviso_secretaria', label:'Aviso à secretária (lead qualificado)', text:'Novo paciente qualificado para consulta ✨\n\nNome: {{1}}\nWhatsApp: {{2}}\nResumo: {{3}}\n\nPor favor, entre em contato para confirmar o agendamento da avaliação.' },
-  { key:'retomada_atendimento', label:'Retomada (janela de 24h fechada)', text:'Olá, {{1}}! Vi que conversamos sobre a sua avaliação e queria saber se posso te ajudar a dar o próximo passo. Posso continuar por aqui?' },
-  { key:'reactivation_2h', label:'Reativação — 2 horas sem resposta', text:'Oi, {{1}}! Tudo bem? Ficou alguma dúvida específica que gostaria de saber?' },
-  { key:'reactivation_2d', label:'Reativação — 2 dias sem resposta', text:'Oi, {{1}}! Continuo por aqui à disposição para conversar sobre a blefaroplastia, viu?' },
-  { key:'reactivation_15d', label:'Reativação — 15 dias sem resposta (encerramento)', text:'Oi, {{1}}! Vou encerrar o atendimento por aqui, mas fico à disposição para qualquer dúvida no futuro. Foi um prazer falar com você!' },
-];
-function renderFixedTemplates(){
-  document.getElementById('fixedTemplatesView').innerHTML = FIXED_TEMPLATES_VIEW.map(t=>`
-    <div style="margin-bottom:10px">
-      <label style="display:block;font-size:9.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:4px">${esc(t.label)}</label>
-      <div style="padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:var(--ivory);font-size:12.5px;color:var(--ink);white-space:pre-wrap">${esc(t.text)}</div>
-    </div>`).join('');
-}
-
-/* ================= CAMPANHAS ================= */
-let campaigns = [];
-let waNumberForLinks = '';
-let waNumberSaveTimer;
-function saveWaNumberForLinks(v){
-  waNumberForLinks = v.replace(/\D/g,'');
-  clearTimeout(waNumberSaveTimer);
-  waNumberSaveTimer = setTimeout(()=>{ sb.from('crm_settings').upsert({key:'ads_phone_number', value: waNumberForLinks}); }, 500);
-}
-async function renderCampaigns(){
-  const list = document.getElementById('campList');
-  list.innerHTML = '<div class="empty" style="font-family:\'Cormorant Garamond\',serif;font-size:15px;color:#A9A492">Carregando…</div>';
-  const [{data: camps}, {data: numRow}] = await Promise.all([
-    sb.from('crm_campaigns').select('*').order('created_at',{ascending:false}),
-    sb.from('crm_settings').select('value').eq('key','ads_phone_number').single()
-  ]);
-  campaigns = camps||[];
-  waNumberForLinks = numRow?.value || '';
-  document.getElementById('campWaNumber').value = waNumberForLinks;
-  if(!campaigns.length){
-    list.innerHTML = '<div class="panel"><div class="empty">Nenhuma campanha ainda — crie a primeira para rastrear seus anúncios.</div></div>';
-    return;
-  }
-  const counts = {};
-  leads.forEach(l=>{ if(l.campaign_id) counts[l.campaign_id]=(counts[l.campaign_id]||0)+1; });
-  list.innerHTML = campaigns.map(c=>{
-    const link = buildCampaignLink(c);
-    return `<div class="panel" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
-      <div style="flex:1;min-width:200px">
-        <div style="font-family:'Cormorant Garamond',serif;font-weight:600;font-size:17px">${esc(c.name)}</div>
-        <div class="mono" style="font-size:11px;color:var(--ink-soft)">código: ${esc(c.code)}${c.procedure_interest?' · '+esc(c.procedure_interest):''}</div>
-      </div>
-      <div class="kpi" style="padding:8px 14px"><b style="font-size:22px">${counts[c.id]||0}</b><span>leads</span></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn-ghost" onclick="copyCampaignText('${c.id}')">💬 Copiar mensagem (Ads Manager)</button>
-        <button class="btn-ghost" onclick="copyCampaignLink('${c.id}')">🔗 Copiar link (bio/stories)</button>
-      </div>
-    </div>`;
-  }).join('');
-}
-function campaignText(c){ return `Olá! Vi o anúncio e queria saber mais [ref:${c.code}]`; }
-function buildCampaignLink(c){
-  const num = waNumberForLinks || '5500000000000';
-  return `https://wa.me/${num}?text=${encodeURIComponent(campaignText(c))}`;
-}
-function copyCampaignText(id){
-  const c = campaigns.find(x=>x.id===id);
-  if(!c) return;
-  navigator.clipboard.writeText(campaignText(c));
-  toast('Mensagem copiada — cole no campo "Mensagem inicial" do anúncio no Ads Manager.');
-}
-function copyCampaignLink(id){
-  const c = campaigns.find(x=>x.id===id);
-  if(!c) return;
-  navigator.clipboard.writeText(buildCampaignLink(c));
-  toast(waNumberForLinks ? 'Link copiado — use em bio, Stories ou botões de link.' : 'Link copiado — falta preencher o número do WhatsApp acima.');
-}
-function openNewCampaign(){
-  ['ncName','ncCode','ncProc'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('ncErr').textContent='';
-  document.getElementById('newCampModal').classList.add('open');
-}
-async function createCampaign(){
-  const err = document.getElementById('ncErr');
-  const name = document.getElementById('ncName').value.trim();
-  const code = document.getElementById('ncCode').value.trim().toLowerCase().replace(/[^a-z0-9_-]/g,'');
-  if(!name || !code){ err.textContent='Preencha nome e código.'; return; }
-  const { error } = await sb.from('crm_campaigns').insert({
-    name, code, procedure_interest: document.getElementById('ncProc').value.trim()||null
-  });
-  if(error){ err.textContent = error.code==='23505' ? 'Esse código já existe.' : 'Erro: '+error.message; return; }
-  document.getElementById('newCampModal').classList.remove('open');
-  toast('Campanha criada');
-  renderCampaigns();
-}
-
-/* ================= NOVO LEAD MANUAL ================= */
-function openNewLead(){
-  ['nlName','nlPhone','nlCity'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('nlProc').value='Blefaroplastia';
-  document.getElementById('nlErr').textContent='';
-  document.getElementById('newLeadModal').classList.add('open');
-}
-async function createLead(){
-  const err = document.getElementById('nlErr');
-  const name = document.getElementById('nlName').value.trim();
-  let phone = document.getElementById('nlPhone').value.replace(/\D/g,'');
-  if(!name){ err.textContent='Informe o nome.'; return; }
-  if(phone.length===10 || phone.length===11) phone = '55'+phone;       // DDD + número → adiciona 55
-  if(!/^55\d{10,11}$/.test(phone)){ err.textContent='WhatsApp inválido — use DDD + número.'; return; }
-  const { data, error } = await sb.from('crm_leads').insert({
-    wa_id: phone,
-    name,
-    city: document.getElementById('nlCity').value.trim() || null,
-    procedure_interest: document.getElementById('nlProc').value.trim() || 'Blefaroplastia',
-    source: document.getElementById('nlSource').value,
-    unread: false
-  }).select().single();
-  if(error){
-    err.textContent = error.code==='23505' ? 'Já existe um lead com esse WhatsApp.' : 'Erro ao cadastrar: '+error.message;
-    return;
-  }
-  document.getElementById('newLeadModal').classList.remove('open');
-  toast('Lead cadastrado no funil');
-  if(!leads.find(l=>l.id===data.id)){ leads.unshift(data); render(); }
-}
-
-/* ================= CONFIG IA ================= */
-let settingsCache = null;
-async function openConfig(){
-  // abre o modal NA HORA; os dados preenchem em seguida (com cache)
-  document.getElementById('configModal').classList.add('open');
-  closeAuditResult();
-  renderFixedTemplates();
-  if(settingsCache) fillConfig(settingsCache);
-  const { data } = await sb.from('crm_settings').select('*');
-  const map = Object.fromEntries((data||[]).map(r=>[r.key,r.value]));
-  settingsCache = map;
-  fillConfig(map);
-}
-function fillConfig(map){
-  document.getElementById('cfgName').value = map.agent_name||'';
-  document.getElementById('cfgPrompt').value = map.system_prompt||'';
-  document.getElementById('cfgKb').value = map.knowledge_base||'';
-  reactivationEnabled = map.reactivation_enabled !== 'false';
-  updateReactSwitch();
-  document.getElementById('cfgWaProvider').value = map.wa_provider||'zapi';
-  document.getElementById('cfgZapiInstance').value = map.zapi_instance_id||'';
-  document.getElementById('cfgZapiToken').value = map.zapi_token||'';
-  document.getElementById('cfgZapiClient').value = map.zapi_client_token||'';
-  window.__META_APP_ID__ = ALCANCE360_META_APP_ID;
-  if(window.FB) FB.init({ appId: ALCANCE360_META_APP_ID, cookie:false, xfbml:false, version:'v21.0' });
-  const waba = map.meta_waba_id, phoneId = map.meta_phone_number_id;
-  document.getElementById('metaConnectStatus').innerHTML = (waba && phoneId)
-    ? `✅ WhatsApp oficial conectado`
-    : 'Clique para conectar o WhatsApp oficial do consultório.';
-  waProviderChanged();
-  document.getElementById('cfgSecretary').value = map.secretary_phone||'';
-  document.getElementById('cfgReport').value = map.report_phone||'';
-  document.getElementById('cfgSignup').value = map.signup_code||'';
-  document.getElementById('cfgAiProvider').value = map.ai_provider||'gemini';
-  document.getElementById('cfgAiKey').value = map.ai_api_key||map.gemini_api_key||'';
-  document.getElementById('cfgAiModel').value = map.ai_model||map.gemini_model||'';
-  aiProviderChanged(false);
-}
-let reactivationEnabled = true;
-function updateReactSwitch(){
-  document.getElementById('reactSwitch').classList.toggle('on', reactivationEnabled);
-  document.getElementById('reactSwitchLabel').textContent = reactivationEnabled ? 'Ativada' : 'Desativada';
-}
-async function toggleReactivation(){
-  reactivationEnabled = !reactivationEnabled;
-  updateReactSwitch();
-  await sb.from('crm_settings').upsert({key:'reactivation_enabled', value: String(reactivationEnabled)});
-  settingsCache = Object.assign(settingsCache||{}, {reactivation_enabled: String(reactivationEnabled)});
-  toast(reactivationEnabled ? 'Reativação automática ativada' : 'Reativação automática desativada');
-}
-async function saveConfig(){
-  const rows = [
-    {key:'agent_name', value:document.getElementById('cfgName').value},
-    {key:'system_prompt', value:document.getElementById('cfgPrompt').value},
-    {key:'knowledge_base', value:document.getElementById('cfgKb').value},
-    {key:'reactivation_enabled', value:String(reactivationEnabled)},
-    {key:'wa_provider', value:document.getElementById('cfgWaProvider').value},
-    {key:'zapi_instance_id', value:document.getElementById('cfgZapiInstance').value.trim()},
-    {key:'zapi_token', value:document.getElementById('cfgZapiToken').value.trim()},
-    {key:'zapi_client_token', value:document.getElementById('cfgZapiClient').value.trim()},
-    {key:'secretary_phone', value:document.getElementById('cfgSecretary').value.replace(/\D/g,'')},
-    {key:'report_phone', value:document.getElementById('cfgReport').value.replace(/\D/g,'')},
-    {key:'signup_code', value:document.getElementById('cfgSignup').value.trim()},
-    {key:'ai_provider', value:document.getElementById('cfgAiProvider').value},
-    {key:'ai_api_key', value:document.getElementById('cfgAiKey').value.trim()},
-    {key:'ai_model', value:document.getElementById('cfgAiModel').value.trim()},
-  ];
-  await sb.from('crm_settings').upsert(rows);
-  settingsCache = Object.assign(settingsCache||{}, Object.fromEntries(rows.map(r=>[r.key,r.value])));
-  document.getElementById('configModal').classList.remove('open');
-  toast('Configuração da IA salva');
-}
-
-/* ================= SIMULADOR ================= */
-let simMessages = [], simLead = {};
-const SIM_ACTION_NOTES = {
-  handoff: '🔴 Neste ponto, a IA se pausaria e o card ganharia a tag "Precisa de humano".',
-  suggest_qualified: '🟡 Neste ponto, a IA moveria o card para QUALIFICADO e enviaria o resumo para a secretária do hospital.',
-};
-function simAdd(role, html, cls){
-  const body = document.getElementById('simBody');
-  const div = document.createElement('div');
-  div.className = cls || ('msg ' + (role==='user'?'in':'out'));
-  div.innerHTML = html;
-  body.appendChild(div);
-  body.scrollTop = body.scrollHeight;
-}
-function simReset(){
-  simMessages = []; simLead = {};
-  document.getElementById('simBody').innerHTML = '';
-  document.getElementById('simFicha').style.display='none';
-  simAdd(null, 'Simulação iniciada — escreva a primeira mensagem como a paciente escreveria.', 'msg sys');
-}
-function simFichaRender(){
-  const parts = [];
-  if(simLead.name) parts.push('Nome: '+esc(simLead.name));
-  if(simLead.city) parts.push('Cidade: '+esc(simLead.city));
-  if(simLead.complaint) parts.push('Queixa: '+esc(simLead.complaint));
-  const el = document.getElementById('simFicha');
-  if(parts.length){ el.style.display='block'; el.innerHTML = '📋 <b>Ficha que a IA preencheria:</b> ' + parts.join(' · '); }
-}
-async function simSend(){
-  const ta = document.getElementById('simComposer');
-  const text = ta.value.trim();
-  if(!text) return;
-  ta.value='';
-  simMessages.push({role:'user', content:text});
-  simAdd('user', esc(text));
-  const btn = document.getElementById('simSendBtn');
-  btn.disabled = true; btn.textContent='…';
-  const r = await authed('/api/simulate', { messages: simMessages, lead: simLead });
-  btn.disabled = false; btn.textContent='Enviar';
-  if(!r.ok){ simAdd(null, 'Erro: '+(r.data.error||'falha'), 'msg sys'); return; }
-  const d = r.data;
-  if(d.reply){
-    simMessages.push({role:'assistant', content:d.reply});
-    simAdd('assistant', '<span class="msg-ai-tag">IA</span>'+esc(d.reply));
-  }
-  const ex = d.extracted||{};
-  if(ex.name) simLead.name = ex.name;
-  if(ex.city) simLead.city = ex.city;
-  if(ex.complaint) simLead.complaint = ex.complaint;
-  simFichaRender();
-  if(SIM_ACTION_NOTES[d.action]) simAdd(null, SIM_ACTION_NOTES[d.action], 'msg sys');
-}
-document.addEventListener('DOMContentLoaded', ()=>{ try{ simReset(); }catch(e){} });
-
-/* ================= AUDITOR DE PROMPTS ================= */
-function closeAuditResult(){
-  document.getElementById('auditResult').style.display = 'none';
-}
-async function analyzePrompts(){
-  const btn = document.getElementById('auditBtn');
-  const out = document.getElementById('auditResult');
-  const txt = document.getElementById('auditResultText');
-  btn.disabled = true; btn.textContent = 'Analisando… (até 30s)';
-  out.style.display='block'; txt.textContent='A IA está lendo suas instruções e a base de conhecimento…';
-  const r = await authed('/api/analyze', {
-    system_prompt: document.getElementById('cfgPrompt').value,
-    knowledge_base: document.getElementById('cfgKb').value,
-  });
-  btn.disabled = false; btn.textContent = '🔍 Analisar prompts com IA';
-  txt.textContent = r.ok ? r.data.report : ('Erro: ' + (r.data.error||'falha na análise'));
-}
-
-/* ================= IA: modelos por provedor ================= */
-const AI_MODELS = {
-  openai:    ['gpt-5-mini','gpt-5','gpt-5-nano','gpt-4.1-mini','gpt-4o-mini'],
-  anthropic: ['claude-sonnet-5','claude-haiku-4-5-20251001','claude-opus-4-8'],
-  gemini:    ['gemini-2.5-flash','gemini-2.5-pro'],
-};
-function aiProviderChanged(clear=true){
-  const prov = document.getElementById('cfgAiProvider').value;
-  const dl = document.getElementById('aiModels');
-  const models = AI_MODELS[prov]||[];
-  dl.innerHTML = models.map(m=>`<option value="${m}">`).join('');
-  const inp = document.getElementById('cfgAiModel');
-  inp.placeholder = models[0]||'';
-  if(clear && (!inp.value || !models.includes(inp.value))) inp.value = models[0]||'';
-}
-
-/* ================= UTIL ================= */
-function esc(s){ return s?String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])):s; }
-function fmtPhone(w){ const m=String(w||'').match(/^55(\d{2})(\d{4,5})(\d{4})$/); return m?`(${m[1]}) ${m[2]}-${m[3]}`:'+'+w; }
-function fmtTime(d){ return new Date(d).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}); }
-function fmtDate(d){ return new Date(d).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}); }
-function ago(d){
-  if(!d) return '';
-  const s = (Date.now()-new Date(d).getTime())/1000;
-  if(s<60) return 'agora'; if(s<3600) return Math.floor(s/60)+'min';
-  if(s<86400) return Math.floor(s/3600)+'h'; return Math.floor(s/86400)+'d';
-}
-let toastTimer;
-function toast(t){
-  const el = document.getElementById('toast');
-  el.textContent=t; el.classList.add('show');
-  clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.classList.remove('show'), 3200);
-}
-</script>
+<header id="topbar" style="display:none"></header>
+<main id="view"></main>
+<button id="fab" title="Novo pedido" aria-label="Novo pedido">🧾</button>
+<nav id="tabs" style="display:none">
+  <button data-v="hoje"><span class="ico">📅</span>Hoje</button>
+  <button data-v="clientes"><span class="ico">🏪</span>Clientes</button>
+  <button data-v="pedidos"><span class="ico">🧾</span>Pedidos</button>
+  <button data-v="dash"><span class="ico">📊</span>Painel</button>
+  <button data-v="mais"><span class="ico">☰</span>Mais</button>
+</nav>
+<script src="js/calc.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/db.js"></script>
+<script src="js/rota.js"></script>
+<script src="js/pdf.js"></script>
+<script src="js/pedido.js"></script>
+<script src="js/app.js"></script>
 </body>
 </html>

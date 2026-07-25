@@ -50,9 +50,10 @@
     for (const c of clientes) {
       try {
         const r = await geocodificar(c);
+        const agora = new Date().toISOString();
         DB.update('clientes', c.id, r.status === 'falhou'
-          ? { geocode_status: 'falhou' }
-          : { lat: r.lat, lng: r.lng, geocode_status: r.status });
+          ? { geocoding_status: 'falhou', geocoding_atualizado_em: agora }
+          : { lat: r.lat, lng: r.lng, geocoding_status: r.status, geocoding_atualizado_em: agora });
       } catch (e) { break; }
       feitos++;
       if (onProgress) onProgress(feitos, clientes.length);
@@ -105,7 +106,7 @@
     let { ordem } = C.otimizarRota(m);
 
     // Reencaixe: candidatos ordenados por urgência (mais atrasado primeiro)
-    const urg = (c) => c.proxima_visita ? (new Date(hojeISO) - new Date(c.proxima_visita)) : -Infinity;
+    const urg = (c) => c.proxima_visita_prevista ? (new Date(hojeISO) - new Date(c.proxima_visita_prevista)) : 0;
     const fila = candidatos.filter(c => c.lat != null && c.lng != null)
       .sort((a, b) => urg(b) - urg(a));
     const encaixados = [];
@@ -138,21 +139,26 @@
     semCoord.forEach((c, i) => seq.push({ cliente_id: c.id, ordem: seq.length + 1, sem_coord: true }));
 
     return {
-      sequencia: seq, km_total: Math.round(km * 10) / 10,
-      tempo_min: Math.round(km / vel * 60), fonte,
+      sequencia: seq, distancia_total_km: Math.round(km * 10) / 10,
+      tempo_total_min: Math.round(km / vel * 60), fonte,
       ordemIdx: ordem, pontos, matriz: m,
       ultimoPonto: ordem.length ? pontos[ordem[ordem.length - 1]] : partida
     };
   }
 
-  function salvarRota(repId, dataISO, rota, partida) {
+  function salvarRota(repId, dataISO, rota, partida, motivo) {
     const rep = DB.byId('representantes', repId);
-    const custo = Math.round((rota.km_total * Number(rep && rep.custo_km || 0)) * 100) / 100;
-    const existente = DB.all('rotas').find(r => r.representante_id === repId && r.data === dataISO);
+    const custo = Math.round((rota.distancia_total_km * Number(rep && rep.custo_km || 0)) * 100) / 100;
+    const existente = DB.all('rotas').find(r => r.representante_id === repId && r.data_rota === dataISO);
     const body = {
-      representante_id: repId, data: dataISO, sequencia: rota.sequencia,
-      km_total: rota.km_total, tempo_min: rota.tempo_min,
-      custo_estimado: custo, partida, fonte_matriz: rota.fonte
+      representante_id: repId, data_rota: dataISO, sequencia: rota.sequencia,
+      distancia_total_km: rota.distancia_total_km, tempo_total_min: rota.tempo_total_min,
+      custo_estimado: custo,
+      ponto_partida_lat: partida ? partida.lat : null,
+      ponto_partida_lng: partida ? partida.lng : null,
+      ponto_partida_tipo: partida && partida.tipo ? partida.tipo : 'base',
+      status: motivo ? 'reotimizada' : 'planejada',
+      motivo_reotimizacao: motivo || null
     };
     if (existente) DB.update('rotas', existente.id, body);
     else DB.insert('rotas', body);
