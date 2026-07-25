@@ -103,7 +103,12 @@
     $('#topbar').style.display = ''; $('#tabs').style.display = ''; $('#fab').style.display = '';
     montarTopbar();
     nav(viewAtual);
-    if (navigator.onLine && DB.configured()) DB.sync();
+    // sempre sincroniza (fila + download) ao abrir e re-renderiza com os dados novos
+    if (navigator.onLine && DB.configured())
+      Promise.resolve(DB.sync()).then(() => {
+        if (!sessao()) return; // representante removido do servidor — mantém a tela atual
+        montarTopbar(); nav(viewAtual);
+      }).catch(() => {});
   }
 
   function montarTopbar() {
@@ -193,8 +198,19 @@
     return DB.all('visitas').find(v => v.cliente_id === clienteId && v.data_visita === hojeISO() && v.realizada);
   }
 
-  // ================= VIEW: HOJE =================
-  let rotaDia = null; // {sequencia, distancia_total_km, ...}
+  // ================= VIEW: HOJE / PRÓXIMOS DIAS =================
+  let diaOffset = 0; // 0 = hoje · 1..7 = próximos dias
+
+  function addDias(iso, n) {
+    const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n);
+    return d.toISOString().slice(0, 10);
+  }
+  function rotuloDia(off, iso) {
+    if (off === 0) return 'Hoje';
+    if (off === 1) return 'Amanhã';
+    const d = new Date(iso + 'T12:00:00');
+    return ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'][d.getDay()] + ' ' + iso.slice(8, 10) + '/' + iso.slice(5, 7);
+  }
 
   async function vHoje(view) {
     const s = sessao();
@@ -204,7 +220,9 @@
     }
     const rep = s.rep;
     const hoje = hojeISO();
-    const ciclo = C.cicloDoDia(hoje, DB.config('ciclo_inicio', '2026-01-05'));
+    const dataVista = addDias(hoje, diaOffset);
+    const ehHoje = diaOffset === 0;
+    const ciclo = C.cicloDoDia(dataVista, DB.config('ciclo_inicio', '2026-01-05'));
     const doDia = clientesDoRep(rep.id).filter(c =>
       c.semana_padrao === ciclo.semana && C.mesmoDia(c.dia_semana_padrao, ciclo.diaSemana));
     const pendencias = DB.all('pendencias').filter(p => !p.resolvida_em &&
@@ -214,32 +232,42 @@
     const atrasados = alertasCiclo(rep.id).atrasados.map(a => a.c)
       .filter(c => !doDia.some(d => d.id === c.id) && !pendentes.some(pp => pp.id === c.id));
 
-    // partida: pernoite de ontem > base do representante
-    const ontem = (() => { const d = new Date(hoje + 'T12:00:00'); d.setDate(d.getDate() - 1); return d.toISOString().slice(0, 10); })();
-    const pernoite = DB.all('pernoites').find(p => p.representante_id === rep.id && p.data === ontem);
+    // partida: pernoite da véspera > base do representante
+    const vespera = addDias(dataVista, -1);
+    const pernoite = DB.all('pernoites').find(p => p.representante_id === rep.id && p.data === vespera);
     const partida = pernoite
       ? { lat: pernoite.lat, lng: pernoite.lng, label: '📍 Pernoite: ' + (pernoite.local_desc || 'posição salva') }
       : (rep.lat_base != null ? { lat: rep.lat_base, lng: rep.lng_base, label: '🏠 Base: ' + (rep.cidade_base || '') } : null);
 
-    const rotaSalva = DB.all('rotas').find(r => r.representante_id === rep.id && r.data_rota === hoje);
+    const rotaSalva = DB.all('rotas').find(r => r.representante_id === rep.id && r.data_rota === dataVista);
+    const visitou = (cid) => DB.all('visitas').find(v => v.cliente_id === cid && v.data_visita === dataVista && v.realizada);
 
-    const head = el('div', null,
-      el('div', { class: 'row space' },
-        el('h2', null, 'Hoje · ' + dataBR(hoje)),
-        el('span', { class: 'badge' }, 'Semana ' + ciclo.semana + ' · ' +
-          ['', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'][ciclo.diaSemana])));
-    view.appendChild(head);
+    // seletor: hoje + próximos 7 dias
+    view.appendChild(el('div', { class: 'dias-scroll' },
+      Array.from({ length: 8 }, (_, off) => {
+        const dISO = addDias(hoje, off);
+        return el('button', {
+          class: 'chip' + (off === diaOffset ? ' ativo' : ''),
+          onclick: () => { diaOffset = off; nav('hoje'); }
+        }, rotuloDia(off, dISO));
+      })));
+
+    view.appendChild(el('div', { class: 'row space mt8' },
+      el('h2', null, (ehHoje ? 'Hoje' : rotuloDia(diaOffset, dataVista)) + ' · ' + dataBR(dataVista)),
+      el('span', { class: 'badge' }, 'Semana ' + ciclo.semana + ' · ' +
+        ['', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'][ciclo.diaSemana])));
 
     const listaIds = rotaSalva ? rotaSalva.sequencia.map(x => x.cliente_id) : doDia.map(c => c.id);
     const listaCls = listaIds.map(id => DB.byId('clientes', id)).filter(Boolean);
-    // clientes do dia que não estão na rota salva (ex.: rota antiga) entram no fim
     doDia.forEach(c => { if (!listaCls.some(x => x.id === c.id)) listaCls.push(c); });
 
-    const feitos = listaCls.filter(c => visitouHoje(c.id)).length;
-    const pct = listaCls.length ? Math.round(feitos / listaCls.length * 100) : 0;
-    view.appendChild(el('div', { class: 'progresso mt8' },
-      el('div', { class: 'progresso-info' }, `${feitos} de ${listaCls.length} visitados · ${pct}%`),
-      el('div', { class: 'progresso-barra' }, el('div', { class: 'progresso-fill', style: 'width:' + pct + '%' }))));
+    if (ehHoje) {
+      const feitos = listaCls.filter(c => visitou(c.id)).length;
+      const pct = listaCls.length ? Math.round(feitos / listaCls.length * 100) : 0;
+      view.appendChild(el('div', { class: 'progresso mt8' },
+        el('div', { class: 'progresso-info' }, `${feitos} de ${listaCls.length} visitados · ${pct}%`),
+        el('div', { class: 'progresso-barra' }, el('div', { class: 'progresso-fill', style: 'width:' + pct + '%' }))));
+    }
 
     if (rotaSalva)
       view.appendChild(el('div', { class: 'rota-info mt8' },
@@ -248,7 +276,7 @@
 
     view.appendChild(el('div', { class: 'row gap8 mt8' },
       el('button', { class: 'btn grow', onclick: otimizar }, rotaSalva ? '🔄 Reotimizar rota' : '⚡ Otimizar rota'),
-      el('button', { class: 'btn btn-sec', onclick: estouAqui }, '📍 Estou aqui')));
+      ehHoje ? el('button', { class: 'btn btn-sec', onclick: estouAqui }, '📍 Estou aqui') : null));
     if (partida) view.appendChild(el('div', { class: 'sub mt4' }, 'Partida: ' + partida.label));
     if (pendentes.length || atrasados.length)
       view.appendChild(el('div', { class: 'sub mt4' },
@@ -261,11 +289,13 @@
     function renderLista() {
       listaEl.innerHTML = '';
       if (!listaCls.length) {
-        listaEl.appendChild(el('p', { class: 'vazio' }, 'Nenhum cliente programado para hoje. 🎉'));
+        listaEl.appendChild(el('p', { class: 'vazio' }, ehHoje
+          ? 'Nenhum cliente programado para hoje. 🎉'
+          : 'Nenhum cliente programado para este dia.'));
         return;
       }
       listaCls.forEach((c, i) => {
-        const v = visitouHoje(c.id);
+        const v = ehHoje ? visitou(c.id) : null;
         const seqInfo = rotaSalva && rotaSalva.sequencia.find(x => x.cliente_id === c.id);
         listaEl.appendChild(el('div', { class: 'card-visita' + (v ? ' feito' : '') },
           el('div', { class: 'row space' },
@@ -275,41 +305,42 @@
                 (seqInfo && seqInfo.reencaixado ? ' · 🔁 reencaixado' : '') +
                 (c.geocoding_status !== 'preciso' ? ' · 📍' + c.geocoding_status : ''))),
             v ? el('span', { class: 'badge ok' }, v.fez_pedido ? '✅ pedido' : '✅ visitado') : null),
-          v ? null : el('div', { class: 'row gap8 mt8' },
+          el('div', { class: 'row gap8 mt8' },
             el('button', { class: 'btn-mini', onclick: () => abrirGPS(c) }, '🗺 GPS'),
-            el('button', { class: 'btn-mini', onclick: () => window.NSPedido.novo(c) }, '🧾 Pedido'),
-            el('button', { class: 'btn-mini', onclick: () => visitaSemPedido(c) }, '✔ Sem pedido'),
-            el('button', { class: 'btn-mini vermelho', onclick: () => naoRealizada(c) }, '✖ Não realizada'))));
+            el('button', { class: 'btn-mini', onclick: () => fichaCliente(c.id) }, '👁 Ficha'),
+            (ehHoje && !v) ? el('button', { class: 'btn-mini', onclick: () => window.NSPedido.novo(c) }, '🧾 Pedido') : null,
+            (ehHoje && !v) ? el('button', { class: 'btn-mini', onclick: () => visitaSemPedido(c) }, '✔ Sem pedido') : null,
+            (ehHoje && !v) ? el('button', { class: 'btn-mini vermelho', onclick: () => naoRealizada(c) }, '✖ Não realizada') : null)));
       });
     }
 
     async function otimizar() {
-      const comCoord = listaCls.filter(c => !visitouHoje(c.id));
-      if (!partida && !comCoord.some(c => c.lat != null))
+      const restantes = listaCls.filter(c => !visitou(c.id));
+      if (!partida && !restantes.some(c => c.lat != null))
         return toast('Sem coordenadas: geocodifique os clientes (Mais → Geocodificar) e defina a base do representante.', 'erro');
-      const start = partida || { lat: comCoord.find(c => c.lat != null).lat, lng: comCoord.find(c => c.lat != null).lng, label: '1º cliente' };
+      const start = partida || { lat: restantes.find(c => c.lat != null).lat, lng: restantes.find(c => c.lat != null).lng, label: '1º cliente' };
       toast('Calculando melhor sequência…');
       const rota = await R.montarRota({
         partida: start,
-        fixos: doDia.filter(c => !visitouHoje(c.id)),
+        fixos: doDia.filter(c => !visitou(c.id)),
         candidatos: pendentes.concat(atrasados),
-        hojeISO: hoje
+        hojeISO: dataVista
       });
-      R.salvarRota(rep.id, hoje, rota, start);
-      // sugestão de pernoite
+      R.salvarRota(rep.id, dataVista, rota, start);
+      // sugestão de pernoite ao fim do dia visto
       const base = rep.lat_base != null ? { lat: rep.lat_base, lng: rep.lng_base } : null;
       if (base && rota.ultimoPonto) {
-        const amanhaISO = (() => { const d = new Date(hoje + 'T12:00:00'); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); })();
-        const cicloAm = C.cicloDoDia(amanhaISO, DB.config('ciclo_inicio', '2026-01-05'));
-        const amanha = clientesDoRep(rep.id).filter(c => c.semana_padrao === cicloAm.semana && C.mesmoDia(c.dia_semana_padrao, cicloAm.diaSemana) && c.lat != null)[0];
+        const seguinteISO = addDias(dataVista, 1);
+        const cicloSeg = C.cicloDoDia(seguinteISO, DB.config('ciclo_inicio', '2026-01-05'));
+        const seguinte = clientesDoRep(rep.id).filter(c => c.semana_padrao === cicloSeg.semana && C.mesmoDia(c.dia_semana_padrao, cicloSeg.diaSemana) && c.lat != null)[0];
         const dec = C.decidirPernoite({
-          ultimo: rota.ultimoPonto, base, primeiroAmanha: amanha ? { lat: amanha.lat, lng: amanha.lng } : null,
+          ultimo: rota.ultimoPonto, base, primeiroAmanha: seguinte ? { lat: seguinte.lat, lng: seguinte.lng } : null,
           distMinKm: Number(DB.config('pernoite_dist_km', 150)),
           economiaMinKm: Number(DB.config('pernoite_economia_km', 60)),
           fator: Number(DB.config('haversine_fator', 1.3))
         });
         if (dec.sugerir)
-          toast(`🛏 Sugestão: pernoitar na região (volta = ${Math.round(dec.dVolta)} km; economia ~${Math.round(dec.economia)} km). Use "📍 Estou aqui" no fim do dia.`);
+          toast(`🛏 Sugestão: pernoitar na região (volta = ${Math.round(dec.dVolta)} km; economia ~${Math.round(dec.economia)} km).`);
       }
       nav('hoje');
     }
@@ -358,6 +389,18 @@
     DB.update('clientes', c.id, { ultima_visita_em: hojeISO(), proxima_visita_prevista: d.toISOString().slice(0, 10) });
     DB.all('pendencias').filter(p => p.cliente_id === c.id && !p.resolvida_em)
       .forEach(p => DB.update('pendencias', p.id, { resolvida_em: new Date().toISOString() }));
+  }
+
+  function recalcularCicloCliente(clienteId) {
+    const c = DB.byId('clientes', clienteId);
+    if (!c) return;
+    const vs = DB.all('visitas').filter(v => v.cliente_id === clienteId && v.realizada);
+    const ult = vs.reduce((m, v) => (v.data_visita > m ? v.data_visita : m), '') || null;
+    const ultPed = vs.filter(v => v.fez_pedido && Number(v.valor_pedido) > 0)
+      .reduce((m, v) => (v.data_visita > m ? v.data_visita : m), '') || null;
+    let prox = null;
+    if (ult) { const d = new Date(ult + 'T12:00:00'); d.setDate(d.getDate() + (c.frequencia_dias || 60)); prox = d.toISOString().slice(0, 10); }
+    DB.update('clientes', clienteId, { ultima_visita_em: ult, ultimo_pedido_em: ultPed, proxima_visita_prevista: prox });
   }
 
   function abrirGPS(c) {
@@ -488,7 +531,19 @@
                   ? ` · dev ${ped.total_unid_dev_display}+${ped.total_unid_dev_quebrada}q` : '')
                 : 'visita sem pedido')
               : '✖ não realizada (' + (v.motivo_falta || '') + ')')),
-            ped ? el('button', { class: 'btn-link', onclick: () => window.NSPedido.abrir(ped.id) }, 'ver') : null);
+            el('div', { class: 'row gap4' },
+              ped ? el('button', { class: 'btn-link', onclick: () => window.NSPedido.abrir(ped.id) }, 'ver') : null,
+              el('button', {
+                class: 'btn-icon', onclick: async () => {
+                  if (v.pedido_id) return toast('Esta visita tem pedido — exclua o pedido primeiro.', 'erro');
+                  if (!(await confirmar('Excluir esta visita de ' + dataBR(v.data_visita) + '?'))) return;
+                  DB.remove('visitas', v.id);
+                  recalcularCicloCliente(id);
+                  toast('Visita excluída.');
+                  document.querySelector('.ns-overlay') && document.querySelector('.ns-overlay').remove();
+                  fichaCliente(id);
+                }
+              }, '🗑')));
         }),
         !visitas.length ? el('p', { class: 'vazio' }, 'Sem visitas registradas.') : null)
     ), { titulo: c.nome });
@@ -834,7 +889,20 @@
           mm.fechar(); toast('Cliente salvo.');
           if (aoSalvar) aoSalvar();
         }
-      }, 'Salvar')), { titulo: id ? 'Editar cliente' : 'Novo cliente', full: true });
+      }, 'Salvar'),
+      id ? el('button', {
+        class: 'btn-link', style: 'color:#ef7076', onclick: async () => {
+          const nPed = DB.all('pedidos').filter(p => p.cliente_id === id && p.status !== 'cancelado').length;
+          if (nPed) return toast(`Cliente tem ${nPed} pedido(s) no histórico — use o status "inativo" para preservar os registros.`, 'erro');
+          if (!(await confirmar('Excluir DEFINITIVAMENTE o cliente "' + (c.nome || '') + '"? Visitas e pendências dele também serão removidas.'))) return;
+          DB.removeWhere('visitas', (v) => v.cliente_id === id);
+          DB.removeWhere('pendencias', (p) => p.cliente_id === id);
+          DB.removeWhere('cliente_produtos', (cp) => cp.cliente_id === id);
+          DB.remove('clientes', id);
+          mm.fechar(); toast('Cliente excluído.');
+          if (aoSalvar) aoSalvar();
+        }
+      }, '🗑 Excluir cliente') : null), { titulo: id ? 'Editar cliente' : 'Novo cliente', full: true });
   }
 
   // ---------- Admin: Produtos ----------
@@ -884,7 +952,17 @@
             if (p.id) DB.update('produtos', p.id, body); else DB.insert('produtos', body);
             mm.fechar(); render();
           }
-        }, 'Salvar')), { titulo: p.id ? 'Editar produto' : 'Novo produto', full: true });
+        }, 'Salvar'),
+        p.id ? el('button', {
+          class: 'btn-link', style: 'color:#ef7076', onclick: async () => {
+            const usado = DB.all('pedido_itens').some(i => i.produto_id === p.id);
+            if (usado) return toast('Produto já usado em pedidos — desative-o em vez de excluir.', 'erro');
+            if (!(await confirmar('Excluir o produto "' + p.nome + '"?'))) return;
+            DB.removeWhere('cliente_produtos', (cp) => cp.produto_id === p.id);
+            DB.remove('produtos', p.id);
+            mm.fechar(); toast('Produto excluído.'); render();
+          }
+        }, '🗑 Excluir produto') : null), { titulo: p.id ? 'Editar produto' : 'Novo produto', full: true });
     }
   }
 
@@ -1049,7 +1127,7 @@
 
   // ================= BOOT =================
   window.NSApp = {
-    sessao, nav,
+    sessao, nav, recalcularCicloCliente,
     aoConcluirPedido() { if (viewAtual === 'hoje' || viewAtual === 'pedidos') nav(viewAtual); }
   };
 

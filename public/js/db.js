@@ -146,8 +146,10 @@
   const listeners = [];
   function notify() { listeners.forEach(fn => { try { fn(DB.status()); } catch (e) {} }); }
 
-  async function trySync() {
-    if (syncing || !navigator.onLine || !configured() || !outbox.length) { notify(); return; }
+  let ultimaPuxada = 0;
+  async function trySync(forcarPull) {
+    if (syncing || !navigator.onLine || !configured()) { notify(); return; }
+    if (!outbox.length && !forcarPull && Date.now() - ultimaPuxada < 20000) { notify(); return; }
     syncing = true; notify();
     const erros = lsGet('ns_sync_erros', []);
     try {
@@ -166,7 +168,7 @@
         }
         outbox.shift(); lsSet('ns_outbox', outbox);
       }
-      await pullAll();
+      if (forcarPull || Date.now() - ultimaPuxada > 20000) await pullAll();
     } catch (e) { /* offline ou instabilidade — fica na fila */ }
     syncing = false; notify();
   }
@@ -176,6 +178,7 @@
     for (const t of TABLES) {
       mem[t] = await fsListAll(t); save(t);
     }
+    ultimaPuxada = Date.now();
     lsSet('ns_last_sync', Date.now());
     notify();
     return true;
@@ -247,12 +250,14 @@
       };
     },
     onStatus(fn) { listeners.push(fn); },
-    sync: trySync, pullAll,
+    sync: () => trySync(true), pullAll,
     clearErros() { lsSet('ns_sync_erros', []); notify(); }
   };
 
-  window.addEventListener('online', trySync);
+  window.addEventListener('online', () => trySync(true));
   setInterval(() => { if (outbox.length) trySync(); }, 30000);
+  // atualização periódica mesmo sem escrituras (novos dados de outros aparelhos)
+  setInterval(() => { trySync(true); }, 300000);
 
   window.NSDB = DB;
 })();

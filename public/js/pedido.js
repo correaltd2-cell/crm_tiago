@@ -440,7 +440,7 @@
         `<td class="c">${it.dev_quebrada}</td><td class="c">${it.unid_vendidas}</td><td class="r">${C.fmtMoney(it.valor_total)}</td></tr>`;
     }).join('');
 
-    modal(el('div', null,
+    const mAbrir = modal(el('div', null,
       recemConcluido ? el('div', { class: 'sucesso-banner' }, '✅ Pedido concluído e assinado!') : null,
       el('div', { class: 'sub' }, `Pedido nº ${p.numero || 'PENDENTE (aguardando sync)'} · ${dataBR(p.data_pedido)} · ` +
         `${p.status.toUpperCase()} · Tabela ${p.tabela === 'lucro' ? 'Lucro Presumido' : 'Simples'}` +
@@ -455,7 +455,24 @@
       p.assinatura ? el('div', { class: 'mt8 assinatura-preview' },
         el('img', { src: p.assinatura, alt: 'Assinatura do cliente' }),
         el('div', { class: 'sub c' }, 'Assinatura vinculada ao pedido')) : null,
-      acoes
+      acoes,
+      el('button', {
+        class: 'btn-link mt12', style: 'color:#ef7076', onclick: async () => {
+          if (!(await confirmar('Excluir o pedido nº ' + (p.numero || '—') + ' de ' + (cli.nome || '—') +
+            '? Isso remove os itens, desfaz o vínculo com a visita e a comissão.'))) return;
+          DB.removeWhere('pedido_itens', (i) => i.pedido_id === p.id);
+          const vis = DB.all('visitas').find(v => v.pedido_id === p.id);
+          if (vis) DB.update('visitas', vis.id, {
+            fez_pedido: false, valor_pedido: 0, pedido_id: null,
+            comissao_pct: null, comissao_valor: null, comissao_recebimento_em: null, produtos: null
+          });
+          DB.remove('pedidos', p.id);
+          if (window.NSApp.recalcularCicloCliente) window.NSApp.recalcularCicloCliente(p.cliente_id);
+          mAbrir.fechar();
+          toast('Pedido excluído.');
+          if (window.NSApp.aoConcluirPedido) window.NSApp.aoConcluirPedido();
+        }
+      }, '🗑 Excluir pedido')
     ), { titulo: 'Pedido ' + (p.numero ? 'nº ' + p.numero : '') });
   }
 

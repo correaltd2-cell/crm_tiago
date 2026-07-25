@@ -173,6 +173,9 @@ select.input,select.input.big{appearance:none;-webkit-appearance:none;
 .chip-cliente{background:var(--vidro2);border:1px solid var(--borda);border-radius:var(--r-md);
   padding:11px 15px;display:flex;flex-direction:column;gap:2px;box-shadow:var(--sombra-1)}
 .chips{display:flex;flex-wrap:wrap;gap:7px}
+.dias-scroll{display:flex;gap:7px;overflow-x:auto;padding:2px 2px 6px;scrollbar-width:none}
+.dias-scroll::-webkit-scrollbar{display:none}
+.dias-scroll .chip{flex:0 0 auto}
 .chip{border:1px solid var(--borda2);border-radius:999px;padding:8px 13px;font-size:.78rem;font-weight:600;
   background:var(--vidro2);color:var(--sub);box-shadow:0 1px 0 rgba(255,255,255,.05) inset;transition:.2s}
 .chip:active{transform:scale(.94)}

@@ -206,6 +206,23 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   check('dashboard: comissão gerada 89,18', dash.includes('89,18'));
   check('dashboard: ranking de linhas (Argolinhas)', dash.includes('Argolinhas'));
 
+  // excluir pedido: remove itens, reverte visita/comissão e recalcula o ciclo
+  await page.click('#tabs button[data-v=pedidos]');
+  await page.waitForTimeout(200);
+  await page.locator('#view .item-lista').first().click();
+  await page.locator('.ns-overlay').last().locator('text=🗑 Excluir pedido').click();
+  await page.locator('.ns-overlay').last().locator('button:has-text("Confirmar")').click();
+  await page.waitForTimeout(400);
+  const posDel = await page.evaluate(() => ({
+    pedidos: JSON.parse(localStorage.getItem('ns_c_pedidos')).length,
+    itens: JSON.parse(localStorage.getItem('ns_c_pedido_itens')).length,
+    visita: JSON.parse(localStorage.getItem('ns_c_visitas'))[0],
+    cli: JSON.parse(localStorage.getItem('ns_c_clientes'))[0]
+  }));
+  check('excluir pedido remove pedido e itens', posDel.pedidos === 0 && posDel.itens === 0);
+  check('visita revertida (sem pedido/comissão)', posDel.visita.fez_pedido === false && !posDel.visita.comissao_valor);
+  check('ciclo recalculado (sem último pedido, com última visita)', posDel.cli.ultimo_pedido_em == null && !!posDel.cli.ultima_visita_em);
+
   check('sem erros de JavaScript na página', erros.length === 0);
   if (erros.length) console.error(erros.join('\n'));
 
