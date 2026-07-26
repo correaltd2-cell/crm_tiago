@@ -59,11 +59,17 @@
       const cli = DB.byId('clientes', ped.cliente_id);
       const conds = DB.config('condicoes_pagamento', []);
       const selCond = el('select', { class: 'input big' },
-        el('option', { value: '' }, 'Condição de pagamento…'),
+        el('option', { value: '' }, 'Escolha o prazo… (obrigatório)'),
         conds.map(c => el('option', { value: c, selected: ped.condicao_pagamento === c ? '' : null }, c)));
       const btn = (tab, rot, desc) => el('button', {
         class: 'card-escolha' + (ped.tabela === tab ? ' ativo' : ''),
-        onclick: () => { ped.tabela = tab; ped.condicao_pagamento = selCond.value || null; passoItens(); }
+        onclick: () => {
+          if (!selCond.value) {
+            selCond.focus();
+            return toast('Escolha a CONDIÇÃO DE PAGAMENTO (prazo) antes de continuar.', 'erro');
+          }
+          ped.tabela = tab; ped.condicao_pagamento = selCond.value; passoItens();
+        }
       }, el('strong', null, rot), el('span', { class: 'sub' }, desc));
       corpo(el('div', null,
         cabecalhoCliente(cli),
@@ -71,7 +77,7 @@
         el('div', { class: 'col gap8 mt8' },
           btn('simples', 'Tabela Simples', 'Preços da tabela Simples para todos os itens'),
           btn('lucro', 'Tabela Lucro Presumido', 'Preços Lucro Presumido para todos os itens')),
-        el('h3', { class: 'mt16' }, 'Condição de pagamento'),
+        el('h3', { class: 'mt16' }, 'Condição de pagamento (prazo) *'),
         selCond,
         el('button', { class: 'btn-link mt8', onclick: () => { ped.cliente_id = null; passoCliente(); } }, '← trocar cliente')));
     }

@@ -37,7 +37,7 @@ ABA CLIENTES (farol de cores)
 FAZER UM PEDIDO (talão digital)
 1. Toque no botão dourado redondo (ou 🧾 Pedido no cliente do dia).
 2. Escolha o cliente (busque por nome, cidade ou CNPJ).
-3. Escolha a TABELA DE PREÇO: Simples ou Lucro Presumido (define os preços do pedido inteiro) e a condição de pagamento.
+3. Escolha primeiro a CONDIÇÃO DE PAGAMENTO (o prazo — OBRIGATÓRIA, o sistema não deixa continuar sem ela) e depois a TABELA DE PREÇO: Simples ou Lucro Presumido (define os preços do pedido inteiro).
 4. Adicione os produtos: escolha o produto, o tamanho da placa (P ou G — cada produto tem sua quantidade de unidades por placa), quantas placas deixou, e as devoluções em duas colunas: DISPLAY (peças devolvidas boas) e QUEBRADA (peças com defeito). O sistema calcula sozinho: colocadas = placas × unidades da placa; VENDIDAS = colocadas − display − quebradas; valor = vendidas × preço da tabela.
 5. Confira o resumo, colha a ASSINATURA do cliente na tela (dedo ou caneta; dá para limpar e refazer) e toque em Confirmar.
 6. Pronto: dá para VISUALIZAR O PDF do talão, COMPARTILHAR (WhatsApp/e-mail) e IMPRIMIR (impressora do celular). A assinatura fica gravada para sempre no pedido.

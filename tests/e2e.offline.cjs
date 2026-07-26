@@ -107,6 +107,11 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page.click('.ns-modal .item-lista');
   check('seleção de cliente carrega dados', await page.isVisible('text=Tabela de preço do pedido'));
 
+  // sem prazo não avança
+  await page.click('text=Tabela Lucro Presumido');
+  await page.waitForTimeout(250);
+  check('não deixa lançar pedido sem o prazo (condição de pagamento)',
+    !(await page.isVisible('text=+ Adicionar produto')));
   // tabela Lucro Presumido → preço 14,50
   await page.selectOption('.ns-modal select', '30 dias');
   await page.click('text=Tabela Lucro Presumido');
