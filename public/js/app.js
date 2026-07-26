@@ -417,6 +417,23 @@
       .forEach(p => DB.update('pendencias', p.id, { resolvida_em: new Date().toISOString() }));
   }
 
+  function freqDaClasse(cl) {
+    return Number(DB.config('freq_classe_' + cl.toLowerCase(), { A: 35, B: 60, C: 90 }[cl] || 60));
+  }
+  function aplicarClasse(clienteId, cl) {
+    const c = DB.byId('clientes', clienteId);
+    if (!c) return;
+    const freq = freqDaClasse(cl);
+    const base = c.ultima_visita_em || c.ultimo_pedido_em;
+    let prox = c.proxima_visita_prevista;
+    if (base) {
+      const d = new Date(base + 'T12:00:00'); d.setDate(d.getDate() + freq);
+      prox = d.toISOString().slice(0, 10);
+    }
+    DB.update('clientes', clienteId, { classe: cl, frequencia_dias: freq, proxima_visita_prevista: prox });
+    return freq;
+  }
+
   function recalcularCicloCliente(clienteId) {
     const c = DB.byId('clientes', clienteId);
     if (!c) return;
@@ -556,6 +573,17 @@
         el('button', { class: 'btn-mini', onclick: () => abrirGPS(c) }, '🗺 GPS (' + c.geocoding_status + ')'),
         el('button', { class: 'btn-mini', onclick: () => window.NSPedido.novo(c) }, '🧾 Novo pedido'),
         s.papel === 'gestor' ? el('button', { class: 'btn-mini', onclick: () => editarCliente(c.id) }, '✏ Editar') : null),
+      el('div', { class: 'row gap8 mt8' },
+        el('span', { class: 'sub' }, 'Classe:'),
+        ...['A', 'B', 'C'].map(cl => el('button', {
+          class: 'btn-mini' + ((c.classe || 'B') === cl ? ' classe-ativa' : ''),
+          onclick: (e) => {
+            const freq = aplicarClasse(c.id, cl);
+            e.currentTarget.parentElement.querySelectorAll('.btn-mini').forEach(b => b.classList.remove('classe-ativa'));
+            e.currentTarget.classList.add('classe-ativa');
+            toast(`Classe ${cl}: visita a cada ${freq} dias` + (cl === 'C' ? ' · baixa prioridade no reencaixe' : cl === 'A' ? ' · prioridade máxima' : ''));
+          }
+        }, cl + ' · ' + freqDaClasse(cl) + 'd'))),
 
       el('h4', { class: 'mt12' }, 'Ciclo de visitas'),
       el('div', { class: 'sub' },
@@ -566,17 +594,7 @@
           type: 'checkbox', checked: c.frequencia_auto !== false ? '' : null,
           onchange: (e) => DB.update('clientes', c.id, { frequencia_auto: e.target.checked })
         }), 'Ajuste automático de frequência'),
-      el('div', { class: 'row gap8 mt8' },
-        el('span', { class: 'sub' }, 'Classe (prioridade no reencaixe):'),
-        ...['A', 'B', 'C'].map(cl => el('button', {
-          class: 'btn-mini' + ((c.classe || 'B') === cl ? ' classe-ativa' : ''),
-          onclick: (e) => {
-            DB.update('clientes', c.id, { classe: cl });
-            e.currentTarget.parentElement.querySelectorAll('.btn-mini').forEach(b => b.classList.remove('classe-ativa'));
-            e.currentTarget.classList.add('classe-ativa');
-            toast('Classe ' + cl + ' — ' + (cl === 'A' ? 'prioridade máxima' : cl === 'B' ? 'normal' : 'baixa: no reencaixe, espera A e B'));
-          }
-        }, cl))),
+
       sug ? el('div', { class: 'sugestao mt8' },
         el('span', null, `💡 ${sug.motivo} — ${sug.tipo} ciclo para ${sug.para} dias?`),
         el('button', {
@@ -1012,7 +1030,7 @@
     const statusSel = el('select', { class: 'input' },
       ['ativo', 'prospect', 'inativo'].map(st => el('option', { value: st, selected: (c.status || 'ativo') === st ? '' : null }, st)));
     const classeSel = el('select', { class: 'input' },
-      [['A', 'A — prioridade máxima'], ['B', 'B — normal'], ['C', 'C — baixa (reencaixe espera A e B)']]
+      [['A', 'A — prioridade máxima (35d)'], ['B', 'B — normal (60d)'], ['C', 'C — baixa (90d; reencaixe espera A e B)']]
         .map(([v, r]) => el('option', { value: v, selected: (c.classe || 'B') === v ? '' : null }, r)));
     const mm = modal(el('div', { class: 'col gap8' },
       inp('nome', 'Nome *'), inp('razao_social', 'Razão social'), inp('cnpj_cpf', 'CNPJ/CPF'),
@@ -1197,8 +1215,11 @@
       ['gemini_key', 'Chave Gemini — IA do suporte (aistudio.google.com/apikey)', 'text'],
       ['ia_modelo', 'Modelo da IA do suporte', 'text'],
       ['ciclo_inicio', 'Início do ciclo (segunda da semana 1, aaaa-mm-dd)', 'text'],
-      ['visitas_dia_min', 'Visitas por dia — mínimo', 'number'],
-      ['visitas_dia_max', 'Visitas por dia — máximo', 'number'],
+      ['visitas_dia_min', 'Visitas FIXAS por dia (alvo da redistribuição)', 'number'],
+      ['visitas_dia_max', 'Teto do dia (fixas + reencaixes)', 'number'],
+      ['freq_classe_a', 'Classe A — visitar a cada (dias)', 'number'],
+      ['freq_classe_b', 'Classe B — visitar a cada (dias)', 'number'],
+      ['freq_classe_c', 'Classe C — visitar a cada (dias)', 'number'],
       ['pernoite_dist_km', 'Pernoite: distância mínima da base (km)', 'number'],
       ['pernoite_economia_km', 'Pernoite: economia mínima (km)', 'number'],
       ['reencaixe_detour_km', 'Reencaixe: desvio máximo (km)', 'number'],

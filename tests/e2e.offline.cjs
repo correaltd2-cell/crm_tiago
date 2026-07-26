@@ -213,6 +213,17 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   check('dashboard: comissão gerada 89,18', dash.includes('89,18'));
   check('dashboard: ranking de linhas (Argolinhas)', dash.includes('Argolinhas'));
 
+  // classe A/B/C: tocar em C ajusta ciclo para 90 dias
+  await page.click('#tabs button[data-v=clientes]');
+  await page.waitForTimeout(200);
+  await page.locator('#view .item-lista').first().click();
+  await page.waitForSelector('.ns-overlay');
+  await page.locator('.ns-overlay button:has-text("C · 90d")').click();
+  await page.waitForTimeout(250);
+  const cliClasse = await page.evaluate(() => JSON.parse(localStorage.getItem('ns_c_clientes'))[0]);
+  check('classe C aplica ciclo de 90 dias', cliClasse.classe === 'C' && cliClasse.frequencia_dias === 90);
+  await page.locator('.ns-overlay').last().locator('.btn-icon').first().click();
+
   // suporte com IA: aba Ajuda responde com o manual quando offline
   await page.click('#tabs button[data-v=ajuda]');
   await page.waitForSelector('.chat-lista');
