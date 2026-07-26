@@ -113,7 +113,7 @@
   }
 
   // ================= SHELL =================
-  const VIEWS = { hoje: vHoje, clientes: vClientes, pedidos: vPedidos, dash: vDashboard, mais: vMais };
+  const VIEWS = { hoje: vHoje, clientes: vClientes, pedidos: vPedidos, dash: vDashboard, mais: vMais, ajuda: (v) => window.NSAjuda.view(v) };
   let viewAtual = 'hoje';
 
   function iniciarApp() {
@@ -1169,6 +1169,8 @@
   function telaAdminConfig() {
     const CHAVES = [
       ['google_maps_key', 'Chave Google Maps (Geocoding/Distance Matrix/JS)', 'text'],
+      ['gemini_key', 'Chave Gemini — IA do suporte (aistudio.google.com/apikey)', 'text'],
+      ['ia_modelo', 'Modelo da IA do suporte', 'text'],
       ['ciclo_inicio', 'Início do ciclo (segunda da semana 1, aaaa-mm-dd)', 'text'],
       ['visitas_dia_min', 'Visitas por dia — mínimo', 'number'],
       ['visitas_dia_max', 'Visitas por dia — máximo', 'number'],

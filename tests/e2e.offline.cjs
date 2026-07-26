@@ -210,6 +210,17 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   check('dashboard: comissão gerada 89,18', dash.includes('89,18'));
   check('dashboard: ranking de linhas (Argolinhas)', dash.includes('Argolinhas'));
 
+  // suporte com IA: aba Ajuda responde com o manual quando offline
+  await page.click('#tabs button[data-v=ajuda]');
+  await page.waitForSelector('.chat-lista');
+  check('aba Ajuda abre com boas-vindas e sugestões', (await page.textContent('.chat-lista')).includes('assistente'));
+  await page.fill('#view input', 'o que faz o botão otimizar rota?');
+  await page.click('#view .btn');
+  await page.waitForFunction(() => document.querySelectorAll('.chat-msg').length >= 2, null, { timeout: 8000 });
+  const chat = await page.textContent('.chat-lista');
+  check('sem internet, responde com a parte certa do manual (otimizar rota)',
+    chat.includes('MELHOR ORDEM') || chat.toLowerCase().includes('otimizar rota'));
+
   // excluir pedido: remove itens, reverte visita/comissão e recalcula o ciclo
   await page.click('#tabs button[data-v=pedidos]');
   await page.waitForTimeout(200);

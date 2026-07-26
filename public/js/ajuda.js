@@ -1,0 +1,201 @@
+/* NEW STAR — Suporte com IA (aba Ajuda)
+ * Chat que conhece o sistema inteiro e responde em linguagem simples,
+ * passo a passo. Usa a API do Gemini (chave em Configurações → IA);
+ * sem conexão ou sem chave, responde com o manual embutido. */
+(function () {
+  'use strict';
+  const { $, el, escH, toast } = window.NSUI;
+  const DB = window.NSDB;
+
+  // ---------- manual completo do sistema (base de conhecimento) ----------
+  const MANUAL = `
+VISÃO GERAL
+O New Star é o aplicativo da equipe de vendas da New Star (placas de brincos e semijoias em consignação para farmácias). Ele funciona no celular, mesmo sem internet — tudo que se faz sem sinal fica guardado e é enviado sozinho quando a conexão volta (o selo no topo mostra: verde "sincronizado", amarelo "pendente", "offline" sem sinal).
+
+ABAS (barra embaixo da tela)
+• 📅 HOJE — a rota do dia. • 🏪 CLIENTES — a lista de clientes. • 🧾 PEDIDOS — os talões feitos. • 📊 PAINEL — os números do mês. • ☰ MAIS — financeiro, ajustes e administração. • 🛟 AJUDA — este suporte.
+O botão redondo dourado no canto de baixo à direita abre um NOVO PEDIDO de qualquer tela.
+
+ABA HOJE (rota do dia)
+• No alto há botões de dias: Hoje, Amanhã e os próximos dias — toque num deles para ver a rota daquele dia.
+• A lista mostra os clientes programados para o dia, na ordem de visita, com barra de progresso (quantos já visitou).
+• BOTÃO "OTIMIZAR ROTA": calcula a MELHOR ORDEM de visita entre os clientes do dia, para rodar menos quilômetros. Mostra o total de km, o tempo estimado e o custo (km × custo por km do vendedor). Também tenta encaixar na rota clientes pendentes (que ficaram para trás) e atrasados, se o desvio for pequeno. Com a chave do Google Maps configurada ele usa distâncias reais de estrada; sem ela, usa uma estimativa.
+• BOTÃO "ESTOU AQUI": grava a posição do GPS no fim do dia; a rota de amanhã parte desse ponto (pernoite), em vez da base.
+• Em cada cliente do dia: 🗺 GPS (abre o Google Maps já com o destino), 👁 Ficha, 🧾 Pedido (abre o talão), ✔ Sem pedido (registra que visitou mas não vendeu), ✖ Não realizada (escolhe o motivo: fechado, ausente, sem tempo ou reagendado — o cliente entra na fila para ser reencaixado noutro dia e a rota é recalculada).
+• Sugestão de pernoite: aparece quando o último cliente fica a mais de 150 km da base e dormir fora economiza mais de 60 km.
+
+ABA CLIENTES (farol de cores)
+• 🔴 vermelho = visita ATRASADA (mostra há quantos dias). 🟡 amarelo = vence em poucos dias. 🟢 verde = em dia. ⚪ cinza = ainda sem visita registrada no sistema.
+• Os botões no alto filtram por cor e mostram a contagem. A lista vem na ordem de urgência (mais atrasados primeiro).
+• A busca aceita nome, cidade ou CNPJ (pode digitar só um pedaço).
+• Tocar no cliente abre a FICHA: dados, telefone, ciclo de visitas (a cada quantos dias visitar, com sugestão automática de encurtar ou alongar), linhas de produto que ele trabalha (tocar marca/desmarca), dica de upsell e o histórico de visitas e pedidos. Na ficha dá para excluir uma visita registrada errada (🗑) — se ela tiver pedido, exclua o pedido primeiro.
+
+FAZER UM PEDIDO (talão digital)
+1. Toque no botão dourado redondo (ou 🧾 Pedido no cliente do dia).
+2. Escolha o cliente (busque por nome, cidade ou CNPJ).
+3. Escolha a TABELA DE PREÇO: Simples ou Lucro Presumido (define os preços do pedido inteiro) e a condição de pagamento.
+4. Adicione os produtos: escolha o produto, o tamanho da placa (P ou G — cada produto tem sua quantidade de unidades por placa), quantas placas deixou, e as devoluções em duas colunas: DISPLAY (peças devolvidas boas) e QUEBRADA (peças com defeito). O sistema calcula sozinho: colocadas = placas × unidades da placa; VENDIDAS = colocadas − display − quebradas; valor = vendidas × preço da tabela.
+5. Confira o resumo, colha a ASSINATURA do cliente na tela (dedo ou caneta; dá para limpar e refazer) e toque em Confirmar.
+6. Pronto: dá para VISUALIZAR O PDF do talão, COMPARTILHAR (WhatsApp/e-mail) e IMPRIMIR (impressora do celular). A assinatura fica gravada para sempre no pedido.
+• Concluir o pedido já registra a visita do dia com o valor vendido e calcula a comissão sozinho.
+• Para excluir um pedido errado: aba Pedidos → abra o pedido → "Excluir pedido" (desfaz também a visita e a comissão).
+
+COMISSÕES (regras)
+• Cliente NOVO (nunca comprou): 15% no primeiro pedido. Reposição (já comprou antes): 10%. Os percentuais são por vendedor (Admin → Vendedores).
+• A comissão é calculada sobre o valor EFETIVAMENTE VENDIDO (devoluções e quebras já abatidas).
+• RECEBIMENTO: a venda de um mês é recebida no MÊS SEGUINTE (ex.: vendeu em junho, recebe em julho). EXCEÇÃO: clientes da rede CLAMED recebem 45 dias corridos após a venda.
+
+ABA PAINEL (números do mês)
+Faturamento (vendido), comissão gerada, A RECEBER no mês, despesas, líquido, km rodado, custo real por km, visitas hoje/mês, conversão de visitas em pedidos, clientes ativos, atrasados e vencendo, ranking das linhas mais vendidas e alertas de ciclo (tocar abre a ficha).
+
+MAIS → FINANCEIRO
+• Navegue pelos meses com ← e →. Mostra: COMISSÕES A RECEBER no mês (com cliente, data da venda, % e marcação Clamed), DESPESAS do mês e o SALDO projetado.
+• A faixa de meses mostra quanto vai receber nos próximos meses.
+• "+ Lançar despesa": combustível, pedágio, hospedagem, alimentação, manutenção, CARTÃO DE CRÉDITO ou outro — pode lançar em meses futuros (contas a pagar). O km rodado informado gera o custo real por km.
+
+MAIS → OUTRAS FUNÇÕES
+• GEOCODIFICAR CLIENTES: converte os endereços em posição exata no mapa (precisa da chave do Google Maps em Configurações). Status por cliente: preciso, aproximado, pendente ou falhou.
+• APARÊNCIA: muda a cor do aplicativo (Ouro, Esmeralda, Safira, Rubi, Ametista, Prata) — vale só para o aparelho.
+• ADMINISTRAÇÃO (somente o gestor vê): CLIENTES (cadastrar, editar, excluir, importar CSV, exportar), PRODUTOS (códigos, preços das 2 tabelas, unidades por placa P/G), VENDEDORES (criar, % de comissão, custo por km, resetar senha), CONFIGURAÇÕES (chave do Google Maps, textos do PDF, condições de pagamento, limites de visitas/dia, regra de pernoite, início do ciclo) e REDISTRIBUIR MÊS (reorganiza as rotas de todos os clientes por proximidade).
+• O gestor tem um seletor no topo para ver os dados de cada vendedor ou de todos juntos.
+
+LOGIN E SENHA
+• Cada um entra com seu e-mail. No PRIMEIRO acesso, a senha que digitar vira a senha definitiva.
+• Esqueceu a senha? O gestor vai em Mais → Vendedores → editar → "Resetar senha"; no próximo login a pessoa define uma nova.
+
+PROBLEMAS COMUNS
+• "Não aparecem os clientes": toque no selo no topo → "Sincronizar agora" (precisa de internet na primeira vez).
+• "O app está desatualizado": feche e abra de novo — ele se atualiza sozinho.
+• Sem internet o aplicativo funciona normal; o que fizer é enviado quando o sinal voltar.`;
+
+  // ---------- chat ----------
+  const LS_CHAT = 'ns_ajuda_chat';
+  function historico() { try { return JSON.parse(localStorage.getItem(LS_CHAT) || '[]'); } catch (e) { return []; } }
+  function salvar(h) { localStorage.setItem(LS_CHAT, JSON.stringify(h.slice(-30))); }
+
+  function promptSistema() {
+    const s = window.NSApp.sessao();
+    const quem = s ? `${s.eu.nome} (papel: ${s.eu.papel})` : 'usuário';
+    return `Você é o assistente de suporte do aplicativo New Star. Quem pergunta é ${quem}, uma pessoa que pode ter pouca familiaridade com tecnologia — muitas vezes uma pessoa mais velha.
+
+REGRAS DE RESPOSTA:
+- Responda SEMPRE em português do Brasil, com frases curtas e palavras simples, sem termos técnicos.
+- Quando ensinar a fazer algo, use passos numerados começando por onde tocar (ex.: "1. Toque em CLIENTES embaixo da tela").
+- Seja direto: primeiro a resposta, depois no máximo 1 ou 2 detalhes úteis.
+- Só fale sobre o aplicativo New Star. Se perguntarem outra coisa, responda com gentileza que você é o suporte do aplicativo.
+- Se realmente não souber, oriente a falar com o Guilherme (gestor).
+
+MANUAL OFICIAL DO APLICATIVO (única fonte de verdade):
+${MANUAL}`;
+  }
+
+  async function perguntarIA(mensagens) {
+    const key = DB.config('gemini_key', '');
+    if (!key) throw Object.assign(new Error('sem_chave'), { semChave: true });
+    const modelo = DB.config('ia_modelo', 'gemini-2.5-flash');
+    const contents = mensagens.slice(-12).map(m => ({
+      role: m.de === 'eu' ? 'user' : 'model',
+      parts: [{ text: m.texto }]
+    }));
+    const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' +
+      encodeURIComponent(modelo) + ':generateContent?key=' + encodeURIComponent(key), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: promptSistema() }] },
+        contents,
+        generationConfig: { temperature: 0.3, maxOutputTokens: 700 }
+      })
+    });
+    if (!r.ok) throw new Error('IA ' + r.status + ': ' + (await r.text()).slice(0, 200));
+    const j = await r.json();
+    const txt = j.candidates && j.candidates[0] && j.candidates[0].content &&
+      j.candidates[0].content.parts.map(p => p.text || '').join('').trim();
+    if (!txt) throw new Error('resposta vazia');
+    return txt;
+  }
+
+  // fallback offline/sem chave: procura a seção do manual mais parecida
+  function respostaManual(pergunta) {
+    const norm = (t) => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const palavras = norm(pergunta).split(/\W+/).filter(w => w.length > 3);
+    const secoes = MANUAL.split(/\n(?=[A-ZÁÉÍÓÚÂÊÔÃÕÇ🗺📅🏪🧾📊☰🛟]{2,})/).filter(s => s.trim().length > 40);
+    let melhor = null, melhorPts = 0;
+    for (const s of secoes) {
+      const ns = norm(s);
+      const pts = palavras.reduce((t, w) => t + (ns.includes(w) ? 1 : 0), 0);
+      if (pts > melhorPts) { melhorPts = pts; melhor = s; }
+    }
+    const cab = navigator.onLine
+      ? 'O assistente inteligente ainda não foi ativado pelo administrador. Do manual do sistema:'
+      : 'Estou sem internet agora, mas aqui está a parte do manual que fala disso:';
+    return melhorPts > 0 ? cab + '\n\n' + melhor.trim()
+      : cab + '\n\nNão encontrei essa parte no manual. Tente perguntar com outras palavras ou fale com o Guilherme.';
+  }
+
+  const SUGESTOES = [
+    'O que faz o botão Otimizar rota?',
+    'Como faço um pedido do início ao fim?',
+    'O que significam as cores verde, amarela e vermelha?',
+    'Quando eu recebo a comissão?',
+    'Como lanço uma despesa do cartão de crédito?'
+  ];
+
+  let pensando = false;
+
+  function view(root) {
+    const chatEl = el('div', { class: 'chat-lista', id: 'chatLista' });
+    const input = el('input', { class: 'input big grow', placeholder: 'Escreva sua dúvida aqui…' });
+    const btn = el('button', { class: 'btn', onclick: enviar }, '➤');
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') enviar(); });
+
+    root.appendChild(el('div', { class: 'row space' },
+      el('h2', null, '🛟 Ajuda'),
+      el('button', {
+        class: 'btn-link', onclick: () => { localStorage.removeItem(LS_CHAT); window.NSApp.nav('ajuda'); }
+      }, 'limpar conversa')));
+    root.appendChild(el('p', { class: 'sub mt4' }, 'Pergunte qualquer coisa sobre o aplicativo — do mais simples ao mais avançado.'));
+    root.appendChild(chatEl);
+    root.appendChild(el('div', { class: 'row gap8 mt8' }, input, btn));
+
+    function render() {
+      chatEl.innerHTML = '';
+      const h = historico();
+      if (!h.length) {
+        chatEl.appendChild(el('div', { class: 'chat-msg bot' },
+          'Olá! Eu sou o assistente do New Star. Posso explicar qualquer tela ou botão do aplicativo. Toque numa pergunta pronta ou escreva a sua:'));
+        SUGESTOES.forEach(sg => chatEl.appendChild(el('button', {
+          class: 'chip mt4', onclick: () => { input.value = sg; enviar(); }
+        }, sg)));
+      }
+      for (const m of h)
+        chatEl.appendChild(el('div', { class: 'chat-msg ' + (m.de === 'eu' ? 'eu' : 'bot') }, m.texto));
+      if (pensando) chatEl.appendChild(el('div', { class: 'chat-msg bot pensando' }, 'Escrevendo…'));
+      chatEl.scrollTop = chatEl.scrollHeight;
+    }
+
+    async function enviar() {
+      const texto = input.value.trim();
+      if (!texto || pensando) return;
+      input.value = '';
+      const h = historico();
+      h.push({ de: 'eu', texto });
+      salvar(h); pensando = true; render();
+      let resposta;
+      try {
+        resposta = await perguntarIA(h);
+      } catch (e) {
+        resposta = respostaManual(texto);
+        if (!e.semChave && navigator.onLine) console.warn('suporte IA:', e.message);
+      }
+      const h2 = historico();
+      h2.push({ de: 'bot', texto: resposta });
+      salvar(h2); pensando = false; render();
+    }
+
+    render();
+    setTimeout(() => input.focus(), 200);
+  }
+
+  window.NSAjuda = { view };
+})();
