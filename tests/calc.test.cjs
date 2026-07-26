@@ -93,5 +93,10 @@ eq('status legado Ativo → já comprou (10%)', C.clienteJaComprou({ status_lega
 eq('seed da listagem → já comprou', C.clienteJaComprou({ seed_dias_sem_pedido: 30 }, []), true);
 eq('visita com pedido → já comprou', C.clienteJaComprou({ status_legado: 'Novo' }, [{ fez_pedido: true, valor_pedido: 100 }]), true);
 
+console.log('Classe A/B/C (prioridade no reencaixe):');
+eq('A antes de B antes de C', [{classe:'C'},{classe:'A'},{},{classe:'B'}]
+  .sort((a,b) => C.classeRank(a) - C.classeRank(b)).map(c => c.classe || 'B').join(''), 'ABBC');
+eq('sem classe = B', C.classeRank({}), 1);
+
 console.log(`\n${ok} ok, ${fail} falhas`);
 process.exit(fail ? 1 : 0);

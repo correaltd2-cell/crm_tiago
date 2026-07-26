@@ -65,6 +65,12 @@
       (visitasDoCliente || []).some(v => v.fez_pedido && Number(v.valor_pedido) > 0));
   }
 
+  // Classe do cliente: A = prioridade máxima, B = normal (padrão), C = baixa.
+  // No reencaixe, A entra primeiro; C só entra se sobrar vaga depois de A e B.
+  function classeRank(cliente) {
+    return { A: 0, B: 1, C: 2 }[(cliente && cliente.classe) || 'B'] ?? 1;
+  }
+
   // cicloInicio = segunda-feira da semana 1 (ISO yyyy-mm-dd)
   function cicloDoDia(dateISO, cicloInicio) {
     const d = new Date(dateISO + 'T12:00:00');
@@ -223,7 +229,7 @@
 
   const api = {
     round2, fmtMoney, calcItem, calcTotais, calcComissao, cicloDoDia,
-    DIAS_SEMANA, normDia, mesmoDia, clienteJaComprou,
+    DIAS_SEMANA, normDia, mesmoDia, clienteJaComprou, classeRank,
     haversineKm, matrizHaversine, nearestNeighbor, comprimentoRota, doisOpt,
     otimizarRota, detourInsercao, decidirPernoite, sugestaoFrequencia,
     parseCSV, toCSV, CICLOS

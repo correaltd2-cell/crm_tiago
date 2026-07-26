@@ -240,8 +240,14 @@
     const dataVista = addDias(hoje, diaOffset);
     const ehHoje = diaOffset === 0;
     const ciclo = C.cicloDoDia(dataVista, DB.config('ciclo_inicio', '2026-01-05'));
-    const doDia = clientesDoRep(rep.id).filter(c =>
+    const visitouEm = (cid, dia) => DB.all('visitas').find(v => v.cliente_id === cid && v.data_visita === dia && v.realizada);
+    // atendido antecipadamente (há menos de meio ciclo) sai da lista do dia
+    const atendidoRecente = (c) => c.ultima_visita_em && !visitouEm(c.id, dataVista) &&
+      (new Date(dataVista) - new Date(c.ultima_visita_em)) / 86400000 < Math.max(7, (c.frequencia_dias || 60) / 2);
+    const doDiaTodos = clientesDoRep(rep.id).filter(c =>
       c.semana_padrao === ciclo.semana && C.mesmoDia(c.dia_semana_padrao, ciclo.diaSemana));
+    const doDia = doDiaTodos.filter(c => !atendidoRecente(c));
+    const antecipados = doDiaTodos.length - doDia.length;
     const pendencias = DB.all('pendencias').filter(p => !p.resolvida_em &&
       (p.representante_id === rep.id || !p.representante_id));
     const pendentes = pendencias.map(p => DB.byId('clientes', p.cliente_id)).filter(Boolean)
@@ -297,7 +303,10 @@
     if (partida) view.appendChild(el('div', { class: 'sub mt4' }, 'Partida: ' + partida.label));
     if (pendentes.length || atrasados.length)
       view.appendChild(el('div', { class: 'sub mt4' },
-        `Fila de reencaixe: ${pendentes.length} pendente(s), ${atrasados.length} atrasado(s) — entram na rota se o desvio compensar.`));
+        `Fila de reencaixe: ${pendentes.length} pendente(s), ${atrasados.length} atrasado(s) — entram na rota se o desvio compensar (prioridade A > B > C).`));
+    if (antecipados)
+      view.appendChild(el('div', { class: 'sub mt4' },
+        `✅ ${antecipados} cliente(s) deste dia já foi(ram) atendido(s) antecipadamente e saiu(íram) da lista.`));
 
     const listaEl = el('div', { class: 'col gap8 mt12' });
     view.appendChild(listaEl);
@@ -489,7 +498,8 @@
             el('div', { class: 'row gap8' }, el('span', { class: 'st-dot' }, st.dot), el('strong', null, c.nome)),
             el('span', { class: 'badge ' + (st.k === 'vermelho' ? 'erro' : st.k === 'amarelo' ? 'aviso' : st.k === 'verde' ? 'ok' : '') },
               st.k === 'verde' ? 'em dia' : st.k === 'cinza' ? 'sem registro' : st.rot)),
-          el('span', { class: 'sub' }, [c.cidade, c.uf].filter(Boolean).join(' - ') +
+          el('span', { class: 'sub' }, 'Classe ' + (c.classe || 'B') + ' · ' +
+            [c.cidade, c.uf].filter(Boolean).join(' - ') +
             (c.rede ? ' · ' + c.rede : '') + ' · ciclo ' + (c.frequencia_dias || 60) + 'd' +
             (st.k === 'verde' || st.k === 'cinza' ? '' : ' · ' + st.rot))));
       }
@@ -556,6 +566,17 @@
           type: 'checkbox', checked: c.frequencia_auto !== false ? '' : null,
           onchange: (e) => DB.update('clientes', c.id, { frequencia_auto: e.target.checked })
         }), 'Ajuste automático de frequência'),
+      el('div', { class: 'row gap8 mt8' },
+        el('span', { class: 'sub' }, 'Classe (prioridade no reencaixe):'),
+        ...['A', 'B', 'C'].map(cl => el('button', {
+          class: 'btn-mini' + ((c.classe || 'B') === cl ? ' classe-ativa' : ''),
+          onclick: (e) => {
+            DB.update('clientes', c.id, { classe: cl });
+            e.currentTarget.parentElement.querySelectorAll('.btn-mini').forEach(b => b.classList.remove('classe-ativa'));
+            e.currentTarget.classList.add('classe-ativa');
+            toast('Classe ' + cl + ' — ' + (cl === 'A' ? 'prioridade máxima' : cl === 'B' ? 'normal' : 'baixa: no reencaixe, espera A e B'));
+          }
+        }, cl))),
       sug ? el('div', { class: 'sugestao mt8' },
         el('span', null, `💡 ${sug.motivo} — ${sug.tipo} ciclo para ${sug.para} dias?`),
         el('button', {
@@ -990,6 +1011,9 @@
       C.DIAS_SEMANA.slice(1, 7).map(d => el('option', { value: d, selected: C.normDia(c.dia_semana_padrao) === C.normDia(d) ? '' : null }, d)));
     const statusSel = el('select', { class: 'input' },
       ['ativo', 'prospect', 'inativo'].map(st => el('option', { value: st, selected: (c.status || 'ativo') === st ? '' : null }, st)));
+    const classeSel = el('select', { class: 'input' },
+      [['A', 'A — prioridade máxima'], ['B', 'B — normal'], ['C', 'C — baixa (reencaixe espera A e B)']]
+        .map(([v, r]) => el('option', { value: v, selected: (c.classe || 'B') === v ? '' : null }, r)));
     const mm = modal(el('div', { class: 'col gap8' },
       inp('nome', 'Nome *'), inp('razao_social', 'Razão social'), inp('cnpj_cpf', 'CNPJ/CPF'),
       inp('inscricao_estadual', 'Inscrição Estadual'),
@@ -1001,11 +1025,12 @@
       inp('frequencia_dias', 'Frequência (dias)', 'number'),
       el('label', { class: 'campo' }, el('span', { class: 'sub' }, 'Representante'), repSel),
       el('label', { class: 'campo' }, el('span', { class: 'sub' }, 'Status'), statusSel),
+      el('label', { class: 'campo' }, el('span', { class: 'sub' }, 'Classe (A/B/C)'), classeSel),
       el('button', {
         class: 'btn big w100', onclick: () => {
           if (!campos.nome.value.trim()) return toast('Nome é obrigatório.', 'erro');
           if (!campos.cidade.value.trim() || !campos.uf.value.trim()) return toast('Cidade e UF são obrigatórios.', 'erro');
-          const body = { representante_id: repSel.value, status: statusSel.value, dia_semana_padrao: diaSel.value || null };
+          const body = { representante_id: repSel.value, status: statusSel.value, dia_semana_padrao: diaSel.value || null, classe: classeSel.value };
           for (const [k, elInp] of Object.entries(campos)) {
             let v = elInp.value.trim();
             if (['semana_padrao', 'frequencia_dias', 'recebimento_dias'].includes(k))

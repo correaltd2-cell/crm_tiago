@@ -107,8 +107,9 @@
 
     // Reencaixe: candidatos ordenados por urgência (mais atrasado primeiro)
     const urg = (c) => c.proxima_visita_prevista ? (new Date(hojeISO) - new Date(c.proxima_visita_prevista)) : 0;
+    // A entra primeiro; C só depois de A e B (se ainda houver vaga no dia)
     const fila = candidatos.filter(c => c.lat != null && c.lng != null)
-      .sort((a, b) => urg(b) - urg(a));
+      .sort((a, b) => (C.classeRank(a) - C.classeRank(b)) || (urg(b) - urg(a)));
     const encaixados = [];
     for (const cand of fila) {
       if (comCoord.length + encaixados.length >= maxDia) break;

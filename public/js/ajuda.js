@@ -23,6 +23,9 @@ ABA HOJE (rota do dia)
 • BOTÃO "ESTOU AQUI": grava a posição do GPS no fim do dia; a rota de amanhã parte desse ponto (pernoite), em vez da base.
 • Em cada cliente do dia: 🗺 GPS (abre o Google Maps já com o destino), 👁 Ficha, 🧾 Pedido (abre o talão), ✔ Sem pedido (registra que visitou mas não vendeu), ✖ Não realizada (escolhe o motivo: fechado, ausente, sem tempo ou reagendado — o cliente entra na fila para ser reencaixado noutro dia e a rota é recalculada).
 • Sugestão de pernoite: aparece quando o último cliente fica a mais de 150 km da base e dormir fora economiza mais de 60 km.
+• CLIENTE QUE FICOU PARA TRÁS: ao marcar "Não realizada", o cliente entra na FILA DE REENCAIXE e o sistema tenta encaixá-lo sozinho nas rotas dos próximos dias, quando o desvio for pequeno (aparece com 🔁 na lista). O dia NUNCA passa do limite de visitas — se o dia seguinte já está cheio, o pendente espera um dia com vaga. Quem está estourando o prazo tem prioridade.
+• CLASSE DO CLIENTE (A, B ou C): define a prioridade no reencaixe. A = entra primeiro; B = normal; C = baixa — só entra se sobrar vaga depois dos A e B (fica para mais adiante). Muda-se na ficha do cliente (botões A B C) ou no cadastro do Admin.
+• ATENDIMENTO ANTECIPADO: se visitar um cliente antes do dia programado dele (ex.: era da sexta e atendeu na segunda porque ele ligou), o registro vale normalmente (visita, pedido, comissão) e ele SAI SOZINHO da lista do dia original — só volta no próximo ciclo.
 
 ABA CLIENTES (farol de cores)
 • 🔴 vermelho = visita ATRASADA (mostra há quantos dias). 🟡 amarelo = vence em poucos dias. 🟢 verde = em dia. ⚪ cinza = ainda sem visita registrada no sistema.
