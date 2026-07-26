@@ -92,15 +92,15 @@ ${MANUAL}`;
   async function perguntarIA(mensagens) {
     const key = DB.config('gemini_key', '');
     if (!key) throw Object.assign(new Error('sem_chave'), { semChave: true });
-    const modelo = DB.config('ia_modelo', 'gemini-2.5-flash');
+    const modelo = DB.config('ia_modelo', 'gemini-flash-latest');
     const contents = mensagens.slice(-12).map(m => ({
       role: m.de === 'eu' ? 'user' : 'model',
       parts: [{ text: m.texto }]
     }));
     const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' +
-      encodeURIComponent(modelo) + ':generateContent?key=' + encodeURIComponent(key), {
+      encodeURIComponent(modelo) + ':generateContent', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-goog-api-key': key },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: promptSistema() }] },
         contents,
