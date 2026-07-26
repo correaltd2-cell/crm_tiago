@@ -81,8 +81,11 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   }));
   check('seed: 314 clientes da lista nova, 25 Clamed, 17 produtos',
     seedInfo.clientes === 314 && seedInfo.clamed === 25 && seedInfo.produtos === 17);
-  check('rotas organizadas: 294 roteirizados (7/dia) e todos com endereço',
+  check('rotas organizadas: 294 roteirizados e todos com endereço',
     seedInfo.roteirizados === 294 && seedInfo.comEndereco === 314);
+  const finaisSemana = await page.evaluate(() =>
+    window.NS_SEED.clientes.filter(c => ['Sábado', 'Domingo'].includes(c.dia_semana_padrao)).length);
+  check('atendimento só de segunda a sexta (0 clientes no fim de semana)', finaisSemana === 0);
 
   await page.fill('input[type=email]', 'denilson@newstar.com.br');
   await page.fill('input[type=password]', '123456');

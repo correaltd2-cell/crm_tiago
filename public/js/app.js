@@ -1229,7 +1229,7 @@
       // urgência: quem está mais perto de estourar o ciclo primeiro
       cls.sort((a, b) => (a.proxima_visita_prevista || '9999').localeCompare(b.proxima_visita_prevista || '9999'));
       const slots = []; // 7 semanas × 6 dias
-      for (let ss = 1; ss <= 7; ss++) for (let dd = 1; dd <= 6; dd++) slots.push({ s: ss, d: dd, membros: [] });
+      for (let ss = 1; ss <= 7; ss++) for (let dd = 1; dd <= 5; dd++) slots.push({ s: ss, d: dd, membros: [] }); // dias úteis: Seg–Sex
       const alvo = Math.min(maxDia, Math.max(minDia, Math.ceil(cls.length / slots.length)));
       const restantes = new Set(cls.map(c => c.id));
       for (const slot of slots) {
