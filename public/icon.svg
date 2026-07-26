@@ -1,14 +1,50 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#f5e3a0"/><stop offset=".55" stop-color="#d4af37"/><stop offset="1" stop-color="#8f7114"/>
-    </linearGradient>
-    <radialGradient id="bg" cx=".85" cy=".05" r="1.2">
-      <stop offset="0" stop-color="#1b2647"/><stop offset=".5" stop-color="#0c1226"/><stop offset="1" stop-color="#070b16"/>
+    <radialGradient id="bg" cx=".5" cy=".45" r=".75">
+      <stop offset="0" stop-color="#1d2a52"/><stop offset=".45" stop-color="#101833"/><stop offset="1" stop-color="#070b16"/>
     </radialGradient>
+    <radialGradient id="bgOuro" cx=".82" cy=".1" r=".7">
+      <stop offset="0" stop-color="rgba(212,175,55,.22)"/><stop offset=".6" stop-color="rgba(212,175,55,0)"/>
+    </radialGradient>
+    <radialGradient id="bgAzul" cx=".15" cy=".9" r=".82">
+      <stop offset="0" stop-color="rgba(56,92,200,.25)"/><stop offset=".65" stop-color="rgba(56,92,200,0)"/>
+    </radialGradient>
+    <linearGradient id="ouro" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fdf3c0"/>
+      <stop offset=".35" stop-color="#f0d478"/>
+      <stop offset=".62" stop-color="#d4af37"/>
+      <stop offset="1" stop-color="#8a6a12"/>
+    </linearGradient>
+    <linearGradient id="ouro2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff7d6"/>
+      <stop offset=".6" stop-color="#e3c565"/>
+      <stop offset="1" stop-color="#9c7c17"/>
+    </linearGradient>
+    <radialGradient id="halo" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="rgba(240,212,120,.55)"/>
+      <stop offset=".55" stop-color="rgba(212,175,55,.18)"/>
+      <stop offset="1" stop-color="rgba(212,175,55,0)"/>
+    </radialGradient>
+    <filter id="brilho" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="10" stdDeviation="22" flood-color="#d4af37" flood-opacity=".38"/>
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000" flood-opacity=".45"/>
+    </filter>
   </defs>
+
   <rect width="512" height="512" rx="110" fill="url(#bg)"/>
-  <path d="M256 64 C274 186 326 238 448 256 C326 274 274 326 256 448 C238 326 186 274 64 256 C186 238 238 186 256 64 Z" fill="url(#g)"/>
-  <path d="M396 88 C402 124 424 146 460 152 C424 158 402 180 396 216 C390 180 368 158 332 152 C368 146 390 124 396 88 Z" fill="url(#g)" opacity=".8"/>
-  <path d="M242 172 C249 217 273 241 318 248 C273 255 249 279 242 324 C235 279 211 255 166 248 C211 241 235 217 242 172 Z" fill="rgba(255,255,255,.32)"/>
+  <rect width="512" height="512" rx="110" fill="url(#bgOuro)"/>
+  <rect width="512" height="512" rx="110" fill="url(#bgAzul)"/>
+
+  <circle cx="250" cy="262" r="215" fill="url(#halo)"/>
+
+  <path filter="url(#brilho)" fill="url(#ouro)"
+    d="M250 58 C267 190 322 245 452 262 C322 279 267 334 250 466 C233 334 178 279 48 262 C178 245 233 190 250 58 Z"/>
+  <path fill="rgba(255,255,255,.30)"
+    d="M250 58 C263 160 300 216 384 246 C312 252 264 240 250 262 C236 240 188 252 116 246 C200 216 237 160 250 58 Z"/>
+  <path fill="rgba(120,90,10,.28)" d="M250 58 C252 190 252 334 250 466 C248 334 248 190 250 58 Z"/>
+
+  <path fill="url(#ouro2)" filter="url(#brilho)"
+    d="M404 74 C410 118 428 136 470 142 C428 148 410 166 404 210 C398 166 380 148 338 142 C380 136 398 118 404 74 Z"/>
+  <path fill="url(#ouro2)" opacity=".85"
+    d="M120 388 C123 410 132 419 154 422 C132 425 123 434 120 456 C117 434 108 425 86 422 C108 419 117 410 120 388 Z"/>
 </svg>
