@@ -31,6 +31,7 @@ ABA CLIENTES (farol de cores)
 • 🔴 vermelho = visita ATRASADA (mostra há quantos dias). 🟡 amarelo = vence em poucos dias. 🟢 verde = em dia. ⚪ cinza = ainda sem visita registrada no sistema.
 • Os botões no alto filtram por cor e mostram a contagem. A lista vem na ordem de urgência (mais atrasados primeiro).
 • A busca aceita nome, cidade ou CNPJ (pode digitar só um pedaço).
+• OBSERVAÇÕES INTERNAS: na ficha do cliente dá para anotar lembretes ("falar com a Dona Maria", "gosta de prazo maior", "loja fecha ao meio-dia"). Essas anotações são SÓ da equipe — nunca saem no talão nem no PDF — e a mais recente aparece no cartão do cliente na rota do dia, para ler antes de atender.
 • Tocar no cliente abre a FICHA: dados, telefone, ciclo de visitas (a cada quantos dias visitar, com sugestão automática de encurtar ou alongar), linhas de produto que ele trabalha (tocar marca/desmarca), dica de upsell e o histórico de visitas e pedidos. Na ficha dá para excluir uma visita registrada errada (🗑) — se ela tiver pedido, exclua o pedido primeiro.
 
 FAZER UM PEDIDO (talão digital)

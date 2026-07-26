@@ -9,7 +9,7 @@
   const CFG = window.NS_CONFIG || {};
   const TABLES = ['representantes', 'clientes', 'visitas', 'pendencias', 'rotas',
     'pernoites', 'despesas', 'configuracoes', 'produtos', 'cliente_produtos',
-    'pedidos', 'pedido_itens'];
+    'pedidos', 'pedido_itens', 'cliente_notas'];
   const PK = { configuracoes: 'chave' }; // demais: id
 
   const mem = {}; // cache em memória (espelho do localStorage)

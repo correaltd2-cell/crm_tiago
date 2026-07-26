@@ -224,6 +224,23 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   check('classe C aplica ciclo de 90 dias', cliClasse.classe === 'C' && cliClasse.frequencia_dias === 90);
   await page.locator('.ns-overlay').last().locator('.btn-icon').first().click();
 
+  // observações internas: salvam, aparecem e NUNCA vazam para o PDF
+  await page.locator('#view .item-lista').first().click();
+  await page.waitForSelector('.ns-overlay');
+  await page.locator('.ns-overlay input[placeholder*="Anotar algo"]').fill('NOTA-INTERNA-SIGILOSA-123');
+  await page.locator('.ns-overlay button:has-text("➕")').click();
+  await page.waitForTimeout(250);
+  const notas = await page.evaluate(() => JSON.parse(localStorage.getItem('ns_c_cliente_notas') || '[]'));
+  check('observação interna salva com autor', notas.length === 1 && notas[0].texto === 'NOTA-INTERNA-SIGILOSA-123' && !!notas[0].autor);
+  const pdfSemNota = await page.evaluate(async () => {
+    const p = JSON.parse(localStorage.getItem('ns_c_pedidos'))[0];
+    const blob = await window.NSPedido.gerarPDF(p.id);
+    const txt = new TextDecoder('latin1').decode(new Uint8Array(await blob.arrayBuffer()));
+    return !txt.includes('NOTA-INTERNA-SIGILOSA');
+  });
+  check('observação interna NÃO aparece no PDF do talão', pdfSemNota === true);
+  await page.locator('.ns-overlay').last().locator('.btn-icon').first().click();
+
   // suporte com IA: aba Ajuda responde com o manual quando offline
   await page.click('#tabs button[data-v=ajuda]');
   await page.waitForSelector('.chat-lista');

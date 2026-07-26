@@ -329,7 +329,9 @@
               el('strong', null, `${i + 1}. ${c.nome}`),
               el('div', { class: 'sub' }, [c.endereco, c.cidade].filter(Boolean).join(' · ') +
                 (seqInfo && seqInfo.reencaixado ? ' · 🔁 reencaixado' : '') +
-                (c.geocoding_status !== 'preciso' ? ' · 📍' + c.geocoding_status : ''))),
+                (c.geocoding_status !== 'preciso' ? ' · 📍' + c.geocoding_status : '')),
+              (() => { const n = ultimaNota(c.id); return n ? el('div', { class: 'nota-previa' },
+                '📝 ' + (n.length > 90 ? n.slice(0, 90) + '…' : n)) : null; })()),
             v ? el('span', { class: 'badge ok' }, v.fez_pedido ? '✅ pedido' : '✅ visitado') : null),
           el('div', { class: 'row gap8 mt8' },
             el('button', { class: 'btn-mini', onclick: () => abrirGPS(c) }, '🗺 GPS'),
@@ -444,6 +446,15 @@
     let prox = null;
     if (ult) { const d = new Date(ult + 'T12:00:00'); d.setDate(d.getDate() + (c.frequencia_dias || 60)); prox = d.toISOString().slice(0, 10); }
     DB.update('clientes', clienteId, { ultima_visita_em: ult, ultimo_pedido_em: ultPed, proxima_visita_prevista: prox });
+  }
+
+  function notasDoCliente(clienteId) {
+    return DB.all('cliente_notas').filter(n => n.cliente_id === clienteId)
+      .sort((a, b) => (b.criado_em || '').localeCompare(a.criado_em || ''));
+  }
+  function ultimaNota(clienteId) {
+    const n = notasDoCliente(clienteId)[0];
+    return n ? n.texto : null;
   }
 
   function abrirGPS(c) {
@@ -609,6 +620,41 @@
       chips,
       upsell.length ? el('div', { class: 'sugestao mt8' },
         el('span', null, '🎯 Upsell: ainda não trabalha ' + upsell.join(', '))) : null,
+
+      el('h4', { class: 'mt12' }, '📝 Observações internas'),
+      el('p', { class: 'sub' }, 'Só a equipe vê — nunca sai no talão nem no PDF.'),
+      (() => {
+        const caixa = el('div', { class: 'col gap4 mt4' });
+        const inp = el('input', { class: 'input grow', placeholder: 'Anotar algo sobre este cliente…' });
+        const desenhar = () => {
+          caixa.innerHTML = '';
+          for (const n of notasDoCliente(id)) {
+            caixa.appendChild(el('div', { class: 'hist-linha' },
+              el('span', null, dataBR((n.criado_em || '').slice(0, 10)) + (n.autor ? ' · ' + n.autor : '') + ' — ' + n.texto),
+              el('button', {
+                class: 'btn-icon', onclick: async () => {
+                  if (await confirmar('Excluir esta observação?')) { DB.remove('cliente_notas', n.id); desenhar(); }
+                }
+              }, '🗑')));
+          }
+          if (c.observacoes) caixa.appendChild(el('div', { class: 'hist-linha apagado' },
+            el('span', null, '📄 ' + c.observacoes)));
+          if (!caixa.children.length) caixa.appendChild(el('p', { class: 'vazio' }, 'Nenhuma observação ainda.'));
+        };
+        desenhar();
+        return el('div', null, caixa,
+          el('div', { class: 'row gap8 mt8' }, inp,
+            el('button', {
+              class: 'btn', onclick: () => {
+                const t = inp.value.trim();
+                if (!t) return;
+                DB.insert('cliente_notas', {
+                  cliente_id: id, representante_id: s.eu.id, autor: s.eu.nome, texto: t
+                });
+                inp.value = ''; desenhar(); toast('Observação salva.');
+              }
+            }, '➕')));
+      })(),
 
       el('h4', { class: 'mt12' }, 'Histórico'),
       el('div', { class: 'col gap4' },
