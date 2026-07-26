@@ -418,7 +418,7 @@
   }
 
   function freqDaClasse(cl) {
-    return Number(DB.config('freq_classe_' + cl.toLowerCase(), { A: 35, B: 60, C: 90 }[cl] || 60));
+    return Number(DB.config('freq_classe_' + cl.toLowerCase(), { A: 35, B: 60, C: 90, D: 120 }[cl] || 60));
   }
   function aplicarClasse(clienteId, cl) {
     const c = DB.byId('clientes', clienteId);
@@ -575,13 +575,13 @@
         s.papel === 'gestor' ? el('button', { class: 'btn-mini', onclick: () => editarCliente(c.id) }, '✏ Editar') : null),
       el('div', { class: 'row gap8 mt8' },
         el('span', { class: 'sub' }, 'Classe:'),
-        ...['A', 'B', 'C'].map(cl => el('button', {
+        ...['A', 'B', 'C', 'D'].map(cl => el('button', {
           class: 'btn-mini' + ((c.classe || 'B') === cl ? ' classe-ativa' : ''),
           onclick: (e) => {
             const freq = aplicarClasse(c.id, cl);
             e.currentTarget.parentElement.querySelectorAll('.btn-mini').forEach(b => b.classList.remove('classe-ativa'));
             e.currentTarget.classList.add('classe-ativa');
-            toast(`Classe ${cl}: visita a cada ${freq} dias` + (cl === 'C' ? ' · baixa prioridade no reencaixe' : cl === 'A' ? ' · prioridade máxima' : ''));
+            toast(`Classe ${cl}: visita a cada ${freq} dias` + (cl === 'A' ? ' · prioridade máxima' : cl === 'C' || cl === 'D' ? ' · prioridade baixa no reencaixe' : ''));
           }
         }, cl + ' · ' + freqDaClasse(cl) + 'd'))),
 
@@ -1030,7 +1030,7 @@
     const statusSel = el('select', { class: 'input' },
       ['ativo', 'prospect', 'inativo'].map(st => el('option', { value: st, selected: (c.status || 'ativo') === st ? '' : null }, st)));
     const classeSel = el('select', { class: 'input' },
-      [['A', 'A — prioridade máxima (35d)'], ['B', 'B — normal (60d)'], ['C', 'C — baixa (90d; reencaixe espera A e B)']]
+      [['A', 'A — prioridade máxima (35d)'], ['B', 'B — normal (60d)'], ['C', 'C — baixa (90d)'], ['D', 'D — mínima (120d; reencaixa por último)']]
         .map(([v, r]) => el('option', { value: v, selected: (c.classe || 'B') === v ? '' : null }, r)));
     const mm = modal(el('div', { class: 'col gap8' },
       inp('nome', 'Nome *'), inp('razao_social', 'Razão social'), inp('cnpj_cpf', 'CNPJ/CPF'),
@@ -1220,6 +1220,7 @@
       ['freq_classe_a', 'Classe A — visitar a cada (dias)', 'number'],
       ['freq_classe_b', 'Classe B — visitar a cada (dias)', 'number'],
       ['freq_classe_c', 'Classe C — visitar a cada (dias)', 'number'],
+      ['freq_classe_d', 'Classe D — visitar a cada (dias)', 'number'],
       ['pernoite_dist_km', 'Pernoite: distância mínima da base (km)', 'number'],
       ['pernoite_economia_km', 'Pernoite: economia mínima (km)', 'number'],
       ['reencaixe_detour_km', 'Reencaixe: desvio máximo (km)', 'number'],

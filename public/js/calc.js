@@ -65,10 +65,10 @@
       (visitasDoCliente || []).some(v => v.fez_pedido && Number(v.valor_pedido) > 0));
   }
 
-  // Classe do cliente: A = prioridade máxima, B = normal (padrão), C = baixa.
-  // No reencaixe, A entra primeiro; C só entra se sobrar vaga depois de A e B.
+  // Classe do cliente: A = prioridade máxima, B = normal (padrão),
+  // C = baixa, D = mínima. No reencaixe entram nesta ordem: A, B, C, D.
   function classeRank(cliente) {
-    return { A: 0, B: 1, C: 2 }[(cliente && cliente.classe) || 'B'] ?? 1;
+    return { A: 0, B: 1, C: 2, D: 3 }[(cliente && cliente.classe) || 'B'] ?? 1;
   }
 
   // cicloInicio = segunda-feira da semana 1 (ISO yyyy-mm-dd)

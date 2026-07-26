@@ -94,8 +94,8 @@ eq('seed da listagem → já comprou', C.clienteJaComprou({ seed_dias_sem_pedido
 eq('visita com pedido → já comprou', C.clienteJaComprou({ status_legado: 'Novo' }, [{ fez_pedido: true, valor_pedido: 100 }]), true);
 
 console.log('Classe A/B/C (prioridade no reencaixe):');
-eq('A antes de B antes de C', [{classe:'C'},{classe:'A'},{},{classe:'B'}]
-  .sort((a,b) => C.classeRank(a) - C.classeRank(b)).map(c => c.classe || 'B').join(''), 'ABBC');
+eq('A antes de B, C e D por último', [{classe:'C'},{classe:'D'},{classe:'A'},{},{classe:'B'}]
+  .sort((a,b) => C.classeRank(a) - C.classeRank(b)).map(c => c.classe || 'B').join(''), 'ABBCD');
 eq('sem classe = B', C.classeRank({}), 1);
 
 console.log(`\n${ok} ok, ${fail} falhas`);
