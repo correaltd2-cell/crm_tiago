@@ -718,7 +718,7 @@
             el('strong', null, 'Nº ' + (p.numero || '⏳') + ' · ' + (cli.nome || '—')),
             el('strong', null, C.fmtMoney(Number(p.total_valor)))),
           el('span', { class: 'sub' }, dataBR(p.data_pedido) + ' · ' + p.status +
-            (p.assinatura ? ' · ✍ assinado' : '') +
+            (p.assinatura ? ' · ✍ ' + (p.assinante_nome || 'assinado') : '') +
             ` · ${p.total_unid_vendidas} un vendidas`)));
       }
       if (!peds.length) lista.appendChild(el('p', { class: 'vazio' }, 'Nenhum pedido.'));

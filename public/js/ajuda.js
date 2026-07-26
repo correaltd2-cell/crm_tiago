@@ -39,7 +39,7 @@ FAZER UM PEDIDO (talão digital)
 2. Escolha o cliente (busque por nome, cidade ou CNPJ).
 3. Escolha primeiro a CONDIÇÃO DE PAGAMENTO (o prazo — OBRIGATÓRIA, o sistema não deixa continuar sem ela) e depois a TABELA DE PREÇO: Simples ou Lucro Presumido (define os preços do pedido inteiro).
 4. Adicione os produtos: escolha o produto, o tamanho da placa (P ou G — cada produto tem sua quantidade de unidades por placa), quantas placas deixou, e as devoluções em duas colunas: DISPLAY (peças devolvidas boas) e QUEBRADA (peças com defeito). O sistema calcula sozinho: colocadas = placas × unidades da placa; VENDIDAS = colocadas − display − quebradas; valor = vendidas × preço da tabela.
-5. Confira o resumo, colha a ASSINATURA do cliente na tela (dedo ou caneta; dá para limpar e refazer) e toque em Confirmar.
+5. Confira o resumo, escreva o NOME DE QUEM ASSINA (obrigatório — o sistema não conclui sem ele) e colha a ASSINATURA do cliente na tela (dedo ou caneta; dá para limpar e refazer). O nome sai impresso no talão junto da assinatura.
 6. Pronto: dá para VISUALIZAR O PDF do talão, COMPARTILHAR (WhatsApp/e-mail) e IMPRIMIR (impressora do celular). A assinatura fica gravada para sempre no pedido.
 • Concluir o pedido já registra a visita do dia com o valor vendido e calcula a comissão sozinho.
 • Para excluir um pedido errado: aba Pedidos → abra o pedido → "Excluir pedido" (desfaz também a visita e a comissão).

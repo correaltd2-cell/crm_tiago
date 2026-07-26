@@ -269,12 +269,18 @@
 
     // ---- Passo 5: assinatura ----
     function passoAssinatura() {
+      const cli = DB.byId('clientes', ped.cliente_id) || {};
       const wrapCv = el('div', { class: 'assinatura-area' });
       const cv = el('canvas', { class: 'assinatura-cv' });
       wrapCv.appendChild(cv);
+      const nomeAssinante = el('input', {
+        class: 'input big', placeholder: 'Nome de quem assina * (obrigatório)',
+        value: ped.assinante_nome || cli.contato || ''
+      });
       const cont = el('div', null,
         el('h3', null, 'Assinatura do cliente'),
-        el('p', { class: 'sub' }, 'Assine com o dedo ou stylus no quadro abaixo.'),
+        el('p', { class: 'sub' }, 'Informe o nome de quem assina e colha a assinatura no quadro.'),
+        nomeAssinante,
         wrapCv,
         el('div', { class: 'row gap8 mt8' },
           el('button', { class: 'btn btn-sec grow', onclick: () => { strokes.length = 0; desenhar(); } }, 'Limpar'),
@@ -315,8 +321,13 @@
       setTimeout(ajustar, 60);
 
       function concluir() {
+        if (!nomeAssinante.value.trim()) {
+          nomeAssinante.focus();
+          return toast('Informe o NOME de quem assina — é obrigatório.', 'erro');
+        }
         if (!strokes.length || strokes.every(s => s.length < 2))
           return toast('Colete a assinatura do cliente antes de concluir.', 'erro');
+        ped.assinante_nome = nomeAssinante.value.trim();
         ped.assinatura = cv.toDataURL('image/png');
         salvarConcluido();
       }
@@ -363,6 +374,7 @@
         total_unid_colocadas: tot.colocadas, total_unid_dev_display: tot.devDisplay,
         total_unid_dev_quebrada: tot.devQuebrada, total_unid_vendidas: tot.vendidas,
         total_valor: tot.valor, assinatura: ped.assinatura, assinado_em: agora,
+        assinante_nome: ped.assinante_nome || null,
         visita_id: visitaId, observacoes: ped.obs || null
       });
 

@@ -238,7 +238,7 @@
     y -= sigH + 10;
     if (img) pg.image('/Im1', W / 2 - sigW / 2, y, sigW, sigH);
     pg.line(W / 2 - 110, y - 4, W / 2 + 110, y - 4, 0.6);
-    pg.text(W / 2, y - 14, cliente.nome || '', 8, false, 'center');
+    pg.text(W / 2, y - 14, (pedido.assinante_nome ? pedido.assinante_nome + ' — ' : '') + (cliente.nome || ''), 8, false, 'center');
     pg.text(W / 2, y - 24, 'Assinatura do cliente' +
       (pedido.assinado_em ? ' — ' + new Date(pedido.assinado_em).toLocaleString('pt-BR') : ''), 7.5, false, 'center');
 

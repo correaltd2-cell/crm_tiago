@@ -142,6 +142,12 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page.mouse.down();
   for (let i = 0; i < 12; i++) await page.mouse.move(bb.x + 30 + i * 18, bb.y + 100 + Math.sin(i) * 30);
   await page.mouse.up();
+  // sem o nome de quem assina, não conclui
+  await page.fill('.ns-modal input[placeholder*="Nome de quem assina"]', '');
+  await page.click('text=✓ Confirmar e concluir');
+  await page.waitForTimeout(250);
+  check('não conclui sem o nome de quem assina', !(await page.isVisible('.sucesso-banner')));
+  await page.fill('.ns-modal input[placeholder*="Nome de quem assina"]', 'João da Silva');
   await page.click('text=✓ Confirmar e concluir');
   await page.waitForSelector('.sucesso-banner');
   check('pedido concluído com assinatura', await page.isVisible('.sucesso-banner'));
@@ -157,6 +163,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   check('pedido salvo concluído, total 594,50', dados.pedido.status === 'concluido' && dados.pedido.total_valor === 594.5);
   check('nº do pedido atribuído no app (nº 1)', dados.pedido.numero === 1);
   check('assinatura salva no pedido (PNG base64)', String(dados.pedido.assinatura || '').startsWith('data:image/png'));
+  check('nome de quem assina gravado no pedido', dados.pedido.assinante_nome === 'João da Silva');
   check('visita com fez_pedido e valor vendido', dados.visita.fez_pedido === true && dados.visita.valor_pedido === 594.5 && !!dados.visita.data_visita);
   check('comissão 15% no 1º pedido = 89,18', dados.visita.comissao_pct === 15 && dados.visita.comissao_valor === 89.18);
   const dt = new Date(dados.pedido.data_pedido + 'T12:00:00'); dt.setDate(dt.getDate() + 45);
@@ -172,10 +179,11 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
     let temImg = false;
     const txt = new TextDecoder('latin1').decode(buf);
     temImg = txt.includes('/DCTDecode') && txt.includes('/Im1');
-    return { size: buf.length, head, temImg, type: blob.type };
+    return { size: buf.length, head, temImg, type: blob.type, temAssinante: txt.includes('Jo\xe3o da Silva') };
   }, dados.pedido.id);
   check('PDF válido (%PDF, application/pdf)', pdfInfo.head === '%PDF-' && pdfInfo.type === 'application/pdf');
   check('PDF > 5KB com assinatura embutida (DCTDecode)', pdfInfo.size > 5000 && pdfInfo.temImg);
+  check('nome de quem assina impresso no PDF', pdfInfo.temAssinante === true);
 
   // estrutura interna do PDF: todos os offsets da xref apontam para "N 0 obj"
   const xrefOk = await page.evaluate(async (pid) => {
