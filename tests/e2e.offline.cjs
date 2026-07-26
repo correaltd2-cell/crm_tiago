@@ -164,6 +164,8 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   check('nº do pedido atribuído no app (nº 1)', dados.pedido.numero === 1);
   check('assinatura salva no pedido (PNG base64)', String(dados.pedido.assinatura || '').startsWith('data:image/png'));
   check('nome de quem assina gravado no pedido', dados.pedido.assinante_nome === 'João da Silva');
+  const cliPrazo = await page.evaluate(() => JSON.parse(localStorage.getItem('ns_c_clientes'))[0].condicao_pagamento_padrao);
+  check('prazo usado vira o prazo padrão do cliente', cliPrazo === '30 dias');
   check('visita com fez_pedido e valor vendido', dados.visita.fez_pedido === true && dados.visita.valor_pedido === 594.5 && !!dados.visita.data_visita);
   check('comissão 15% no 1º pedido = 89,18', dados.visita.comissao_pct === 15 && dados.visita.comissao_valor === 89.18);
   const dt = new Date(dados.pedido.data_pedido + 'T12:00:00'); dt.setDate(dt.getDate() + 45);

@@ -37,7 +37,7 @@ ABA CLIENTES (farol de cores)
 FAZER UM PEDIDO (talão digital)
 1. Toque no botão dourado redondo (ou 🧾 Pedido no cliente do dia).
 2. Escolha o cliente (busque por nome, cidade ou CNPJ).
-3. Escolha primeiro a CONDIÇÃO DE PAGAMENTO (o prazo — OBRIGATÓRIA, o sistema não deixa continuar sem ela) e depois a TABELA DE PREÇO: Simples ou Lucro Presumido (define os preços do pedido inteiro).
+3. Escolha primeiro a CONDIÇÃO DE PAGAMENTO (o prazo — OBRIGATÓRIA, o sistema não deixa continuar sem ela) e depois a TABELA DE PREÇO: Simples ou Lucro Presumido (define os preços do pedido inteiro). CADA CLIENTE TEM SEU PRAZO: o prazo usado no pedido fica gravado como o prazo daquele cliente e já vem selecionado nas próximas vendas (marcado como 'prazo deste cliente'); dá para trocar na hora se ele negociar diferente, e o gestor também pode definir o prazo na ficha do cliente no Admin.
 4. Adicione os produtos: escolha o produto, o tamanho da placa (P ou G — cada produto tem sua quantidade de unidades por placa), quantas placas deixou, e as devoluções em duas colunas: DISPLAY (peças devolvidas boas) e QUEBRADA (peças com defeito). O sistema calcula sozinho: colocadas = placas × unidades da placa; VENDIDAS = colocadas − display − quebradas; valor = vendidas × preço da tabela.
 5. Confira o resumo, escreva o NOME DE QUEM ASSINA (obrigatório — o sistema não conclui sem ele) e colha a ASSINATURA do cliente na tela (dedo ou caneta; dá para limpar e refazer). O nome sai impresso no talão junto da assinatura.
 6. Pronto: dá para VISUALIZAR O PDF do talão, COMPARTILHAR (WhatsApp/e-mail) e IMPRIMIR (impressora do celular). A assinatura fica gravada para sempre no pedido.

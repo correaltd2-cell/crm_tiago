@@ -57,10 +57,15 @@
     // ---- Passo 2: tabela de preço (obrigatória) + condição ----
     function passoTabela() {
       const cli = DB.byId('clientes', ped.cliente_id);
-      const conds = DB.config('condicoes_pagamento', []);
+      let conds = DB.config('condicoes_pagamento', []).slice();
+      // prazo próprio do cliente entra na lista mesmo se não for uma opção padrão
+      if (cli.condicao_pagamento_padrao && !conds.includes(cli.condicao_pagamento_padrao))
+        conds.unshift(cli.condicao_pagamento_padrao);
+      const escolhido = ped.condicao_pagamento || cli.condicao_pagamento_padrao || '';
       const selCond = el('select', { class: 'input big' },
         el('option', { value: '' }, 'Escolha o prazo… (obrigatório)'),
-        conds.map(c => el('option', { value: c, selected: ped.condicao_pagamento === c ? '' : null }, c)));
+        conds.map(c => el('option', { value: c, selected: escolhido === c ? '' : null },
+          c + (c === cli.condicao_pagamento_padrao ? ' (prazo deste cliente)' : ''))));
       const btn = (tab, rot, desc) => el('button', {
         class: 'card-escolha' + (ped.tabela === tab ? ' ativo' : ''),
         onclick: () => {
@@ -379,7 +384,9 @@
       });
 
       // espelho local do que os triggers fazem no servidor
+      // (o prazo usado vira o prazo padrão deste cliente)
       DB.update('clientes', cli.id, {
+        condicao_pagamento_padrao: ped.condicao_pagamento || cli.condicao_pagamento_padrao || null,
         ultima_visita_em: ped.data, ultimo_pedido_em: ped.data,
         proxima_visita_prevista: (() => { const d = new Date(ped.data + 'T12:00:00'); d.setDate(d.getDate() + (cli.frequencia_dias || 60)); return d.toISOString().slice(0, 10); })()
       });

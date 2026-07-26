@@ -579,7 +579,8 @@
         (c.cnpj_cpf ? 'CNPJ ' + c.cnpj_cpf + ' · ' : '') + [c.endereco, c.bairro, c.cidade, c.uf].filter(Boolean).join(', ')),
       el('div', { class: 'sub mt4' },
         'Contato: ' + (c.contato || '—') + ' · ' + (c.telefone || c.celular || '—') +
-        (c.rede ? ' · Rede ' + c.rede + (c.recebimento_dias ? ' (comissão +' + c.recebimento_dias + 'd)' : '') : '')),
+        (c.rede ? ' · Rede ' + c.rede + (c.recebimento_dias ? ' (comissão +' + c.recebimento_dias + 'd)' : '') : '') +
+        ' · Prazo: ' + (c.condicao_pagamento_padrao || 'a definir no 1º pedido')),
       el('div', { class: 'row gap8 mt8' },
         el('button', { class: 'btn-mini', onclick: () => abrirGPS(c) }, '🗺 GPS (' + c.geocoding_status + ')'),
         el('button', { class: 'btn-mini', onclick: () => window.NSPedido.novo(c) }, '🧾 Novo pedido'),
@@ -1084,6 +1085,7 @@
       inp('contato', 'Contato'), inp('email', 'E-mail', 'email'), inp('telefone', 'Telefone'), inp('celular', 'Celular'),
       inp('endereco', 'Endereço'), inp('bairro', 'Bairro'), inp('cidade', 'Cidade *'), inp('uf', 'UF *'), inp('cep', 'CEP'),
       inp('rede', 'Rede (ex.: Clamed)'), inp('recebimento_dias', 'Prazo comissão (dias — Clamed = 45)', 'number'),
+      inp('condicao_pagamento_padrao', 'Prazo de pagamento deste cliente (ex.: 30 dias)'),
       inp('semana_padrao', 'Semana do ciclo (1-7)', 'number'),
       el('label', { class: 'campo' }, el('span', { class: 'sub' }, 'Dia da semana'), diaSel),
       inp('frequencia_dias', 'Frequência (dias)', 'number'),
