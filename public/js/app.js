@@ -6,14 +6,20 @@
   const C = window.NSCalc, DB = window.NSDB, R = window.NSRota;
 
   // ================= MARCA =================
+  // Marca "Estrada da Estrela": a rota do vendedor termina na estrela
   const LOGO_SVG =
     '<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
     '<defs><linearGradient id="nsgrad" x1="0" y1="0" x2="1" y2="1">' +
     '<stop offset="0" stop-color="var(--ouro-claro)"/><stop offset=".55" stop-color="var(--ouro)"/>' +
-    '<stop offset="1" stop-color="var(--ouro-escuro)"/></linearGradient></defs>' +
-    '<path d="M32 3 C34.6 20.5 43.5 29.4 61 32 C43.5 34.6 34.6 43.5 32 61 C29.4 43.5 20.5 34.6 3 32 C20.5 29.4 29.4 20.5 32 3 Z" fill="url(#nsgrad)"/>' +
-    '<path d="M51 6 C51.9 11.4 55.1 14.6 60.5 15.5 C55.1 16.4 51.9 19.6 51 25 C50.1 19.6 46.9 16.4 41.5 15.5 C46.9 14.6 50.1 11.4 51 6 Z" fill="url(#nsgrad)" opacity=".8"/>' +
-    '<path d="M30 20 C31 26.5 34.5 30 41 31 C34.5 32 31 35.5 30 42 C29 35.5 25.5 32 19 31 C25.5 30 29 26.5 30 20 Z" fill="rgba(255,255,255,.35)"/>' +
+    '<stop offset="1" stop-color="var(--ouro-escuro)"/></linearGradient>' +
+    '<linearGradient id="nsgrad2" x1="0" y1="1" x2="1" y2="0">' +
+    '<stop offset="0" stop-color="var(--ouro-escuro)"/><stop offset=".55" stop-color="var(--ouro)"/>' +
+    '<stop offset="1" stop-color="var(--ouro-claro)"/></linearGradient></defs>' +
+    '<path d="M7.5 58.8 C26.3 53.8 31.3 43.8 33.5 31.3 L41.5 31.3 C37.5 50 30 57.5 14.8 62 Z" fill="url(#nsgrad2)"/>' +
+    '<path d="M13.5 58.8 C29 52.5 33.5 43.8 37 31.5" fill="none" stroke="rgba(10,14,26,.55)" stroke-width="1.6" stroke-linecap="round" stroke-dasharray=".2 5.2"/>' +
+    '<path d="M37.5 5 C39 16.3 43.8 21 54.8 22.5 C43.8 24 39 28.8 37.5 40 C36 28.8 31.3 24 20.3 22.5 C31.3 21 36 16.3 37.5 5 Z" fill="url(#nsgrad)"/>' +
+    '<path d="M37.5 5 C38.6 13.5 41.8 18.3 49 21 C42.8 21.5 38.8 20.5 37.5 22.5 C36.3 20.5 32.3 21.5 26 21 C33.3 18.3 36.4 13.5 37.5 5 Z" fill="rgba(255,255,255,.32)"/>' +
+    '<path d="M53.8 7.5 C54.3 11 55.8 12.5 59.3 13 C55.8 13.5 54.3 15 53.8 18.5 C53.3 15 51.8 13.5 48.3 13 C51.8 12.5 53.3 11 53.8 7.5 Z" fill="url(#nsgrad)" opacity=".85"/>' +
     '</svg>';
   function logoMarca(soIcone) {
     const { el } = window.NSUI;
@@ -46,7 +52,7 @@
     const box = el('div', { class: 'login-box' },
       el('div', { class: 'login-logo', html: LOGO_SVG }),
       el('h1', null, 'New Star'),
-      el('p', { class: 'sub' }, 'Gestão do representante + talão digital'),
+      el('p', { class: 'login-tag' }, 'App do Vendedor'),
       msg ? el('p', { class: 'aviso' }, msg) : null,
       email, senha,
       el('button', { class: 'btn big w100 mt8', onclick: entrar }, 'Entrar'),
@@ -820,7 +826,7 @@
       view.appendChild(item('🗓 Redistribuir mês (virada de mês)', telaReplanejarMes));
     }
     view.appendChild(el('button', { class: 'btn-link mt16', onclick: sair }, 'Sair (' + s.eu.email + ')'));
-    view.appendChild(el('p', { class: 'sub mt8' }, 'New Star · PWA offline-first · v1'));
+    view.appendChild(el('p', { class: 'sub mt8' }, 'NEW STAR — App do Vendedor · offline-first · v1'));
   }
 
   // ---------- Financeiro: comissões a receber + despesas (inclusive futuras) ----------

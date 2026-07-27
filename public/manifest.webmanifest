@@ -1,7 +1,7 @@
 {
-  "name": "New Star — Representante",
+  "name": "NEW STAR — App do Vendedor",
   "short_name": "New Star",
-  "description": "Gestão do representante e talão de pedido digital New Star",
+  "description": "App do Vendedor NEW STAR — rotas, clientes e talão de pedido digital",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
