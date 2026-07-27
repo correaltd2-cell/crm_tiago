@@ -207,6 +207,25 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   }, dados.pedido.id);
   check('xref do PDF consistente (' + xrefOk + ')', xrefOk === 'ok');
 
+  // cupom 58mm para impressora térmica: página estreita (164pt) e válida
+  const cupomInfo = await page.evaluate(async (pid) => {
+    const blob = await window.NSPedido.gerarCupom(pid);
+    const buf = new Uint8Array(await blob.arrayBuffer());
+    const txt = new TextDecoder('latin1').decode(buf);
+    const media = txt.match(/\/MediaBox \[0 0 (\d+) (\d+(?:\.\d+)?)\]/);
+    return {
+      head: txt.slice(0, 5), largura: media ? Number(media[1]) : 0,
+      altura: media ? Number(media[2]) : 0,
+      temImg: txt.includes('/DCTDecode') && txt.includes('/Im1'),
+      temAssinante: txt.includes('Jo\xe3o da Silva'),
+      xrefFecha: /startxref\n\d+\n%%EOF$/.test(txt)
+    };
+  }, dados.pedido.id);
+  check('cupom 58mm: PDF válido com página de 164pt de largura',
+    cupomInfo.head === '%PDF-' && cupomInfo.largura === 164 && cupomInfo.xrefFecha);
+  check('cupom 58mm: altura sob medida, assinatura e assinante presentes',
+    cupomInfo.altura >= 220 && cupomInfo.temImg && cupomInfo.temAssinante);
+
   // histórico: pedido consultável depois
   await page.locator('.ns-overlay').last().locator('.btn-icon').first().click(); // fecha modal do pedido
   await page.click('#tabs button[data-v=pedidos]');

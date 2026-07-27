@@ -431,6 +431,16 @@
     return window.NSPDF.gerarPDFPedido({ pedido: p, itens, cliente, rep, produtos: DB.all('produtos'), observacoes });
   }
 
+  // Cupom estreito para mini impressoras térmicas Bluetooth (bobina 58mm)
+  async function gerarCupom(pedidoId) {
+    const p = DB.byId('pedidos', pedidoId);
+    const itens = DB.all('pedido_itens').filter(i => i.pedido_id === pedidoId);
+    const cliente = DB.byId('clientes', p.cliente_id) || {};
+    const rep = DB.byId('representantes', p.representante_id) || {};
+    const observacoes = DB.config('pdf_observacoes', '');
+    return window.NSPDF.gerarCupomPedido({ pedido: p, itens, cliente, rep, produtos: DB.all('produtos'), observacoes });
+  }
+
   function abrir(pedidoId, recemConcluido) {
     const p = DB.byId('pedidos', pedidoId);
     if (!p) return;
@@ -456,7 +466,18 @@
         const fr = el('iframe', { style: 'display:none', src: url });
         document.body.appendChild(fr);
         fr.onload = () => setTimeout(() => { fr.contentWindow.print(); }, 200);
-      } }, '🖨 Imprimir'));
+      } }, '🖨 Imprimir'),
+      el('button', { class: 'btn big btn-sec', onclick: async () => {
+        const blob = await gerarCupom(pedidoId);
+        const nomeCupom = 'cupom-' + (p.numero || String(p.id).slice(0, 8)) + '.pdf';
+        const file = new File([blob], nomeCupom, { type: 'application/pdf' });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          toast('Escolha o app da impressora na lista de compartilhar.');
+          await navigator.share({ files: [file], title: 'Cupom New Star' }).catch(() => {});
+        } else {
+          window.open(URL.createObjectURL(blob), '_blank') || window.NSUI.baixar(blob, nomeCupom);
+        }
+      } }, '🧾 Cupom 58mm (impressora térmica)'));
 
     const linhas = itens.map(it => {
       const pr = DB.byId('produtos', it.produto_id) || {};
@@ -501,5 +522,5 @@
     ), { titulo: 'Pedido ' + (p.numero ? 'nº ' + p.numero : '') });
   }
 
-  window.NSPedido = { novo, abrir, gerarPDF };
+  window.NSPedido = { novo, abrir, gerarPDF, gerarCupom };
 })();

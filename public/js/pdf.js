@@ -272,5 +272,112 @@
     return pdf.build();
   }
 
-  window.NSPDF = { gerarPDFPedido };
+  // ---------- cupom 58mm (impressoras térmicas Bluetooth) ----------
+  // Página estreita (58mm ≈ 164pt) com altura sob medida: o app da
+  // impressora encaixa a página na largura da bobina, então o texto sai
+  // legível (um A4 encolhido para 58mm ficaria minúsculo).
+  async function gerarCupomPedido({ pedido, itens, cliente, rep, produtos, observacoes }) {
+    const CW = 164, CM = 6, CIN = CW - 2 * CM;
+    const dataBR = (iso) => iso ? iso.split('-').reverse().join('/') : '';
+    const prodDe = (id) => (produtos.find(p => p.id === id) || {});
+    const nomeTabela = pedido.tabela === 'lucro' ? 'Lucro Presumido' : 'Tabela Simples';
+    let img = null;
+    if (pedido.assinatura) {
+      try { img = await pngParaJpeg(pedido.assinatura); } catch (e) { img = null; }
+    }
+    const sigW = 110, sigH = img ? Math.min(48, sigW * img.h / img.w) : 0;
+
+    function desenhar(pg, alt) {
+      let y = alt - CM - 10;
+      const cx = CW / 2;
+      const t = (s, size, o) => {
+        o = o || {};
+        pg.text(o.al === 'center' ? cx : o.al === 'right' ? CW - CM : CM, y, s, size, o.b, o.al);
+      };
+      const dn = (h) => { y -= h; };
+      const hr = (forte) => { dn(4); pg.line(CM, y, CW - CM, y, forte ? 0.8 : 0.4); dn(10); };
+
+      t('NEW STAR', 13, { b: true, al: 'center' }); dn(8);
+      t('APP DO VENDEDOR', 5.5, { al: 'center' }); dn(8);
+      t('TALÃO DE PEDIDO — CONSIGNAÇÃO', 6.5, { al: 'center' });
+      hr(true);
+      t('Pedido nº ' + (pedido.numero || 'PENDENTE'), 8.5, { b: true }); dn(10);
+      t('Data: ' + dataBR(pedido.data_pedido), 7); dn(9);
+      t('Vendedor: ' + (rep.nome || ''), 7); dn(9);
+      t('Tabela: ' + nomeTabela, 7); dn(9);
+      for (const l of wrap('Cond. pgto: ' + (pedido.condicao_pagamento || '—'), 7, CIN)) { t(l, 7); dn(9); }
+      hr();
+      for (const l of wrap(cliente.nome || '', 8, CIN, true)) { t(l, 8, { b: true }); dn(10); }
+      if (cliente.cnpj_cpf) { t('CNPJ/CPF: ' + cliente.cnpj_cpf, 6.5); dn(8); }
+      const cid = [cliente.cidade, cliente.uf].filter(Boolean).join(' - ');
+      if (cid) { t(cid, 6.5); dn(8); }
+      hr();
+      for (const it of itens) {
+        const p = prodDe(it.produto_id);
+        const nome = (p.codigo ? p.codigo + ' ' : '') + (p.nome || '') +
+          (p.variacao ? ' (' + p.variacao + ')' : '');
+        for (const l of wrap(nome, 7, CIN, true)) { t(l, 7, { b: true }); dn(9); }
+        t(it.placas + ' placa' + (it.placas > 1 ? 's' : '') + ' ' + it.tamanho + ' = ' +
+          it.unid_colocadas + ' un colocadas', 6.5); dn(8);
+        if (it.dev_display || it.dev_quebrada) {
+          t('Dev display: ' + it.dev_display + ' · Quebrada: ' + it.dev_quebrada, 6.5); dn(8);
+        }
+        t(it.unid_vendidas + ' vend. × ' + C.fmtMoney(Number(it.preco_unit)), 6.5);
+        t(C.fmtMoney(Number(it.valor_total)), 7.5, { b: true, al: 'right' }); dn(11);
+      }
+      hr();
+      t('Colocadas: ' + pedido.total_unid_colocadas, 6.5);
+      t('Dev display: ' + pedido.total_unid_dev_display, 6.5, { al: 'right' }); dn(8);
+      t('Vendidas: ' + pedido.total_unid_vendidas, 6.5, { b: true });
+      t('Quebradas: ' + pedido.total_unid_dev_quebrada, 6.5, { al: 'right' }); dn(11);
+      t('TOTAL', 9, { b: true });
+      t(C.fmtMoney(Number(pedido.total_valor)), 10, { b: true, al: 'right' }); dn(12);
+      if (pedido.observacoes) {
+        hr();
+        for (const l of wrap('Obs.: ' + pedido.observacoes, 6.5, CIN)) { t(l, 6.5); dn(8); }
+      }
+      if (observacoes) {
+        hr();
+        for (const l of wrap(observacoes, 5.5, CIN)) { t(l, 5.5); dn(7); }
+      }
+      hr();
+      if (img) { dn(sigH); pg.image('/Im1', cx - sigW / 2, y, sigW, sigH); dn(8); }
+      else dn(22);
+      pg.line(cx - 55, y, cx + 55, y, 0.5); dn(9);
+      for (const l of wrap((pedido.assinante_nome ? pedido.assinante_nome + ' — ' : '') +
+        (cliente.nome || ''), 6.5, CIN)) { t(l, 6.5, { al: 'center' }); dn(8); }
+      t('Assinatura do cliente' + (pedido.assinado_em ? ' — ' +
+        new Date(pedido.assinado_em).toLocaleString('pt-BR') : ''), 5.5, { al: 'center' }); dn(6);
+      return y;
+    }
+
+    // 1ª passada mede a altura do conteúdo; 2ª desenha na página final
+    const H0 = 6000;
+    const sobra = desenhar(Page(), H0);
+    const CH = Math.max(220, H0 - sobra + CM + 8);
+    const pg = Page();
+    desenhar(pg, CH);
+
+    const pdf = PDFWriter();
+    pdf.add('<< /Type /Catalog /Pages 2 0 R >>');
+    const pageId = img ? 6 : 5;
+    pdf.add('<< /Type /Pages /Kids [' + pageId + ' 0 R] /Count 1 >>');
+    pdf.add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
+    pdf.add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
+    if (img) {
+      const bin = atob(img.b64);
+      pdf.add('<< /Type /XObject /Subtype /Image /Width ' + img.w + ' /Height ' + img.h +
+        ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + bin.length +
+        ' >>\nstream\n' + bin + '\nendstream');
+    }
+    const res = '/Resources << /Font << /F1 3 0 R /F2 4 0 R >>' +
+      (img ? ' /XObject << /Im1 5 0 R >>' : '') + ' >>';
+    pdf.add('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + CW + ' ' + CH + '] ' + res +
+      ' /Contents ' + (pageId + 1) + ' 0 R >>');
+    const st = pg.stream();
+    pdf.add('<< /Length ' + st.length + ' >>\nstream\n' + st + '\nendstream');
+    return pdf.build();
+  }
+
+  window.NSPDF = { gerarPDFPedido, gerarCupomPedido };
 })();
