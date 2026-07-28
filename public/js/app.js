@@ -235,12 +235,71 @@
     return ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'][d.getDay()] + ' ' + iso.slice(8, 10) + '/' + iso.slice(5, 7);
   }
 
+  // Visão consolidada do gestor: rota do dia de TODOS os vendedores
+  // (somente leitura — para agir, escolher o vendedor no topo)
+  function vHojeConsolidado(view) {
+    const hoje = hojeISO();
+    const dataVista = addDias(hoje, diaOffset);
+    const ehHoje = diaOffset === 0;
+    const ciclo = C.cicloDoDia(dataVista, DB.config('ciclo_inicio', '2026-01-05'));
+    view.appendChild(el('div', { class: 'dias-scroll' },
+      Array.from({ length: 8 }, (_, off) => {
+        const dISO = addDias(hoje, off);
+        return el('button', {
+          class: 'chip' + (off === diaOffset ? ' ativo' : ''),
+          onclick: () => { diaOffset = off; nav('hoje'); }
+        }, rotuloDia(off, dISO));
+      })));
+    view.appendChild(el('div', { class: 'row space mt8' },
+      el('h2', null, (ehHoje ? 'Hoje' : rotuloDia(diaOffset, dataVista)) + ' · ' + dataBR(dataVista)),
+      el('span', { class: 'badge' }, 'Semana ' + ciclo.semana + ' · ' +
+        ['', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'][ciclo.diaSemana])));
+    const visitou = (cid) => DB.all('visitas').find(v => v.cliente_id === cid && v.data_visita === dataVista && v.realizada);
+    const reps = DB.all('representantes').filter(r => r.papel !== 'gestor' && r.ativo !== false);
+    for (const rep of reps) {
+      const doDiaTodos = clientesDoRep(rep.id).filter(c =>
+        c.semana_padrao === ciclo.semana && C.mesmoDia(c.dia_semana_padrao, ciclo.diaSemana));
+      const doDia = doDiaTodos.filter(c => !(c.ultima_visita_em && !visitou(c.id) &&
+        (new Date(dataVista) - new Date(c.ultima_visita_em)) / 86400000 < Math.max(7, (c.frequencia_dias || 60) / 2)));
+      const rotaSalva = DB.all('rotas').find(r => r.representante_id === rep.id && r.data_rota === dataVista);
+      const listaIds = rotaSalva ? rotaSalva.sequencia.map(x => x.cliente_id) : doDia.map(c => c.id);
+      const listaCls = listaIds.map(id => DB.byId('clientes', id)).filter(Boolean);
+      doDia.forEach(c => { if (!listaCls.some(x => x.id === c.id)) listaCls.push(c); });
+      const feitos = listaCls.filter(c => visitou(c.id)).length;
+      view.appendChild(el('h3', { class: 'mt16' }, '🧑‍💼 ' + rep.nome +
+        (listaCls.length ? ` — ${feitos}/${listaCls.length} visitados` : '')));
+      if (rotaSalva)
+        view.appendChild(el('div', { class: 'rota-info mt4' },
+          `🛣 ${rotaSalva.distancia_total_km} km · ⏱ ~${Math.round(rotaSalva.tempo_total_min)} min` +
+          (rotaSalva.fonte_matriz === 'google' ? ' · Google' : ' · estimado')));
+      if (!listaCls.length) {
+        view.appendChild(el('p', { class: 'vazio' }, 'Nenhum cliente programado para este dia.'));
+        continue;
+      }
+      const listaEl = el('div', { class: 'col gap8 mt8' });
+      listaCls.forEach((c, i) => {
+        const v = visitou(c.id);
+        const seqInfo = rotaSalva && rotaSalva.sequencia.find(x => x.cliente_id === c.id);
+        listaEl.appendChild(el('div', {
+          class: 'card-visita' + (v ? ' feito' : ''),
+          onclick: () => fichaCliente(c.id)
+        },
+          el('div', { class: 'row space' },
+            el('div', null,
+              el('strong', null, `${i + 1}. ${c.nome}`),
+              el('div', { class: 'sub' }, [c.cidade, c.uf].filter(Boolean).join(' - ') +
+                (seqInfo && seqInfo.reencaixado ? ' · 🔁 reencaixado' : ''))),
+            v ? el('span', { class: 'badge ok' }, '✅') : null)));
+      });
+      view.appendChild(listaEl);
+    }
+    view.appendChild(el('p', { class: 'sub mt12' },
+      'Visão do gestor (somente leitura). Para otimizar a rota ou registrar visitas, escolha o vendedor no topo.'));
+  }
+
   async function vHoje(view) {
     const s = sessao();
-    if (s.consolidado) {
-      view.appendChild(el('p', { class: 'vazio' }, 'Selecione um representante no topo para ver a rota do dia.'));
-      return;
-    }
+    if (s.consolidado) return vHojeConsolidado(view);
     const rep = s.rep;
     const hoje = hojeISO();
     const dataVista = addDias(hoje, diaOffset);
