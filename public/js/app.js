@@ -1006,7 +1006,13 @@
       // metas
       const metaMes = Number(DB.config('meta_mes_valor', 0));
       const metaDiaManual = Number(DB.config('meta_dia_valor', 0));
+      const metaNovos = Number(DB.config('meta_novos_clientes', 0));
       const mt = C.calcMeta({ metaMes, hoje, vendidoMes: vendMes, metaDiaManual });
+      // novos clientes do mês = clientes com venda a 15% (primeira compra)
+      const novosMes = new Set(DB.all('visitas').filter(doRep)
+        .filter(v => (v.data_visita || '').slice(0, 7) === mes &&
+          Number(v.comissao_pct) === 15 && Number(v.comissao_valor) > 0)
+        .map(v => v.cliente_id)).size;
 
       wrap.appendChild(el('h3', null, '📅 Hoje — ' + dataBR(hoje)));
       wrap.appendChild(el('div', { class: 'total-bar mt4' },
@@ -1035,14 +1041,30 @@
       } else {
         wrap.appendChild(el('p', { class: 'sub mt4' }, 'Nenhuma meta cadastrada para o mês.'));
       }
+      // meta de novos clientes (vendas a 15% — interessante para o vendedor)
+      wrap.appendChild(el('h3', { class: 'mt16' }, '🆕 Novos clientes no mês (comissão 15%)'));
+      if (metaNovos > 0) {
+        const pctNv = Math.round(novosMes / metaNovos * 100);
+        const projNv = Math.round(novosMes / mt.uteisDecorridos * mt.uteisTotal);
+        wrap.appendChild(el('div', { class: 'progresso mt4' },
+          el('div', { class: 'progresso-info' }, `${novosMes} de ${metaNovos} novos clientes · ${pctNv}%`),
+          el('div', { class: 'progresso-barra' }, el('div', { class: 'progresso-fill', style: 'width:' + Math.min(100, pctNv) + '%' }))));
+        wrap.appendChild(el('div', { class: (projNv >= metaNovos ? 'sugestao' : 'aviso') + ' mt8' },
+          `📈 Nesse ritmo o mês fecha com ~${projNv} novo(s) cliente(s).`));
+      } else {
+        wrap.appendChild(el('p', { class: 'sub mt4' },
+          novosMes + ' novo(s) cliente(s) este mês. Nenhuma meta de novos clientes cadastrada.'));
+      }
       if (s.papel === 'gestor') {
         const inMeta = el('input', { class: 'input', type: 'number', inputmode: 'decimal', placeholder: 'Meta do MÊS em R$ (ex.: 200000)', value: metaMes || '' });
         const inMetaDia = el('input', { class: 'input', type: 'number', inputmode: 'decimal', placeholder: 'Meta do DIA em R$ (vazio = mês ÷ dias úteis)', value: metaDiaManual || '' });
-        wrap.appendChild(el('div', { class: 'col gap8 mt8' }, inMeta, inMetaDia,
+        const inMetaNovos = el('input', { class: 'input', type: 'number', inputmode: 'numeric', placeholder: 'Meta de NOVOS CLIENTES no mês (ex.: 10)', value: metaNovos || '' });
+        wrap.appendChild(el('div', { class: 'col gap8 mt8' }, inMeta, inMetaDia, inMetaNovos,
           el('button', {
             class: 'btn w100', onclick: () => {
               DB.upsertConfig('meta_mes_valor', Number(inMeta.value) || 0);
               DB.upsertConfig('meta_dia_valor', Number(inMetaDia.value) || 0);
+              DB.upsertConfig('meta_novos_clientes', Number(inMetaNovos.value) || 0);
               toast('Metas salvas!'); render();
             }
           }, '💾 Salvar metas')));

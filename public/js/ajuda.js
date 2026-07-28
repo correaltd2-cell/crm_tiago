@@ -58,6 +58,7 @@ Faturamento (vendido), comissão gerada, A RECEBER no mês, despesas, líquido, 
 MAIS → RELATÓRIOS (📊)
 • VENDA DO DIA: valor vendido hoje, quantos pedidos e as visitas do dia (na rota + fora da rota = total atendidos).
 • METAS: o gestor cadastra a META DO MÊS (ex.: R$ 200.000). O sistema divide pelos DIAS ÚTEIS (segunda a sexta) e mostra a meta do dia, a % da meta já batida e a PROJEÇÃO: "nesse ritmo o mês fecha em R$ X (Y% da meta)". Dá para definir uma meta do dia própria, se quiser um valor diferente da divisão automática.
+• META DE NOVOS CLIENTES: o gestor também cadastra quantos CLIENTES NOVOS quer no mês (venda com comissão de 15% = primeira compra, que é a mais interessante para o vendedor). O painel mostra quantos já entraram, a % da meta e a projeção no ritmo atual.
 • POR REDE: vendas do mês agrupadas por rede (Clamed, Agafarma, São Rafael, FZ Farma, independentes…), com nº de clientes e pedidos de cada rede.
 • DISPLAYS: lista de clientes marcados com display/material deixado (tocar abre a ficha).
 • No painel do gestor, o seletor do topo escolhe de qual vendedor ver o relatório (ou Todos).

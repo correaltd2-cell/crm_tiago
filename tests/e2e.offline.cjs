@@ -274,6 +274,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   check('relatórios: venda de hoje 594,50', rel.includes('594,50'));
   check('relatórios: rede Clamed agrupada', rel.includes('Clamed'));
   check('relatórios: contador de visitas do dia', rel.includes('atendidos') || rel.includes('Visitas:'));
+  check('relatórios: contador de novos clientes (15%)', rel.includes('Novos clientes') && rel.includes('1 novo(s) cliente(s)'));
   await page.locator('.ns-overlay').last().locator('.btn-icon').first().click();
   await page.waitForTimeout(200);
 
