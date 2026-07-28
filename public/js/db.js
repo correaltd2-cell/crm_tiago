@@ -146,10 +146,14 @@
   const listeners = [];
   function notify() { listeners.forEach(fn => { try { fn(DB.status()); } catch (e) {} }); }
 
+  // Leituras custam cota do plano gratuito do Firestore: puxadas completas
+  // são raras (na abertura, ao voltar ao app e a cada 1 h) e nunca a menos
+  // de 60 s da anterior.
   let ultimaPuxada = 0;
+  const PODE_PUXAR = () => Date.now() - ultimaPuxada > 60000;
   async function trySync(forcarPull) {
     if (syncing || !navigator.onLine || !configured()) { notify(); return; }
-    if (!outbox.length && !forcarPull && Date.now() - ultimaPuxada < 20000) { notify(); return; }
+    if (!outbox.length && !(forcarPull && PODE_PUXAR())) { notify(); return; }
     syncing = true; notify();
     const erros = lsGet('ns_sync_erros', []);
     try {
@@ -168,7 +172,7 @@
         }
         outbox.shift(); lsSet('ns_outbox', outbox);
       }
-      if (forcarPull || Date.now() - ultimaPuxada > 20000) await pullAll();
+      if (forcarPull && PODE_PUXAR()) await pullAll();
     } catch (e) { /* offline ou instabilidade — fica na fila */ }
     syncing = false; notify();
   }
@@ -235,6 +239,12 @@
     // configurações no Firestore em lote (requer conexão)
     async seedInicial(seed) {
       if (!navigator.onLine || !configured()) throw new Error('Necessário estar online e configurado.');
+      // trava de segurança: se o banco JÁ tem dados, nunca regravar por cima
+      const jaInstalado = await fsListAll('representantes');
+      if (jaInstalado.length) {
+        await pullAll();
+        throw new Error('O sistema JÁ ESTÁ INSTALADO — os dados foram baixados agora. É só fazer login.');
+      }
       await fsBatchSet('representantes', seed.representantes);
       await fsBatchSet('produtos', seed.produtos);
       await fsBatchSet('configuracoes', seed.configuracoes);
@@ -257,7 +267,9 @@
   window.addEventListener('online', () => trySync(true));
   setInterval(() => { if (outbox.length) trySync(); }, 30000);
   // atualização periódica mesmo sem escrituras (novos dados de outros aparelhos)
-  setInterval(() => { trySync(true); }, 300000);
+  setInterval(() => { trySync(true); }, 3600000);
+  // ao voltar para o app (troca de aba/celular desbloqueado), atualiza uma vez
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) trySync(true); });
 
   window.NSDB = DB;
 })();
