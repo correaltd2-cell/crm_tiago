@@ -182,7 +182,9 @@
       const nome = (p.nome || '') + (p.variacao ? ' (' + p.variacao + ')' : '');
       let x = M;
       const rowVals = {
-        codigo: p.codigo || '', nome, tamanho: it.tamanho, placas: it.placas,
+        codigo: p.codigo || '', nome,
+        tamanho: it.tamanho === 'AV' ? 'Avul.' : it.tamanho,
+        placas: it.tamanho === 'AV' ? '—' : it.placas,
         unid_colocadas: it.unid_colocadas, dev_display: it.dev_display,
         dev_quebrada: it.dev_quebrada, unid_vendidas: it.unid_vendidas,
         preco_unit: it.preco_unit, valor_total: it.valor_total
@@ -317,8 +319,10 @@
         const nome = (p.codigo ? p.codigo + ' ' : '') + (p.nome || '') +
           (p.variacao ? ' (' + p.variacao + ')' : '');
         for (const l of wrap(nome, 7, CIN, true)) { t(l, 7, { b: true }); dn(9); }
-        t(it.placas + ' placa' + (it.placas > 1 ? 's' : '') + ' ' + it.tamanho + ' = ' +
-          it.unid_colocadas + ' un colocadas', 6.5); dn(8);
+        t(it.tamanho === 'AV'
+          ? it.unid_colocadas + ' un avulsas'
+          : it.placas + ' placa' + (it.placas > 1 ? 's' : '') + ' ' + it.tamanho + ' = ' +
+            it.unid_colocadas + ' un colocadas', 6.5); dn(8);
         if (it.dev_display || it.dev_quebrada) {
           t('Dev display: ' + it.dev_display + ' · Quebrada: ' + it.dev_quebrada, 6.5); dn(8);
         }

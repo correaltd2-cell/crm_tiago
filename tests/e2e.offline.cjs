@@ -112,8 +112,8 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page.waitForTimeout(250);
   check('não deixa lançar pedido sem o prazo (condição de pagamento)',
     !(await page.isVisible('text=+ Adicionar produto')));
-  // tabela Lucro Presumido → preço 14,50
-  await page.selectOption('.ns-modal select', '30 dias');
+  // tabela Lucro Presumido → preço 14,50 (prazo é texto livre, personalizado)
+  await page.fill('.ns-modal input[placeholder*="Escreva o prazo"]', '30 dias');
   await page.click('text=Tabela Lucro Presumido');
   await page.click('text=+ Adicionar produto');
   const modalItem = page.locator('.ns-overlay').last().locator('.ns-modal');
@@ -129,6 +129,24 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   check('cálculo: 48 − 5 − 2 = 41 vendidas', live.includes('41'));
   check('valor 41 × 14,50 = 594,50', live.replace(/ /g, ' ').includes('594,50'));
   await modalItem.locator('button:has-text("Adicionar")').click();
+
+  // venda avulsa: unidades sem placa inteira (3 un × 14,50 = 43,50)
+  await page.click('text=+ Adicionar produto');
+  const modalAv = page.locator('.ns-overlay').last().locator('.ns-modal');
+  await modalAv.waitFor();
+  await modalAv.locator('.item-lista').first().click();
+  await modalAv.locator('button:has-text("Avulso")').click();
+  await modalAv.locator('.stepper').first().locator('button', { hasText: '+' }).click();
+  await modalAv.locator('.stepper').first().locator('button', { hasText: '+' }).click();
+  const liveAv = (await modalAv.locator('.calc-live').textContent()).replace(/ /g, ' ');
+  check('avulso: 3 unidades × 14,50 = 43,50', liveAv.includes('43,50'));
+  await modalAv.locator('button:has-text("Adicionar")').click();
+  await page.waitForTimeout(150);
+  check('item avulso entra no pedido como unidades', (await page.locator('.card-item').count()) === 2 &&
+    (await page.locator('.card-item').nth(1).textContent()).includes('Avulso · 3 un'));
+  // remove o avulso para manter os totais do cenário
+  await page.locator('.card-item').nth(1).locator('.btn-icon').click();
+  await page.waitForTimeout(150);
 
   await page.click('text=Conferir →');
   const conf = await page.textContent('.ns-modal');

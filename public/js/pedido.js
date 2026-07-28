@@ -55,25 +55,22 @@
     }
 
     // ---- Passo 2: tabela de preço (obrigatória) + condição ----
+    // Prazo é texto livre: cada cliente tem a sua condição ("7 dias",
+    // "30 dias", "30/60"…). O último prazo usado vem preenchido.
     function passoTabela() {
       const cli = DB.byId('clientes', ped.cliente_id);
-      let conds = DB.config('condicoes_pagamento', []).slice();
-      // prazo próprio do cliente entra na lista mesmo se não for uma opção padrão
-      if (cli.condicao_pagamento_padrao && !conds.includes(cli.condicao_pagamento_padrao))
-        conds.unshift(cli.condicao_pagamento_padrao);
-      const escolhido = ped.condicao_pagamento || cli.condicao_pagamento_padrao || '';
-      const selCond = el('select', { class: 'input big' },
-        el('option', { value: '' }, 'Escolha o prazo… (obrigatório)'),
-        conds.map(c => el('option', { value: c, selected: escolhido === c ? '' : null },
-          c + (c === cli.condicao_pagamento_padrao ? ' (prazo deste cliente)' : ''))));
+      const prazoIn = el('input', {
+        class: 'input big', placeholder: 'Escreva o prazo… ex.: 7 dias, 30 dias, 30/60',
+        value: ped.condicao_pagamento || cli.condicao_pagamento_padrao || ''
+      });
       const btn = (tab, rot, desc) => el('button', {
         class: 'card-escolha' + (ped.tabela === tab ? ' ativo' : ''),
         onclick: () => {
-          if (!selCond.value) {
-            selCond.focus();
-            return toast('Escolha a CONDIÇÃO DE PAGAMENTO (prazo) antes de continuar.', 'erro');
+          if (!prazoIn.value.trim()) {
+            prazoIn.focus();
+            return toast('Escreva a CONDIÇÃO DE PAGAMENTO (prazo) antes de continuar.', 'erro');
           }
-          ped.tabela = tab; ped.condicao_pagamento = selCond.value; passoItens();
+          ped.tabela = tab; ped.condicao_pagamento = prazoIn.value.trim(); passoItens();
         }
       }, el('strong', null, rot), el('span', { class: 'sub' }, desc));
       corpo(el('div', null,
@@ -83,7 +80,9 @@
           btn('simples', 'Tabela Simples', 'Preços da tabela Simples para todos os itens'),
           btn('lucro', 'Tabela Lucro Presumido', 'Preços Lucro Presumido para todos os itens')),
         el('h3', { class: 'mt16' }, 'Condição de pagamento (prazo) *'),
-        selCond,
+        prazoIn,
+        cli.condicao_pagamento_padrao ? el('p', { class: 'sub mt4' },
+          'Último prazo deste cliente: ' + cli.condicao_pagamento_padrao) : null,
         el('button', { class: 'btn-link mt8', onclick: () => { ped.cliente_id = null; passoCliente(); } }, '← trocar cliente')));
     }
 
@@ -102,7 +101,10 @@
               el('strong', null, (p.codigo ? p.codigo + ' · ' : '') + nomeProd(p)),
               el('button', { class: 'btn-icon', onclick: () => { ped.itens.splice(idx, 1); render(); } }, '🗑')),
             el('div', { class: 'sub' },
-              `Placa ${it.tamanho} ×${it.placas} = ${it.unid_colocadas} un · dev.display ${it.dev_display} · quebrada ${it.dev_quebrada}`),
+              (it.tamanho === 'AV'
+                ? `Avulso · ${it.unid_colocadas} un`
+                : `Placa ${it.tamanho} ×${it.placas} = ${it.unid_colocadas} un`) +
+              ` · dev.display ${it.dev_display} · quebrada ${it.dev_quebrada}`),
             el('div', { class: 'row space mt4' },
               el('span', null, `${it.unid_vendidas} vendidas × ${C.fmtMoney(it.preco_unit)}`),
               el('strong', null, C.fmtMoney(it.valor_total))),
@@ -146,10 +148,10 @@
                 const semPreco = preco == null;
                 const semUnid = p.unid_placa_p == null || p.unid_placa_g == null;
                 lista.appendChild(el('button', {
-                  class: 'item-lista' + (semPreco || semUnid ? ' desabilitado' : ''),
+                  class: 'item-lista' + (semPreco ? ' desabilitado' : ''),
                   onclick: () => {
-                    if (semUnid) return toast('Produto sem unidades por placa — cadastre no Admin → Produtos.', 'erro');
                     if (semPreco) return toast('Produto sem preço na tabela escolhida — cadastre no Admin → Produtos.', 'erro');
+                    if (semUnid) { item.tamanho = 'AV'; toast('Produto sem placas cadastradas — lançando por unidade avulsa.'); }
                     item.produto_id = p.id; formQtde();
                   }
                 },
@@ -166,6 +168,9 @@
         function formQtde() {
           const p = DB.byId('produtos', item.produto_id);
           const preco = precoDe(p, ped.tabela);
+          // AV = venda avulsa (por unidade, sem placa inteira)
+          const avulso = item.tamanho === 'AV';
+          const uppDe = () => avulso ? 1 : (item.tamanho === 'P' ? p.unid_placa_p : p.unid_placa_g);
           box.innerHTML = '';
           const resumo = el('div', { class: 'calc-live mt8' });
           const stepper = (label, key, min) => {
@@ -181,17 +186,19 @@
                 val,
                 el('button', { class: 'btn-step', onclick: () => { item[key] = (item[key] || 0) + 1; val.value = item[key]; atualiza(); } }, '+')));
           };
-          const tamBtns = ['P', 'G'].map(t => el('button', {
+          const tamBtn = (t, rot, indisponivel) => el('button', {
             class: 'btn-tam' + (item.tamanho === t ? ' ativo' : ''),
-            onclick: (e) => {
-              item.tamanho = t;
-              tamBtns.forEach(b => b.classList.toggle('ativo', b.textContent.startsWith(t)));
-              atualiza();
-            }
-          }, `${t} (${t === 'P' ? p.unid_placa_p : p.unid_placa_g} un)`));
+            disabled: indisponivel ? '' : null,
+            onclick: () => { item.tamanho = t; formQtde(); }
+          }, rot);
+          const tamBtns = [
+            tamBtn('P', `P (${p.unid_placa_p ?? '—'} un)`, p.unid_placa_p == null),
+            tamBtn('G', `G (${p.unid_placa_g ?? '—'} un)`, p.unid_placa_g == null),
+            tamBtn('AV', 'Avulso (un)', false)
+          ];
 
           function atualiza() {
-            const upp = item.tamanho === 'P' ? p.unid_placa_p : p.unid_placa_g;
+            const upp = uppDe();
             const r = C.calcItem({
               placas: item.placas, unidPorPlaca: upp,
               devDisplay: item.dev_display, devQuebrada: item.dev_quebrada, precoUnit: preco
@@ -211,7 +218,7 @@
             el('div', { class: 'sub' }, `Preço (${ped.tabela === 'lucro' ? 'Lucro Presumido' : 'Simples'}): ${C.fmtMoney(preco)}`),
             el('div', { class: 'row gap8 mt12' }, tamBtns),
             el('div', { class: 'col gap8 mt12' },
-              stepper('Placas deixadas', 'placas', 1),
+              stepper(avulso ? 'Unidades avulsas' : 'Placas deixadas', 'placas', 1),
               stepper('Devolvida — Display', 'dev_display', 0),
               stepper('Devolvida — Quebrada', 'dev_quebrada', 0)),
             resumo,
@@ -219,7 +226,7 @@
               el('button', { class: 'btn btn-sec grow', onclick: selecionarProduto }, '← Produto'),
               el('button', {
                 class: 'btn grow', onclick: () => {
-                  const upp = item.tamanho === 'P' ? p.unid_placa_p : p.unid_placa_g;
+                  const upp = uppDe();
                   const r = C.calcItem({
                     placas: item.placas, unidPorPlaca: upp,
                     devDisplay: item.dev_display, devQuebrada: item.dev_quebrada, precoUnit: preco
