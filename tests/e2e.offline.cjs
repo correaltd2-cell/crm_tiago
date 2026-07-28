@@ -107,13 +107,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page.click('.ns-modal .item-lista');
   check('seleção de cliente carrega dados', await page.isVisible('text=Tabela de preço do pedido'));
 
-  // sem prazo não avança
-  await page.click('text=Tabela Lucro Presumido');
-  await page.waitForTimeout(250);
-  check('não deixa lançar pedido sem o prazo (condição de pagamento)',
-    !(await page.isVisible('text=+ Adicionar produto')));
-  // tabela Lucro Presumido → preço 14,50 (prazo é texto livre, personalizado)
-  await page.fill('.ns-modal input[placeholder*="Escreva o prazo"]', '30 dias');
+  // tabela Lucro Presumido → preço 14,50 (o prazo agora é pedido só na conferência)
   await page.click('text=Tabela Lucro Presumido');
   await page.click('text=+ Adicionar produto');
   const modalItem = page.locator('.ns-overlay').last().locator('.ns-modal');
@@ -151,6 +145,12 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page.click('text=Conferir →');
   const conf = await page.textContent('.ns-modal');
   check('conferência mostra tabela e total', conf.includes('Lucro Presumido') && conf.replace(/ /g, ' ').includes('594,50'));
+
+  // prazo obrigatório — agora no FINAL (conferência), não no início
+  await page.click('text=Assinar \u2192');
+  await page.waitForTimeout(250);
+  check('não deixa assinar sem o prazo (condição de pagamento)', !(await page.isVisible('.assinatura-cv')));
+  await page.fill('.ns-modal input[placeholder*="Prazo"]', '30 dias');
 
   // assinatura no canvas
   await page.click('text=Assinar →');
@@ -265,6 +265,18 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   check('dashboard: comissão gerada 89,18', dash.includes('89,18'));
   check('dashboard: ranking de linhas (Argolinhas)', dash.includes('Argolinhas'));
 
+  // relatórios: venda do dia, visitas e agrupamento por rede
+  await page.click('#tabs button[data-v=mais]');
+  await page.waitForTimeout(200);
+  await page.click('text=\ud83d\udcca Relatórios');
+  await page.waitForSelector('.ns-overlay');
+  const rel = (await page.locator('.ns-overlay').last().textContent()).replace(/\u00a0/g, ' ');
+  check('relatórios: venda de hoje 594,50', rel.includes('594,50'));
+  check('relatórios: rede Clamed agrupada', rel.includes('Clamed'));
+  check('relatórios: contador de visitas do dia', rel.includes('atendidos') || rel.includes('Visitas:'));
+  await page.locator('.ns-overlay').last().locator('.btn-icon').first().click();
+  await page.waitForTimeout(200);
+
   // classe A/B/C: tocar em C ajusta ciclo para 90 dias
   await page.click('#tabs button[data-v=clientes]');
   await page.waitForTimeout(200);
@@ -326,7 +338,6 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page.waitForSelector('.ns-modal');
   await page.fill('.ns-modal input', 'farm');
   await page.click('.ns-modal .item-lista');
-  await page.fill('.ns-modal input[placeholder*="Escreva o prazo"]', '30 dias');
   await page.click('text=Tabela Lucro Presumido');
   await page.click('text=+ Adicionar produto');
   const modalRet = page.locator('.ns-overlay').last().locator('.ns-modal');
@@ -343,6 +354,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page.click('text=Conferir \u2192');
   const confRet = (await page.textContent('.ns-modal')).replace(/\u00a0/g, ' ');
   check('confer\u00eancia mostra pedido negativo com aviso de cr\u00e9dito', confRet.includes('-R$ 58,00') && confRet.includes('CR\u00c9DITO'));
+  await page.fill('.ns-modal input[placeholder*="Prazo"]', '30 dias');
   await page.click('text=Assinar →');
   const cvR = page.locator('.assinatura-cv');
   const bbR = await cvR.boundingBox();

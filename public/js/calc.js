@@ -198,6 +198,55 @@
     return null;
   }
 
+  // ---------- Metas (mês → dia útil, % batida e projeção de ritmo) ----------
+  function diasUteisDoMes(mesISO) {
+    const [a, m] = mesISO.split('-').map(Number);
+    let n = 0;
+    const d = new Date(a, m - 1, 1);
+    while (d.getMonth() === m - 1) {
+      const dw = d.getDay();
+      if (dw >= 1 && dw <= 5) n++;
+      d.setDate(d.getDate() + 1);
+    }
+    return n;
+  }
+  // dias úteis do mês decorridos até o dia (inclusive)
+  function diasUteisAte(diaISO) {
+    const [a, m, dd] = diaISO.split('-').map(Number);
+    let n = 0;
+    for (let i = 1; i <= dd; i++) {
+      const dw = new Date(a, m - 1, i).getDay();
+      if (dw >= 1 && dw <= 5) n++;
+    }
+    return n;
+  }
+  function calcMeta({ metaMes, hoje, vendidoMes, metaDiaManual }) {
+    const uteisTotal = diasUteisDoMes(hoje.slice(0, 7));
+    const uteisDecorridos = Math.max(1, diasUteisAte(hoje));
+    const metaDia = (metaDiaManual > 0) ? metaDiaManual
+      : round2((metaMes || 0) / (uteisTotal || 1));
+    const pct = metaMes > 0 ? round2(vendidoMes / metaMes * 100) : 0;
+    const ritmoDia = round2(vendidoMes / uteisDecorridos);
+    const projecao = round2(ritmoDia * uteisTotal);
+    const projecaoPct = metaMes > 0 ? round2(projecao / metaMes * 100) : 0;
+    return { uteisTotal, uteisDecorridos, metaDia, pct, ritmoDia, projecao, projecaoPct };
+  }
+
+  // ---------- Rede do cliente (para relatórios por rede) ----------
+  function redeDoCliente(c) {
+    if (c && c.rede) return c.rede;
+    const n = String((c && c.nome) || '');
+    const padroes = [
+      [/clamed/i, 'Clamed'], [/agafarma/i, 'Agafarma'], [/s[ãa]o rafael/i, 'São Rafael'],
+      [/asfar/i, 'Asfar'], [/fz\s*farma/i, 'FZ Farma'], [/farm[áa]cias?\s+erechim/i, 'Rede Erechim'],
+      [/vida farm/i, 'Vida Farmácias'], [/associada/i, 'Associadas']
+    ];
+    for (const [re, nome] of padroes) if (re.test(n)) return nome;
+    const m = n.match(/rede\s+([A-Za-zÀ-ú0-9&.]+)/i);
+    if (m) return 'Rede ' + m[1];
+    return 'Independente';
+  }
+
   // ---------- CSV ----------
   function parseCSV(texto) {
     const sep = (texto.split('\n')[0].match(/;/g) || []).length >=
@@ -234,6 +283,7 @@
     DIAS_SEMANA, normDia, mesmoDia, clienteJaComprou, classeRank,
     haversineKm, matrizHaversine, nearestNeighbor, comprimentoRota, doisOpt,
     otimizarRota, detourInsercao, decidirPernoite, sugestaoFrequencia,
+    diasUteisDoMes, diasUteisAte, calcMeta, redeDoCliente,
     parseCSV, toCSV, CICLOS
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

@@ -54,24 +54,12 @@
       setTimeout(() => busca.focus(), 50);
     }
 
-    // ---- Passo 2: tabela de preço (obrigatória) + condição ----
-    // Prazo é texto livre: cada cliente tem a sua condição ("7 dias",
-    // "30 dias", "30/60"…). O último prazo usado vem preenchido.
+    // ---- Passo 2: tabela de preço (o prazo fica para a conferência) ----
     function passoTabela() {
       const cli = DB.byId('clientes', ped.cliente_id);
-      const prazoIn = el('input', {
-        class: 'input big', placeholder: 'Escreva o prazo… ex.: 7 dias, 30 dias, 30/60',
-        value: ped.condicao_pagamento || cli.condicao_pagamento_padrao || ''
-      });
       const btn = (tab, rot, desc) => el('button', {
         class: 'card-escolha' + (ped.tabela === tab ? ' ativo' : ''),
-        onclick: () => {
-          if (!prazoIn.value.trim()) {
-            prazoIn.focus();
-            return toast('Escreva a CONDIÇÃO DE PAGAMENTO (prazo) antes de continuar.', 'erro');
-          }
-          ped.tabela = tab; ped.condicao_pagamento = prazoIn.value.trim(); passoItens();
-        }
+        onclick: () => { ped.tabela = tab; passoItens(); }
       }, el('strong', null, rot), el('span', { class: 'sub' }, desc));
       corpo(el('div', null,
         cabecalhoCliente(cli),
@@ -79,10 +67,6 @@
         el('div', { class: 'col gap8 mt8' },
           btn('simples', 'Tabela Simples', 'Preços da tabela Simples para todos os itens'),
           btn('lucro', 'Tabela Lucro Presumido', 'Preços Lucro Presumido para todos os itens')),
-        el('h3', { class: 'mt16' }, 'Condição de pagamento (prazo) *'),
-        prazoIn,
-        cli.condicao_pagamento_padrao ? el('p', { class: 'sub mt4' },
-          'Último prazo deste cliente: ' + cli.condicao_pagamento_padrao) : null,
         el('button', { class: 'btn-link mt8', onclick: () => { ped.cliente_id = null; passoCliente(); } }, '← trocar cliente')));
     }
 
@@ -249,12 +233,22 @@
       }
     }
 
-    // ---- Passo 4: conferência ----
+    // ---- Passo 4: conferência (prazo obrigatório entra AQUI, no final) ----
     function passoConferencia() {
       const cli = DB.byId('clientes', ped.cliente_id);
       const rep = sessao().rep;
       const tot = C.calcTotais(ped.itens);
       const obsIn = el('textarea', { class: 'input', rows: '2', placeholder: 'Observações do pedido (opcional)' }, ped.obs || '');
+      const prazoIn = el('input', {
+        class: 'input big', placeholder: 'Prazo… ex.: 7 dias, 30 dias, 30/60',
+        value: ped.condicao_pagamento || cli.condicao_pagamento_padrao || ''
+      });
+      const chkDisplay = el('input', { type: 'checkbox' });
+      if (ped.deixou_display) chkDisplay.checked = true;
+      const materialIn = el('input', {
+        class: 'input', placeholder: 'Material deixado (ex.: 1 display de balcão, 2 placas mostruário)',
+        value: ped.material_deixado || ''
+      });
       const linhas = ped.itens.map(it => {
         const p = DB.byId('produtos', it.produto_id);
         return `<tr><td>${escH(p.codigo || '')}</td><td>${escH(nomeProd(p))}</td><td class="c">${it.tamanho}</td>` +
@@ -277,10 +271,31 @@
         el('div', { class: 'total-bar mt8' },
           el('span', null, `${tot.colocadas} colocadas · ${tot.devDisplay} display · ${tot.devQuebrada} quebradas · ${tot.vendidas} vendidas`),
           el('strong', null, C.fmtMoney(tot.valor))),
+        el('h3', { class: 'mt12' }, 'Condição de pagamento (prazo) *'),
+        prazoIn,
+        cli.condicao_pagamento_padrao ? el('p', { class: 'sub mt4' },
+          'Último prazo deste cliente: ' + cli.condicao_pagamento_padrao) : null,
+        el('h3', { class: 'mt12' }, 'Material deixado no cliente'),
+        el('label', { class: 'row gap8 mt4' }, chkDisplay, el('span', null, '🪧 Deixei display/mostruário neste cliente')),
+        el('div', { class: 'mt4' }, materialIn),
         el('div', { class: 'mt8' }, obsIn),
         el('div', { class: 'row gap8 mt12' },
-          el('button', { class: 'btn btn-sec grow', onclick: () => { ped.obs = obsIn.value; passoItens(); } }, '← Itens'),
-          el('button', { class: 'btn grow', onclick: () => { ped.obs = obsIn.value; passoAssinatura(); } }, 'Assinar →'))));
+          el('button', { class: 'btn btn-sec grow', onclick: () => { guardar(); passoItens(); } }, '← Itens'),
+          el('button', { class: 'btn grow', onclick: () => {
+            guardar();
+            if (!ped.condicao_pagamento) {
+              prazoIn.focus();
+              return toast('Escreva a CONDIÇÃO DE PAGAMENTO (prazo) antes de assinar.', 'erro');
+            }
+            passoAssinatura();
+          } }, 'Assinar →'))));
+
+      function guardar() {
+        ped.obs = obsIn.value;
+        ped.condicao_pagamento = prazoIn.value.trim();
+        ped.deixou_display = chkDisplay.checked;
+        ped.material_deixado = materialIn.value.trim();
+      }
     }
 
     // ---- Passo 5: assinatura ----
@@ -362,6 +377,7 @@
       DB.insert('pedidos', {
         id: ped.id, numero, cliente_id: ped.cliente_id, representante_id: rep.id,
         data_pedido: ped.data, tabela: ped.tabela, condicao_pagamento: ped.condicao_pagamento,
+        deixou_display: !!ped.deixou_display, material_deixado: ped.material_deixado || null,
         status: 'rascunho', observacoes: ped.obs || null
       });
       for (const it of ped.itens) DB.insert('pedido_itens', Object.assign({ pedido_id: ped.id }, it));
@@ -409,6 +425,9 @@
         ultima_visita_em: ped.data, proxima_visita_prevista: proxima
       };
       if (tot.valor > 0) patchCli.ultimo_pedido_em = ped.data;
+      // material deixado fica marcado na ficha (para relatórios e recolha futura)
+      if (ped.deixou_display) patchCli.display_no_cliente = true;
+      if (ped.material_deixado) patchCli.material_no_cliente = ped.material_deixado;
       DB.update('clientes', cli.id, patchCli);
       DB.all('pendencias').filter(p => p.cliente_id === cli.id && !p.resolvida_em)
         .forEach(p => DB.update('pendencias', p.id, { resolvida_em: agora }));

@@ -21,6 +21,8 @@ ABA HOJE (rota do dia)
 • A lista mostra os clientes programados para o dia, na ordem de visita, com barra de progresso (quantos já visitou).
 • BOTÃO "OTIMIZAR ROTA": calcula a MELHOR ORDEM de visita entre os clientes do dia, para rodar menos quilômetros. Mostra o total de km, o tempo estimado e o custo (km × custo por km do vendedor). Também tenta encaixar na rota clientes pendentes (que ficaram para trás) e atrasados, se o desvio for pequeno. Com a chave do Google Maps configurada ele usa distâncias reais de estrada; sem ela, usa uma estimativa.
 • BOTÃO "ESTOU AQUI": grava a posição do GPS no fim do dia; a rota de amanhã parte desse ponto (pernoite), em vez da base.
+• "✎ TROCAR PARTIDA": define de que cidade a rota do dia visto vai partir, SEM precisar de GPS — serve para simular ("amanhã durmo em Joaçaba"): abra o dia no seletor, toque em trocar partida, escolha a cidade na lista e otimize a rota. Para desfazer, toque em "Usar a base".
+• VISITAS FORA DA ROTA: se atender um cliente que não estava na rota do dia (pelo pedido ou pelo botão "✔ Registrar visita hoje" na ficha), ele conta no total do dia — a barra mostra, por exemplo, "3 de 6 da rota + 4 fora da rota = 7 atendidos".
 • Em cada cliente do dia: 🗺 GPS (abre o Google Maps já com o destino), 👁 Ficha, 🧾 Pedido (abre o talão), ✔ Sem pedido (registra que visitou mas não vendeu), ✖ Não realizada (escolhe o motivo: fechado, ausente, sem tempo ou reagendado — o cliente entra na fila para ser reencaixado noutro dia e a rota é recalculada).
 • Sugestão de pernoite: aparece quando o último cliente fica a mais de 150 km da base e dormir fora economiza mais de 60 km.
 • CLIENTE QUE FICOU PARA TRÁS: ao marcar "Não realizada", o cliente entra na FILA DE REENCAIXE e o sistema tenta encaixá-lo sozinho nas rotas dos próximos dias, quando o desvio for pequeno (aparece com 🔁 na lista). O dia NUNCA passa do limite de visitas — se o dia seguinte já está cheio, o pendente espera um dia com vaga. Quem está estourando o prazo tem prioridade.
@@ -37,7 +39,7 @@ ABA CLIENTES (farol de cores)
 FAZER UM PEDIDO (talão digital)
 1. Toque no botão dourado redondo (ou 🧾 Pedido no cliente do dia).
 2. Escolha o cliente (busque por nome, cidade ou CNPJ).
-3. ESCREVA primeiro a CONDIÇÃO DE PAGAMENTO (o prazo — OBRIGATÓRIA, o sistema não deixa continuar sem ela) e depois escolha a TABELA DE PREÇO: Simples ou Lucro Presumido (define os preços do pedido inteiro). O prazo é um campo de texto livre: escreva como negociar com o cliente — "7 dias", "30 dias", "35 dias", "45 dias", "30/60", o que for. CADA CLIENTE TEM SEU PRAZO: o prazo usado no pedido fica gravado como o prazo daquele cliente e já vem preenchido nas próximas vendas; é só apagar e escrever outro se ele negociar diferente.
+3. Escolha a TABELA DE PREÇO: Simples ou Lucro Presumido (define os preços do pedido inteiro). A CONDIÇÃO DE PAGAMENTO (prazo) é preenchida NO FINAL, na tela de conferência — é obrigatória para assinar, em texto livre ("7 dias", "30 dias", "35 dias", "30/60", o que negociar). CADA CLIENTE TEM SEU PRAZO: o prazo usado fica gravado como o prazo daquele cliente e já vem preenchido nas próximas vendas. Na conferência também dá para marcar "🪧 Deixei display/mostruário" e anotar o MATERIAL DEIXADO no cliente — isso fica na ficha e no relatório de displays.
 3b. RECOLHER PEÇAS ANTIGAS (CRÉDITO): dentro do próprio pedido, se for só recolher peças de uma placa antiga sem deixar nada novo, lance o produto com 0 PLACAS e informe as unidades recolhidas na devolução — o item fica NEGATIVO e desconta do total do pedido. Se o pedido inteiro ficar negativo, o valor vira CRÉDITO do cliente: o recibo sai como "Recolhimento — Crédito do Cliente" e no Financeiro entra como comissão negativa (abate do total do mês). Dá para misturar no mesmo talão: produtos vendidos normais + produtos só recolhidos.
 4. Adicione os produtos: escolha o produto e como vender — placa P, placa G ou AVULSO. Placa: informe quantas placas deixou (cada produto tem sua quantidade de unidades por placa). AVULSO: para quando o cliente não quer a placa inteira e leva só algumas peças — toque no botão "Avulso (un)" e informe a quantidade de unidades. Depois as devoluções em duas colunas: DISPLAY (peças devolvidas boas) e QUEBRADA (peças com defeito). O sistema calcula sozinho: colocadas = placas × unidades da placa (ou as unidades avulsas); VENDIDAS = colocadas − display − quebradas; valor = vendidas × preço da tabela.
 5. Confira o resumo, escreva o NOME DE QUEM ASSINA (obrigatório — o sistema não conclui sem ele) e colha a ASSINATURA do cliente na tela (dedo ou caneta; dá para limpar e refazer). O nome sai impresso no talão junto da assinatura.
@@ -52,6 +54,13 @@ COMISSÕES (regras)
 
 ABA PAINEL (números do mês)
 Faturamento (vendido), comissão gerada, A RECEBER no mês, despesas, líquido, km rodado, custo real por km, visitas hoje/mês, conversão de visitas em pedidos, clientes ativos, atrasados e vencendo, ranking das linhas mais vendidas e alertas de ciclo (tocar abre a ficha).
+
+MAIS → RELATÓRIOS (📊)
+• VENDA DO DIA: valor vendido hoje, quantos pedidos e as visitas do dia (na rota + fora da rota = total atendidos).
+• METAS: o gestor cadastra a META DO MÊS (ex.: R$ 200.000). O sistema divide pelos DIAS ÚTEIS (segunda a sexta) e mostra a meta do dia, a % da meta já batida e a PROJEÇÃO: "nesse ritmo o mês fecha em R$ X (Y% da meta)". Dá para definir uma meta do dia própria, se quiser um valor diferente da divisão automática.
+• POR REDE: vendas do mês agrupadas por rede (Clamed, Agafarma, São Rafael, FZ Farma, independentes…), com nº de clientes e pedidos de cada rede.
+• DISPLAYS: lista de clientes marcados com display/material deixado (tocar abre a ficha).
+• No painel do gestor, o seletor do topo escolhe de qual vendedor ver o relatório (ou Todos).
 
 MAIS → FINANCEIRO
 • Navegue pelos meses com ← e →. Mostra: COMISSÕES A RECEBER no mês (com cliente, data da venda, % e marcação Clamed), DESPESAS do mês e o SALDO projetado.

@@ -102,6 +102,25 @@ eq('status legado Ativo → já comprou (10%)', C.clienteJaComprou({ status_lega
 eq('seed da listagem → já comprou', C.clienteJaComprou({ seed_dias_sem_pedido: 30 }, []), true);
 eq('visita com pedido → já comprou', C.clienteJaComprou({ status_legado: 'Novo' }, [{ fez_pedido: true, valor_pedido: 100 }]), true);
 
+console.log('Metas (dias úteis, % e projeção):');
+eq('julho/2026 tem 23 dias úteis', C.diasUteisDoMes('2026-07'), 23);
+eq('úteis decorridos até 28/07 (terça)', C.diasUteisAte('2026-07-28'), 20);
+let mt = C.calcMeta({ metaMes: 200000, hoje: '2026-07-28', vendidoMes: 100000, metaDiaManual: 0 });
+eq('meta/dia útil = 200000 ÷ 23', mt.metaDia, 8695.65);
+eq('50% da meta batida', mt.pct, 50);
+eq('ritmo de 5000/dia útil', mt.ritmoDia, 5000);
+eq('nesse ritmo fecha em 115000', mt.projecao, 115000);
+eq('projeção = 57,5% da meta', mt.projecaoPct, 57.5);
+mt = C.calcMeta({ metaMes: 200000, hoje: '2026-07-28', vendidoMes: 0, metaDiaManual: 10000 });
+eq('meta do dia manual tem prioridade', mt.metaDia, 10000);
+
+console.log('Rede do cliente:');
+eq('Clamed pelo nome', C.redeDoCliente({ nome: 'Rede CLAMED PP 679 Getúlio III' }), 'Clamed');
+eq('Agafarma pelo nome', C.redeDoCliente({ nome: '[Agafarma 26 JA] Agafarma Tucunduva' }), 'Agafarma');
+eq('São Rafael pelo nome', C.redeDoCliente({ nome: 'Farmácias São Rafael Lj 08' }), 'São Rafael');
+eq('sem rede = Independente', C.redeDoCliente({ nome: 'Farmácia Menino Jesus' }), 'Independente');
+eq('campo rede tem prioridade sobre o nome', C.redeDoCliente({ rede: 'MinhaRede', nome: 'Rede CLAMED' }), 'MinhaRede');
+
 console.log('Classe A/B/C (prioridade no reencaixe):');
 eq('A antes de B, C e D por último', [{classe:'C'},{classe:'D'},{classe:'A'},{},{classe:'B'}]
   .sort((a,b) => C.classeRank(a) - C.classeRank(b)).map(c => c.classe || 'B').join(''), 'ABBCD');

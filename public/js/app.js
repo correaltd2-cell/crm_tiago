@@ -266,8 +266,13 @@
       const listaCls = listaIds.map(id => DB.byId('clientes', id)).filter(Boolean);
       doDia.forEach(c => { if (!listaCls.some(x => x.id === c.id)) listaCls.push(c); });
       const feitos = listaCls.filter(c => visitou(c.id)).length;
+      const foraRep = DB.all('visitas').filter(v => v.representante_id === rep.id &&
+        v.data_visita === dataVista && v.realizada &&
+        !listaCls.some(c => c.id === v.cliente_id)).length;
       view.appendChild(el('h3', { class: 'mt16' }, '🧑‍💼 ' + rep.nome +
-        (listaCls.length ? ` — ${feitos}/${listaCls.length} visitados` : '')));
+        (listaCls.length || foraRep
+          ? ` — ${feitos}/${listaCls.length} da rota` + (foraRep ? ` + ${foraRep} fora = ${feitos + foraRep} atendidos` : '')
+          : '')));
       if (rotaSalva)
         view.appendChild(el('div', { class: 'rota-info mt4' },
           `🛣 ${rotaSalva.distancia_total_km} km · ⏱ ~${Math.round(rotaSalva.tempo_total_min)} min` +
@@ -351,9 +356,14 @@
 
     if (ehHoje) {
       const feitos = listaCls.filter(c => visitou(c.id)).length;
+      // visitas de hoje a clientes que NÃO estão na rota do dia também contam
+      const foraRota = DB.all('visitas').filter(v => v.representante_id === rep.id &&
+        v.data_visita === dataVista && v.realizada &&
+        !listaCls.some(c => c.id === v.cliente_id)).length;
       const pct = listaCls.length ? Math.round(feitos / listaCls.length * 100) : 0;
       view.appendChild(el('div', { class: 'progresso mt8' },
-        el('div', { class: 'progresso-info' }, `${feitos} de ${listaCls.length} visitados · ${pct}%`),
+        el('div', { class: 'progresso-info' }, `${feitos} de ${listaCls.length} da rota` +
+          (foraRota ? ` + ${foraRota} fora da rota = ${feitos + foraRota} atendidos` : ' visitados') + ` · ${pct}%`),
         el('div', { class: 'progresso-barra' }, el('div', { class: 'progresso-fill', style: 'width:' + pct + '%' }))));
     }
 
@@ -365,7 +375,9 @@
     view.appendChild(el('div', { class: 'row gap8 mt8' },
       el('button', { class: 'btn grow', onclick: otimizar }, rotaSalva ? '🔄 Reotimizar rota' : '⚡ Otimizar rota'),
       ehHoje ? el('button', { class: 'btn btn-sec', onclick: estouAqui }, '📍 Estou aqui') : null));
-    if (partida) view.appendChild(el('div', { class: 'sub mt4' }, 'Partida: ' + partida.label));
+    view.appendChild(el('div', { class: 'row space mt4' },
+      el('span', { class: 'sub' }, 'Partida: ' + (partida ? partida.label : '— defina a base ou a partida')),
+      el('button', { class: 'btn-link', onclick: trocarPartida }, '✎ trocar partida')));
     if (pendentes.length || atrasados.length)
       view.appendChild(el('div', { class: 'sub mt4' },
         `Fila de reencaixe: ${pendentes.length} pendente(s), ${atrasados.length} atrasado(s) — entram na rota se o desvio compensar (prioridade A > B > C).`));
@@ -436,6 +448,55 @@
           toast(`🛏 Sugestão: pernoitar na região (volta = ${Math.round(dec.dVolta)} km; economia ~${Math.round(dec.economia)} km).`);
       }
       nav('hoje');
+    }
+
+    // Simular/definir de onde a rota deste dia parte (ex.: "amanhã durmo em
+    // Joaçaba") — grava um pernoite na véspera do dia visto, sem precisar de GPS
+    function trocarPartida() {
+      const busca = el('input', { class: 'input big', placeholder: 'Cidade de partida… ex.: Joaçaba' });
+      const lista = el('div', { class: 'lista mt8' });
+      const mp = modal(el('div', null,
+        el('h3', null, 'Partida da rota — ' + rotuloDia(diaOffset, dataVista)),
+        el('p', { class: 'sub' }, 'Escolha a cidade de onde você vai sair neste dia (ex.: onde vai pernoitar).'),
+        busca, lista,
+        el('button', {
+          class: 'btn btn-sec w100 mt8', onclick: () => {
+            const ex = DB.all('pernoites').find(p => p.representante_id === rep.id && p.data === vespera);
+            if (ex) DB.remove('pernoites', ex.id);
+            mp.fechar(); toast('Partida voltou para a base (' + (rep.cidade_base || '') + ').'); nav('hoje');
+          }
+        }, '🏠 Usar a base: ' + (rep.cidade_base || '—'))));
+      function render() {
+        const q = busca.value.trim().toLowerCase();
+        lista.innerHTML = '';
+        const porCidade = {};
+        for (const c of DB.all('clientes'))
+          if (c.lat != null && c.cidade) (porCidade[c.cidade + '|' + (c.uf || '')] = porCidade[c.cidade + '|' + (c.uf || '')] || []).push(c);
+        Object.keys(porCidade)
+          .filter(k => !q || k.toLowerCase().includes(q))
+          .sort().slice(0, 25)
+          .forEach(k => {
+            const [cid, uf] = k.split('|');
+            const cls = porCidade[k];
+            const lat = cls.reduce((s, c) => s + c.lat, 0) / cls.length;
+            const lng = cls.reduce((s, c) => s + c.lng, 0) / cls.length;
+            lista.appendChild(el('button', {
+              class: 'item-lista', onclick: () => {
+                const body = { representante_id: rep.id, data: vespera, lat, lng, local_desc: cid + (uf ? ' - ' + uf : '') + ' (partida definida)' };
+                const ex = DB.all('pernoites').find(p => p.representante_id === rep.id && p.data === vespera);
+                if (ex) DB.update('pernoites', ex.id, body); else DB.insert('pernoites', body);
+                mp.fechar();
+                toast('🛏 Partida deste dia: ' + cid + '. Toque em Otimizar rota para recalcular.');
+                nav('hoje');
+              }
+            }, el('strong', null, cid + (uf ? ' - ' + uf : '')),
+              el('span', { class: 'sub' }, cls.length + ' cliente(s) na cidade')));
+          });
+        if (!lista.children.length) lista.appendChild(el('p', { class: 'vazio' }, 'Nenhuma cidade encontrada.'));
+      }
+      busca.oninput = render;
+      render();
+      setTimeout(() => busca.focus(), 50);
     }
 
     function estouAqui() {
@@ -650,6 +711,32 @@
         el('button', { class: 'btn-mini', onclick: () => abrirGPS(c) }, '🗺 GPS (' + c.geocoding_status + ')'),
         el('button', { class: 'btn-mini', onclick: () => window.NSPedido.novo(c) }, '🧾 Novo pedido'),
         s.papel === 'gestor' ? el('button', { class: 'btn-mini', onclick: () => editarCliente(c.id) }, '✏ Editar') : null),
+      // material deixado no cliente (display/mostruário) — vira relatório
+      el('div', { class: 'row gap8 mt8' },
+        el('button', {
+          class: 'btn-mini' + (c.display_no_cliente ? ' classe-ativa' : ''),
+          onclick: (e) => {
+            const novo = !c.display_no_cliente;
+            DB.update('clientes', c.id, { display_no_cliente: novo });
+            c.display_no_cliente = novo;
+            e.currentTarget.classList.toggle('classe-ativa', novo);
+            e.currentTarget.textContent = novo ? '🪧 Display no cliente: SIM' : '🪧 Display no cliente: não';
+            toast(novo ? 'Marcado: este cliente está com display.' : 'Desmarcado: display recolhido.');
+          }
+        }, c.display_no_cliente ? '🪧 Display no cliente: SIM' : '🪧 Display no cliente: não'),
+        (!DB.all('visitas').some(v => v.cliente_id === c.id && v.data_visita === hojeISO() && v.realizada))
+          ? el('button', {
+            class: 'btn-mini', onclick: (e) => {
+              DB.insert('visitas', {
+                cliente_id: c.id, representante_id: (c.representante_id || s.rep.id),
+                data_visita: hojeISO(), realizada: true, fez_pedido: false, valor_pedido: 0
+              });
+              recalcularCicloCliente(c.id);
+              e.currentTarget.remove();
+              toast('✔ Visita de hoje registrada (conta como fora da rota se não era o dia dele).');
+            }
+          }, '✔ Registrar visita hoje') : null),
+      c.material_no_cliente ? el('div', { class: 'sub mt4' }, '📦 Material anotado: ' + c.material_no_cliente) : null,
       el('div', { class: 'row gap8 mt8' },
         el('span', { class: 'sub' }, 'Classe:'),
         ...['A', 'B', 'C', 'D'].map(cl => el('button', {
@@ -873,6 +960,7 @@
     const s = sessao();
     view.appendChild(el('h2', null, 'Mais'));
     const item = (rot, fn) => el('button', { class: 'item-lista mt8', onclick: fn }, el('strong', null, rot));
+    view.appendChild(item('📊 Relatórios — venda do dia, metas e redes', telaRelatorios));
     view.appendChild(item('💰 Financeiro — comissões a receber e despesas', telaFinanceiro));
     view.appendChild(item('📍 Geocodificar clientes', telaGeocode));
     view.appendChild(item('🎨 Aparência (cores do app)', telaAparencia));
@@ -886,6 +974,115 @@
     }
     view.appendChild(el('button', { class: 'btn-link mt16', onclick: sair }, 'Sair (' + s.eu.email + ')'));
     view.appendChild(el('p', { class: 'sub mt8' }, 'NEW STAR — App do Vendedor · offline-first · v1'));
+  }
+
+  // ---------- Relatórios: venda do dia, metas do mês/dia, redes, display ----------
+  function telaRelatorios() {
+    const s = sessao();
+    const repId = s.consolidado ? null : s.rep.id;
+    const doRep = (r) => !repId || r.representante_id === repId;
+    const wrap = el('div');
+    const m = modal(wrap, { titulo: '📊 Relatórios' + (s.consolidado ? ' — todos os vendedores' : ' — ' + s.rep.nome), full: true });
+    render();
+
+    function render() {
+      wrap.innerHTML = '';
+      const hoje = hojeISO(), mes = hoje.slice(0, 7);
+      const peds = DB.all('pedidos').filter(doRep).filter(p => p.status === 'concluido');
+      const pedsHoje = peds.filter(p => p.data_pedido === hoje);
+      const vendHoje = pedsHoje.reduce((t, p) => t + Number(p.total_valor || 0), 0);
+      const pedsMes = peds.filter(p => (p.data_pedido || '').slice(0, 7) === mes);
+      const vendMes = pedsMes.reduce((t, p) => t + Number(p.total_valor || 0), 0);
+
+      // visitas de hoje: na rota × fora da rota
+      const ciclo = C.cicloDoDia(hoje, DB.config('ciclo_inicio', '2026-01-05'));
+      const visHoje = DB.all('visitas').filter(doRep).filter(v => v.data_visita === hoje && v.realizada);
+      const naRota = visHoje.filter(v => {
+        const c = DB.byId('clientes', v.cliente_id);
+        return c && c.semana_padrao === ciclo.semana && C.mesmoDia(c.dia_semana_padrao, ciclo.diaSemana);
+      }).length;
+      const fora = visHoje.length - naRota;
+
+      // metas
+      const metaMes = Number(DB.config('meta_mes_valor', 0));
+      const metaDiaManual = Number(DB.config('meta_dia_valor', 0));
+      const mt = C.calcMeta({ metaMes, hoje, vendidoMes: vendMes, metaDiaManual });
+
+      wrap.appendChild(el('h3', null, '📅 Hoje — ' + dataBR(hoje)));
+      wrap.appendChild(el('div', { class: 'total-bar mt4' },
+        el('span', null, pedsHoje.length + ' pedido(s) hoje'),
+        el('strong', null, C.fmtMoney(vendHoje))));
+      wrap.appendChild(el('div', { class: 'sub mt4' },
+        `Visitas: ${naRota} na rota` + (fora ? ` + ${fora} fora da rota = ${visHoje.length} atendidos` : '')));
+      if (mt.metaDia > 0) {
+        const pctDia = Math.round(vendHoje / mt.metaDia * 100);
+        wrap.appendChild(el('div', { class: 'progresso mt8' },
+          el('div', { class: 'progresso-info' },
+            `Meta do dia: ${C.fmtMoney(mt.metaDia)} · vendido ${C.fmtMoney(vendHoje)} · ${pctDia}%`),
+          el('div', { class: 'progresso-barra' }, el('div', { class: 'progresso-fill', style: 'width:' + Math.min(100, pctDia) + '%' }))));
+      }
+
+      wrap.appendChild(el('h3', { class: 'mt16' }, '🎯 Meta do mês — ' + rotuloMes(mes)));
+      if (metaMes > 0) {
+        wrap.appendChild(el('div', { class: 'progresso mt4' },
+          el('div', { class: 'progresso-info' },
+            `${C.fmtMoney(vendMes)} de ${C.fmtMoney(metaMes)} · ${mt.pct}% da meta`),
+          el('div', { class: 'progresso-barra' }, el('div', { class: 'progresso-fill', style: 'width:' + Math.min(100, mt.pct) + '%' }))));
+        wrap.appendChild(el('div', { class: 'sub mt4' },
+          `${mt.uteisDecorridos} de ${mt.uteisTotal} dias úteis · ritmo de ${C.fmtMoney(mt.ritmoDia)}/dia útil`));
+        wrap.appendChild(el('div', { class: (mt.projecaoPct >= 100 ? 'sugestao' : 'aviso') + ' mt8' },
+          `📈 Nesse ritmo o mês fecha em ${C.fmtMoney(mt.projecao)} — ${mt.projecaoPct}% da meta.`));
+      } else {
+        wrap.appendChild(el('p', { class: 'sub mt4' }, 'Nenhuma meta cadastrada para o mês.'));
+      }
+      if (s.papel === 'gestor') {
+        const inMeta = el('input', { class: 'input', type: 'number', inputmode: 'decimal', placeholder: 'Meta do MÊS em R$ (ex.: 200000)', value: metaMes || '' });
+        const inMetaDia = el('input', { class: 'input', type: 'number', inputmode: 'decimal', placeholder: 'Meta do DIA em R$ (vazio = mês ÷ dias úteis)', value: metaDiaManual || '' });
+        wrap.appendChild(el('div', { class: 'col gap8 mt8' }, inMeta, inMetaDia,
+          el('button', {
+            class: 'btn w100', onclick: () => {
+              DB.upsertConfig('meta_mes_valor', Number(inMeta.value) || 0);
+              DB.upsertConfig('meta_dia_valor', Number(inMetaDia.value) || 0);
+              toast('Metas salvas!'); render();
+            }
+          }, '💾 Salvar metas')));
+      }
+
+      // por rede (mês)
+      wrap.appendChild(el('h3', { class: 'mt16' }, '🏪 Por rede — ' + rotuloMes(mes)));
+      const clientesAtivos = DB.all('clientes').filter(doRep).filter(c => c.status !== 'inativo');
+      const porRede = {};
+      for (const c of clientesAtivos)
+        (porRede[C.redeDoCliente(c)] = porRede[C.redeDoCliente(c)] || { clientes: 0, pedidos: 0, valor: 0 }).clientes++;
+      for (const p of pedsMes) {
+        const c = DB.byId('clientes', p.cliente_id);
+        const r = C.redeDoCliente(c || {});
+        porRede[r] = porRede[r] || { clientes: 0, pedidos: 0, valor: 0 };
+        porRede[r].pedidos++; porRede[r].valor += Number(p.total_valor || 0);
+      }
+      const linhas = Object.entries(porRede).sort((a, b) => b[1].valor - a[1].valor)
+        .map(([rede, d]) => `<tr><td>${escH(rede)}</td><td class="c">${d.clientes}</td>` +
+          `<td class="c">${d.pedidos}</td><td class="r"><strong>${C.fmtMoney(d.valor)}</strong></td></tr>`).join('');
+      wrap.appendChild(el('div', { class: 'tabela-scroll mt8', html:
+        `<table class="tabela"><thead><tr><th>Rede</th><th>Clientes</th><th>Pedidos</th><th>Vendido no mês</th></tr></thead>` +
+        `<tbody>${linhas}</tbody></table>` }));
+
+      // display / material deixado
+      const comDisplay = clientesAtivos.filter(c => c.display_no_cliente);
+      wrap.appendChild(el('h3', { class: 'mt16' }, '🪧 Display/material nos clientes (' + comDisplay.length + ')'));
+      if (comDisplay.length) {
+        const listaEl = el('div', { class: 'col gap8 mt8' });
+        comDisplay.slice(0, 30).forEach(c => listaEl.appendChild(el('button', {
+          class: 'item-lista', onclick: () => fichaCliente(c.id)
+        }, el('strong', null, c.nome),
+          el('span', { class: 'sub' }, [c.cidade, c.uf].filter(Boolean).join(' - ') +
+            (c.material_no_cliente ? ' · 📦 ' + c.material_no_cliente : '')))));
+        wrap.appendChild(listaEl);
+        if (comDisplay.length > 30) wrap.appendChild(el('p', { class: 'sub mt4' }, '… e mais ' + (comDisplay.length - 30) + '.'));
+      } else {
+        wrap.appendChild(el('p', { class: 'sub mt4' }, 'Nenhum cliente marcado com display no momento.'));
+      }
+    }
   }
 
   // ---------- Financeiro: comissões a receber + despesas (inclusive futuras) ----------
