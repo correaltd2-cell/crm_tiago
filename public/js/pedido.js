@@ -369,7 +369,11 @@
         pctNovo: rep.comissao_pct_novo, pctReposicao: rep.comissao_pct,
         dataPedido: ped.data, recebimentoDias: cli.recebimento_dias || 0
       });
-      const visitaHoje = DB.all('visitas').find(v => v.cliente_id === ped.cliente_id && v.data_visita === ped.data);
+      // reaproveita a visita do dia só se ela ainda não carrega OUTRO pedido:
+      // 2ª venda ao mesmo cliente no mesmo dia ganha visita própria, com
+      // comissão independente (excluir uma não apaga a comissão da outra)
+      const visitaHoje = DB.all('visitas').find(v => v.cliente_id === ped.cliente_id &&
+        v.data_visita === ped.data && (!v.pedido_id || v.pedido_id === ped.id));
       const visitaBody = {
         realizada: true, fez_pedido: true, pedido_id: ped.id, valor_pedido: tot.valor,
         comissao_pct: com.pct, comissao_valor: com.valor, comissao_recebimento_em: com.recebimentoEm
