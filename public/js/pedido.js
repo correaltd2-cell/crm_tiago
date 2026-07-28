@@ -16,6 +16,7 @@
     const ped = {
       id: DB.uuid(), cliente_id: clientePre ? clientePre.id : null,
       data: hojeISO(), tabela: null, condicao_pagamento: null,
+      tipo: 'venda', // 'venda' | 'retirada' (recolher peças antigas → crédito)
       itens: [], obs: '', assinatura: null
     };
     const m = modal(el('div'), { titulo: 'Novo Pedido', full: true, bloqueado: true });
@@ -63,25 +64,37 @@
         class: 'input big', placeholder: 'Escreva o prazo… ex.: 7 dias, 30 dias, 30/60',
         value: ped.condicao_pagamento || cli.condicao_pagamento_padrao || ''
       });
+      const retirada = ped.tipo === 'retirada';
+      const tipoBtn = (t, rot, desc) => el('button', {
+        class: 'card-escolha' + (ped.tipo === t ? ' ativo' : ''),
+        onclick: () => { ped.tipo = t; passoTabela(); }
+      }, el('strong', null, rot), el('span', { class: 'sub' }, desc));
       const btn = (tab, rot, desc) => el('button', {
         class: 'card-escolha' + (ped.tabela === tab ? ' ativo' : ''),
         onclick: () => {
-          if (!prazoIn.value.trim()) {
+          if (!retirada && !prazoIn.value.trim()) {
             prazoIn.focus();
             return toast('Escreva a CONDIÇÃO DE PAGAMENTO (prazo) antes de continuar.', 'erro');
           }
-          ped.tabela = tab; ped.condicao_pagamento = prazoIn.value.trim(); passoItens();
+          ped.tabela = tab;
+          ped.condicao_pagamento = retirada ? (prazoIn.value.trim() || 'Crédito') : prazoIn.value.trim();
+          passoItens();
         }
       }, el('strong', null, rot), el('span', { class: 'sub' }, desc));
       corpo(el('div', null,
         cabecalhoCliente(cli),
-        el('h3', { class: 'mt12' }, 'Tabela de preço do pedido'),
+        el('h3', { class: 'mt12' }, 'Tipo de operação'),
+        el('div', { class: 'col gap8 mt8' },
+          tipoBtn('venda', '💰 Venda', 'Talão normal: placas deixadas, devoluções e valor a receber'),
+          tipoBtn('retirada', '↩ Retirada de peças (crédito)',
+            'Recolher peças antigas sem venda nova — o valor vira CRÉDITO do cliente')),
+        el('h3', { class: 'mt16' }, retirada ? 'Tabela de preço das peças retiradas' : 'Tabela de preço do pedido'),
         el('div', { class: 'col gap8 mt8' },
           btn('simples', 'Tabela Simples', 'Preços da tabela Simples para todos os itens'),
           btn('lucro', 'Tabela Lucro Presumido', 'Preços Lucro Presumido para todos os itens')),
-        el('h3', { class: 'mt16' }, 'Condição de pagamento (prazo) *'),
-        prazoIn,
-        cli.condicao_pagamento_padrao ? el('p', { class: 'sub mt4' },
+        retirada ? null : el('h3', { class: 'mt16' }, 'Condição de pagamento (prazo) *'),
+        retirada ? null : prazoIn,
+        (!retirada && cli.condicao_pagamento_padrao) ? el('p', { class: 'sub mt4' },
           'Último prazo deste cliente: ' + cli.condicao_pagamento_padrao) : null,
         el('button', { class: 'btn-link mt8', onclick: () => { ped.cliente_id = null; passoCliente(); } }, '← trocar cliente')));
     }
@@ -101,12 +114,16 @@
               el('strong', null, (p.codigo ? p.codigo + ' · ' : '') + nomeProd(p)),
               el('button', { class: 'btn-icon', onclick: () => { ped.itens.splice(idx, 1); render(); } }, '🗑')),
             el('div', { class: 'sub' },
-              (it.tamanho === 'AV'
-                ? `Avulso · ${it.unid_colocadas} un`
-                : `Placa ${it.tamanho} ×${it.placas} = ${it.unid_colocadas} un`) +
-              ` · dev.display ${it.dev_display} · quebrada ${it.dev_quebrada}`),
+              it.tamanho === 'RET'
+                ? `↩ Retirada · ${it.dev_display} un recolhidas`
+                : (it.tamanho === 'AV'
+                  ? `Avulso · ${it.unid_colocadas} un`
+                  : `Placa ${it.tamanho} ×${it.placas} = ${it.unid_colocadas} un`) +
+                  ` · dev.display ${it.dev_display} · quebrada ${it.dev_quebrada}`),
             el('div', { class: 'row space mt4' },
-              el('span', null, `${it.unid_vendidas} vendidas × ${C.fmtMoney(it.preco_unit)}`),
+              el('span', null, it.tamanho === 'RET'
+                ? `crédito: ${it.dev_display} × ${C.fmtMoney(it.preco_unit)}`
+                : `${it.unid_vendidas} vendidas × ${C.fmtMoney(it.preco_unit)}`),
               el('strong', null, C.fmtMoney(it.valor_total))),
             el('button', { class: 'btn-link', onclick: () => formItem(it, idx) }, 'editar')));
         });
@@ -151,8 +168,9 @@
                   class: 'item-lista' + (semPreco ? ' desabilitado' : ''),
                   onclick: () => {
                     if (semPreco) return toast('Produto sem preço na tabela escolhida — cadastre no Admin → Produtos.', 'erro');
-                    if (semUnid) { item.tamanho = 'AV'; toast('Produto sem placas cadastradas — lançando por unidade avulsa.'); }
-                    item.produto_id = p.id; formQtde();
+                    if (semUnid) { item.tamanho = 'AV'; }
+                    item.produto_id = p.id;
+                    if (ped.tipo === 'retirada') formRetirada(); else formQtde();
                   }
                 },
                   el('strong', null, (p.codigo ? p.codigo + ' · ' : '') + nomeProd(p)),
@@ -243,7 +261,56 @@
               }, isNovo ? 'Adicionar' : 'Salvar'))));
         }
 
-        if (item.produto_id) formQtde(); else selecionarProduto();
+        // ---- retirada: recolher unidades antigas → valor negativo (crédito) ----
+        function formRetirada() {
+          const p = DB.byId('produtos', item.produto_id);
+          const preco = precoDe(p, ped.tabela);
+          box.innerHTML = '';
+          item.qtd = item.qtd || Math.max(1, -(item.unid_vendidas || -1));
+          const resumo = el('div', { class: 'calc-live mt8' });
+          const val = el('input', {
+            class: 'input num', type: 'number', inputmode: 'numeric', min: '1',
+            value: String(item.qtd),
+            oninput: () => { item.qtd = Math.max(1, parseInt(val.value, 10) || 1); atualiza(); }
+          });
+          function atualiza() {
+            const cred = C.round2(item.qtd * (Number(preco) || 0));
+            resumo.innerHTML =
+              `<div class="row space"><span>Unidades retiradas</span><strong>${item.qtd}</strong></div>` +
+              `<div class="row space destaque"><span>Crédito ao cliente</span><strong>− ${C.fmtMoney(cred)}</strong></div>`;
+          }
+          atualiza();
+          box.appendChild(el('div', null,
+            el('strong', null, (p.codigo ? p.codigo + ' · ' : '') + nomeProd(p)),
+            el('div', { class: 'sub' }, `Preço unitário (${ped.tabela === 'lucro' ? 'Lucro Presumido' : 'Simples'}): ${C.fmtMoney(preco)}`),
+            el('div', { class: 'col gap8 mt12' },
+              el('div', { class: 'stepper' },
+                el('span', { class: 'stepper-label' }, 'Unidades retiradas'),
+                el('div', { class: 'row gap4' },
+                  el('button', { class: 'btn-step', onclick: () => { item.qtd = Math.max(1, item.qtd - 1); val.value = item.qtd; atualiza(); } }, '−'),
+                  val,
+                  el('button', { class: 'btn-step', onclick: () => { item.qtd = item.qtd + 1; val.value = item.qtd; atualiza(); } }, '+')))),
+            resumo,
+            el('div', { class: 'row gap8 mt12' },
+              el('button', { class: 'btn btn-sec grow', onclick: selecionarProduto }, '← Produto'),
+              el('button', {
+                class: 'btn grow', onclick: () => {
+                  const cred = C.round2(item.qtd * (Number(preco) || 0));
+                  const feito = {
+                    id: item.id || DB.uuid(), produto_id: p.id, tamanho: 'RET',
+                    placas: 0, unid_por_placa: 0, unid_colocadas: 0,
+                    dev_display: item.qtd, dev_quebrada: 0,
+                    unid_vendidas: -item.qtd, preco_unit: preco, valor_total: -cred
+                  };
+                  if (isNovo) ped.itens.push(feito); else ped.itens[idx] = feito;
+                  mi.fechar(); render();
+                }
+              }, isNovo ? 'Adicionar' : 'Salvar'))));
+        }
+
+        if (!item.produto_id) selecionarProduto();
+        else if (ped.tipo === 'retirada' || item.tamanho === 'RET') formRetirada();
+        else formQtde();
       }
     }
 
@@ -262,6 +329,8 @@
       }).join('');
       corpo(el('div', null,
         el('h3', null, 'Conferência'),
+        ped.tipo === 'retirada' ? el('div', { class: 'aviso mt4' },
+          '↩ RETIRADA DE PEÇAS — o total sai negativo e vira crédito do cliente.') : null,
         el('div', { class: 'sub mt4' },
           `${cli.nome} · ${dataBR(ped.data)} · Vendedor: ${rep.nome} · ` +
           `Tabela ${ped.tabela === 'lucro' ? 'Lucro Presumido' : 'Simples'}` +
@@ -271,7 +340,9 @@
           `<th>Coloc.</th><th>Dev.Disp</th><th>Dev.Queb</th><th>Vend.</th><th>Preço</th><th>Total</th></tr></thead>` +
           `<tbody>${linhas}</tbody></table>` }),
         el('div', { class: 'total-bar mt8' },
-          el('span', null, `${tot.colocadas} colocadas · ${tot.devDisplay} display · ${tot.devQuebrada} quebradas · ${tot.vendidas} vendidas`),
+          el('span', null, tot.valor < 0
+            ? `${Math.abs(tot.vendidas)} un retiradas → crédito do cliente`
+            : `${tot.colocadas} colocadas · ${tot.devDisplay} display · ${tot.devQuebrada} quebradas · ${tot.vendidas} vendidas`),
           el('strong', null, C.fmtMoney(tot.valor))),
         el('div', { class: 'mt8' }, obsIn),
         el('div', { class: 'row gap8 mt12' },
@@ -358,14 +429,16 @@
       DB.insert('pedidos', {
         id: ped.id, numero, cliente_id: ped.cliente_id, representante_id: rep.id,
         data_pedido: ped.data, tabela: ped.tabela, condicao_pagamento: ped.condicao_pagamento,
+        tipo: ped.tipo || 'venda',
         status: 'rascunho', observacoes: ped.obs || null
       });
       for (const it of ped.itens) DB.insert('pedido_itens', Object.assign({ pedido_id: ped.id }, it));
 
       const jaComprou = C.clienteJaComprou(cli,
         DB.all('visitas').filter(v => v.cliente_id === ped.cliente_id));
+      // retirada nunca usa % de cliente novo: o crédito abate na comissão de reposição
       const com = C.calcComissao({
-        valor: tot.valor, clienteNovo: !jaComprou,
+        valor: tot.valor, clienteNovo: ped.tipo === 'retirada' ? false : !jaComprou,
         pctNovo: rep.comissao_pct_novo, pctReposicao: rep.comissao_pct,
         dataPedido: ped.data, recebimentoDias: cli.recebimento_dias || 0
       });
@@ -395,21 +468,29 @@
       });
 
       // espelho local do que os triggers fazem no servidor
-      // (o prazo usado vira o prazo padrão deste cliente)
-      DB.update('clientes', cli.id, {
-        condicao_pagamento_padrao: ped.condicao_pagamento || cli.condicao_pagamento_padrao || null,
-        ultima_visita_em: ped.data, ultimo_pedido_em: ped.data,
-        proxima_visita_prevista: (() => { const d = new Date(ped.data + 'T12:00:00'); d.setDate(d.getDate() + (cli.frequencia_dias || 60)); return d.toISOString().slice(0, 10); })()
-      });
+      // (o prazo usado vira o prazo padrão deste cliente; retirada não
+      //  conta como compra — só registra a visita)
+      const proxima = (() => { const d = new Date(ped.data + 'T12:00:00'); d.setDate(d.getDate() + (cli.frequencia_dias || 60)); return d.toISOString().slice(0, 10); })();
+      DB.update('clientes', cli.id, ped.tipo === 'retirada'
+        ? { ultima_visita_em: ped.data, proxima_visita_prevista: proxima }
+        : {
+          condicao_pagamento_padrao: ped.condicao_pagamento || cli.condicao_pagamento_padrao || null,
+          ultima_visita_em: ped.data, ultimo_pedido_em: ped.data,
+          proxima_visita_prevista: proxima
+        });
       DB.all('pendencias').filter(p => p.cliente_id === cli.id && !p.resolvida_em)
         .forEach(p => DB.update('pendencias', p.id, { resolvida_em: agora }));
-      const linhas = new Set(ped.itens.map(i => i.produto_id));
-      const jaTem = new Set(DB.all('cliente_produtos').filter(cp => cp.cliente_id === cli.id).map(cp => cp.produto_id));
-      for (const pid of linhas) if (!jaTem.has(pid))
-        DB.insert('cliente_produtos', { id: cli.id + '_' + pid, cliente_id: cli.id, produto_id: pid, representante_id: rep.id });
+      if (ped.tipo !== 'retirada') {
+        const linhas = new Set(ped.itens.map(i => i.produto_id));
+        const jaTem = new Set(DB.all('cliente_produtos').filter(cp => cp.cliente_id === cli.id).map(cp => cp.produto_id));
+        for (const pid of linhas) if (!jaTem.has(pid))
+          DB.insert('cliente_produtos', { id: cli.id + '_' + pid, cliente_id: cli.id, produto_id: pid, representante_id: rep.id });
+      }
 
       m.fechar();
-      toast('Pedido concluído! Comissão de ' + com.pct + '% (' + C.fmtMoney(com.valor) + ') registrada.');
+      toast(ped.tipo === 'retirada'
+        ? 'Retirada concluída! Crédito de ' + C.fmtMoney(Math.abs(com.valor)) + ' (' + com.pct + '%) abatido da comissão.'
+        : 'Pedido concluído! Comissão de ' + com.pct + '% (' + C.fmtMoney(com.valor) + ') registrada.');
       const salvo = DB.byId('pedidos', ped.id);
       abrir(salvo.id, true);
       if (window.NSApp.aoConcluirPedido) window.NSApp.aoConcluirPedido(salvo);
@@ -500,6 +581,7 @@
     const mAbrir = modal(el('div', null,
       recemConcluido ? el('div', { class: 'sucesso-banner' }, '✅ Pedido concluído e assinado!') : null,
       el('div', { class: 'sub' }, `Pedido nº ${p.numero || 'PENDENTE (aguardando sync)'} · ${dataBR(p.data_pedido)} · ` +
+        (p.tipo === 'retirada' ? '↩ RETIRADA (crédito) · ' : '') +
         `${p.status.toUpperCase()} · Tabela ${p.tabela === 'lucro' ? 'Lucro Presumido' : 'Simples'}` +
         (p.condicao_pagamento ? ' · ' + p.condicao_pagamento : '')),
       el('h3', { class: 'mt8' }, cli.nome || '—'),
@@ -507,7 +589,9 @@
         `<table class="tabela"><thead><tr><th>Cód</th><th>Produto</th><th>Tam</th><th>Placas</th><th>Coloc.</th>` +
         `<th>Dev.Disp</th><th>Dev.Queb</th><th>Vend.</th><th>Total</th></tr></thead><tbody>${linhas}</tbody></table>` }),
       el('div', { class: 'total-bar mt8' },
-        el('span', null, `${p.total_unid_vendidas} un vendidas`),
+        el('span', null, Number(p.total_valor) < 0
+          ? `${Math.abs(p.total_unid_vendidas)} un retiradas → crédito do cliente`
+          : `${p.total_unid_vendidas} un vendidas`),
         el('strong', null, C.fmtMoney(Number(p.total_valor)))),
       p.assinatura ? el('div', { class: 'mt8 assinatura-preview' },
         el('img', { src: p.assinatura, alt: 'Assinatura do cliente' }),

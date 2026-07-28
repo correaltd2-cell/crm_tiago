@@ -917,7 +917,7 @@
 
     function comissoesDoMes(mes) {
       return DB.all('visitas').filter(doRep)
-        .filter(v => (v.comissao_recebimento_em || '').slice(0, 7) === mes && Number(v.comissao_valor) > 0)
+        .filter(v => (v.comissao_recebimento_em || '').slice(0, 7) === mes && Number(v.comissao_valor) !== 0)
         .sort((a, b) => (a.comissao_recebimento_em || '').localeCompare(b.comissao_recebimento_em || ''));
     }
     function despesasDoMes(mes) {

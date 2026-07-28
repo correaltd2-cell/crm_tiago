@@ -29,6 +29,11 @@ eq('venda de dezembro recebe em janeiro (vira o ano)', c.recebimentoEm, '2027-01
 c = C.calcComissao({ valor: 1000, clienteNovo: false, pctNovo: 15, pctReposicao: 10, dataPedido: '2026-07-25', recebimentoDias: 45 });
 eq('reposição 10% = 100', c.valor, 100);
 eq('Clamed recebe +45d', c.recebimentoEm, '2026-09-08');
+c = C.calcComissao({ valor: -800, clienteNovo: false, pctNovo: 15, pctReposicao: 10, dataPedido: '2026-07-28', recebimentoDias: 0 });
+eq('retirada: comissão negativa −80 (crédito abate no mês)', c.valor, -80);
+eq('retirada: crédito entra no mês seguinte', c.recebimentoEm, '2026-08-01');
+r = C.calcTotais([{ unid_colocadas: 0, dev_display: 5, dev_quebrada: 0, unid_vendidas: -5, valor_total: -72.5 }]);
+eq('totais aceitam item de retirada (valor negativo)', r.valor, -72.5);
 
 console.log('Ciclo de 7 semanas:');
 eq('dia do início = semana 1, segunda', C.cicloDoDia('2026-01-05', '2026-01-05'), { semana: 1, diaSemana: 1 });

@@ -321,6 +321,53 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   check('visita revertida (sem pedido/comissão)', posDel.visita.fez_pedido === false && !posDel.visita.comissao_valor);
   check('ciclo recalculado (sem último pedido, com última visita)', posDel.cli.ultimo_pedido_em == null && !!posDel.cli.ultima_visita_em);
 
+  // retirada de peças: talão negativo → crédito do cliente, comissão negativa
+  await page.click('#fab');
+  await page.waitForSelector('.ns-modal');
+  await page.fill('.ns-modal input', 'farm');
+  await page.click('.ns-modal .item-lista');
+  await page.click('text=Retirada de peças');
+  await page.waitForTimeout(200);
+  await page.click('text=Tabela Lucro Presumido'); // retirada não exige prazo
+  await page.click('text=+ Adicionar produto');
+  const modalRet = page.locator('.ns-overlay').last().locator('.ns-modal');
+  await modalRet.waitFor();
+  await modalRet.locator('.item-lista').first().click();
+  for (let k = 0; k < 3; k++) await modalRet.locator('.btn-step', { hasText: '+' }).click(); // 1 → 4 un
+  const liveRet = (await modalRet.locator('.calc-live').textContent()).replace(/ /g, ' ');
+  check('retirada: crédito de 4 × 14,50 = 58,00', liveRet.includes('58,00'));
+  await modalRet.locator('button:has-text("Adicionar")').click();
+  await page.waitForTimeout(150);
+  await page.click('text=Conferir →');
+  const confRet = (await page.textContent('.ns-modal')).replace(/ /g, ' ');
+  check('conferência da retirada mostra total negativo', confRet.includes('-R$ 58,00') && confRet.includes('retiradas'));
+  await page.click('text=Assinar →');
+  const cvR = page.locator('.assinatura-cv');
+  const bbR = await cvR.boundingBox();
+  await page.mouse.move(bbR.x + 40, bbR.y + 90);
+  await page.mouse.down();
+  for (let i = 0; i < 10; i++) await page.mouse.move(bbR.x + 40 + i * 15, bbR.y + 90 + Math.cos(i) * 25);
+  await page.mouse.up();
+  await page.fill('.ns-modal input[placeholder*="Nome de quem assina"]', 'Maria Souza');
+  await page.click('text=✓ Confirmar e concluir');
+  await page.waitForSelector('.sucesso-banner');
+  const ret = await page.evaluate(() => ({
+    pedido: JSON.parse(localStorage.getItem('ns_c_pedidos'))[0],
+    visita: JSON.parse(localStorage.getItem('ns_c_visitas')).find(v => v.pedido_id),
+    cli: JSON.parse(localStorage.getItem('ns_c_clientes'))[0]
+  }));
+  check('retirada salva: tipo retirada, total −58,00', ret.pedido.tipo === 'retirada' && ret.pedido.total_valor === -58);
+  check('crédito abate na comissão: 10% de −58 = −5,80', ret.visita.comissao_pct === 10 && ret.visita.comissao_valor === -5.8);
+  check('retirada não conta como compra do cliente', ret.cli.ultimo_pedido_em == null);
+  const pdfRet = await page.evaluate(async () => {
+    const p = JSON.parse(localStorage.getItem('ns_c_pedidos'))[0];
+    const blob = await window.NSPedido.gerarPDF(p.id);
+    const txt = new TextDecoder('latin1').decode(new Uint8Array(await blob.arrayBuffer()));
+    return txt.includes('Retirada de Mercadoria') && txt.includes('CRÉDITO DO CLIENTE');
+  });
+  check('PDF da retirada sai como "Crédito do Cliente"', pdfRet === true);
+  await page.locator('.ns-overlay').last().locator('.btn-icon').first().click();
+
   check('sem erros de JavaScript na página', erros.length === 0);
   if (erros.length) console.error(erros.join('\n'));
 
