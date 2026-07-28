@@ -137,8 +137,8 @@
     // Cabeçalho
     pg.rect(M, y - 46, W - 2 * M, 46, true);
     pg.text(M + 10, y - 20, 'NEW STAR', 16, true);
-    pg.text(M + 10, y - 36, pedido.tipo === 'retirada'
-      ? 'Retirada de Mercadoria — Crédito do Cliente'
+    pg.text(M + 10, y - 36, Number(pedido.total_valor) < 0
+      ? 'Talão de Pedido — Recolhimento com Crédito do Cliente'
       : 'Talão de Pedido — Consignação', 8.5);
     pg.text(W - M - 10, y - 20, 'PEDIDO Nº ' + (pedido.numero || 'PENDENTE'), 12, true, 'right');
     pg.text(W - M - 10, y - 36, 'Data: ' + dataBR(pedido.data_pedido), 9, false, 'right');
@@ -185,8 +185,8 @@
       let x = M;
       const rowVals = {
         codigo: p.codigo || '', nome,
-        tamanho: it.tamanho === 'RET' ? 'Ret.' : (it.tamanho === 'AV' ? 'Avul.' : it.tamanho),
-        placas: (it.tamanho === 'AV' || it.tamanho === 'RET') ? '—' : it.placas,
+        tamanho: it.tamanho === 'AV' ? 'Avul.' : it.tamanho,
+        placas: it.tamanho === 'AV' ? '—' : it.placas,
         unid_colocadas: it.unid_colocadas, dev_display: it.dev_display,
         dev_quebrada: it.dev_quebrada, unid_vendidas: it.unid_vendidas,
         preco_unit: it.preco_unit, valor_total: it.valor_total
@@ -214,7 +214,7 @@
     pg.text(W - M, y - 4, 'Quebradas: ' + pedido.total_unid_dev_quebrada, 8.5, true, 'right');
     y -= 20;
     pg.rect(W - M - 220, y - 20, 220, 20, true);
-    pg.text(W - M - 8, y - 14, (pedido.tipo === 'retirada' ? 'CRÉDITO DO CLIENTE: ' : 'TOTAL: ') +
+    pg.text(W - M - 8, y - 14, (Number(pedido.total_valor) < 0 ? 'CRÉDITO DO CLIENTE: ' : 'TOTAL: ') +
       C.fmtMoney(Number(pedido.total_valor)), 12, true, 'right');
     y -= 34;
 
@@ -304,7 +304,7 @@
 
       t('NEW STAR', 13, { b: true, al: 'center' }); dn(8);
       t('APP DO VENDEDOR', 5.5, { al: 'center' }); dn(8);
-      t(pedido.tipo === 'retirada' ? 'RETIRADA — CRÉDITO DO CLIENTE' : 'TALÃO DE PEDIDO — CONSIGNAÇÃO', 6.5, { al: 'center' });
+      t(Number(pedido.total_valor) < 0 ? 'RECOLHIMENTO — CRÉDITO DO CLIENTE' : 'TALÃO DE PEDIDO — CONSIGNAÇÃO', 6.5, { al: 'center' });
       hr(true);
       t('Pedido nº ' + (pedido.numero || 'PENDENTE'), 8.5, { b: true }); dn(10);
       t('Data: ' + dataBR(pedido.data_pedido), 7); dn(9);
@@ -322,17 +322,15 @@
         const nome = (p.codigo ? p.codigo + ' ' : '') + (p.nome || '') +
           (p.variacao ? ' (' + p.variacao + ')' : '');
         for (const l of wrap(nome, 7, CIN, true)) { t(l, 7, { b: true }); dn(9); }
-        t(it.tamanho === 'RET'
-          ? it.dev_display + ' un retiradas (crédito)'
-          : it.tamanho === 'AV'
-            ? it.unid_colocadas + ' un avulsas'
-            : it.placas + ' placa' + (it.placas > 1 ? 's' : '') + ' ' + it.tamanho + ' = ' +
-              it.unid_colocadas + ' un colocadas', 6.5); dn(8);
-        if (it.tamanho !== 'RET' && (it.dev_display || it.dev_quebrada)) {
+        t(it.tamanho === 'AV'
+          ? it.unid_colocadas + ' un avulsas'
+          : it.placas + ' placa' + (it.placas > 1 ? 's' : '') + ' ' + it.tamanho + ' = ' +
+            it.unid_colocadas + ' un colocadas', 6.5); dn(8);
+        if (it.dev_display || it.dev_quebrada) {
           t('Dev display: ' + it.dev_display + ' · Quebrada: ' + it.dev_quebrada, 6.5); dn(8);
         }
-        t(it.tamanho === 'RET'
-          ? 'crédito: ' + it.dev_display + ' × ' + C.fmtMoney(Number(it.preco_unit))
+        t(it.unid_vendidas < 0
+          ? 'crédito: ' + (-it.unid_vendidas) + ' × ' + C.fmtMoney(Number(it.preco_unit))
           : it.unid_vendidas + ' vend. × ' + C.fmtMoney(Number(it.preco_unit)), 6.5);
         t(C.fmtMoney(Number(it.valor_total)), 7.5, { b: true, al: 'right' }); dn(11);
       }
@@ -341,7 +339,7 @@
       t('Dev display: ' + pedido.total_unid_dev_display, 6.5, { al: 'right' }); dn(8);
       t('Vendidas: ' + pedido.total_unid_vendidas, 6.5, { b: true });
       t('Quebradas: ' + pedido.total_unid_dev_quebrada, 6.5, { al: 'right' }); dn(11);
-      t(pedido.tipo === 'retirada' ? 'CRÉDITO' : 'TOTAL', 9, { b: true });
+      t(Number(pedido.total_valor) < 0 ? 'CRÉDITO' : 'TOTAL', 9, { b: true });
       t(C.fmtMoney(Number(pedido.total_valor)), 10, { b: true, al: 'right' }); dn(12);
       if (pedido.observacoes) {
         hr();

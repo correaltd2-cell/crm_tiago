@@ -16,7 +16,11 @@ r = C.calcItem({ placas: 2, unidPorPlaca: 72, devDisplay: 0, devQuebrada: 0, pre
 eq('placa G ×2: 144 colocadas', r.colocadas, 144);
 eq('placa G ×2: valor 2088,00', r.valor, 2088.00);
 r = C.calcItem({ placas: 1, unidPorPlaca: 16, devDisplay: 10, devQuebrada: 10, precoUnit: 26.50 });
-eq('devolução maior que colocado não fica negativa', r.vendidas, 0);
+eq('devolução maior que o colocado fica negativa (crédito)', r.vendidas, -4);
+eq('crédito do excedente: −4 × 26,50 = −106,00', r.valor, -106);
+r = C.calcItem({ placas: 0, unidPorPlaca: 24, devDisplay: 10, devQuebrada: 0, precoUnit: 12.60 });
+eq('0 placas + 10 recolhidas = −10 vendidas', r.vendidas, -10);
+eq('só recolher: valor −126,00 desconta do pedido', r.valor, -126);
 
 console.log('Comissão:');
 let c = C.calcComissao({ valor: 1000, clienteNovo: true, pctNovo: 15, pctReposicao: 10, dataPedido: '2026-07-25', recebimentoDias: 0 });

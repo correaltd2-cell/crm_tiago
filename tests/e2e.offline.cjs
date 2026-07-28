@@ -321,26 +321,28 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   check('visita revertida (sem pedido/comissão)', posDel.visita.fez_pedido === false && !posDel.visita.comissao_valor);
   check('ciclo recalculado (sem último pedido, com última visita)', posDel.cli.ultimo_pedido_em == null && !!posDel.cli.ultima_visita_em);
 
-  // retirada de peças: talão negativo → crédito do cliente, comissão negativa
+  // recolher peças no próprio talão: 0 placas + devolução → item negativo (crédito)
   await page.click('#fab');
   await page.waitForSelector('.ns-modal');
   await page.fill('.ns-modal input', 'farm');
   await page.click('.ns-modal .item-lista');
-  await page.click('text=Retirada de peças');
-  await page.waitForTimeout(200);
-  await page.click('text=Tabela Lucro Presumido'); // retirada não exige prazo
+  await page.fill('.ns-modal input[placeholder*="Escreva o prazo"]', '30 dias');
+  await page.click('text=Tabela Lucro Presumido');
   await page.click('text=+ Adicionar produto');
   const modalRet = page.locator('.ns-overlay').last().locator('.ns-modal');
   await modalRet.waitFor();
   await modalRet.locator('.item-lista').first().click();
-  for (let k = 0; k < 3; k++) await modalRet.locator('.btn-step', { hasText: '+' }).click(); // 1 → 4 un
-  const liveRet = (await modalRet.locator('.calc-live').textContent()).replace(/ /g, ' ');
-  check('retirada: crédito de 4 × 14,50 = 58,00', liveRet.includes('58,00'));
+  const stRet = modalRet.locator('.stepper');
+  await stRet.nth(0).locator('button', { hasText: '\u2212' }).click();               // placas 1 \u2192 0
+  for (let k = 0; k < 4; k++) await stRet.nth(1).locator('button', { hasText: '+' }).click(); // dev display 4
+  const liveRet = (await modalRet.locator('.calc-live').textContent()).replace(/\u00a0/g, ' ');
+  check('0 placas + 4 recolhidas: item negativo \u221258,00', liveRet.includes('-R$ 58,00'));
+  check('aviso de cr\u00e9dito aparece no c\u00e1lculo', liveRet.includes('Recolhendo 4 un'));
   await modalRet.locator('button:has-text("Adicionar")').click();
   await page.waitForTimeout(150);
-  await page.click('text=Conferir →');
-  const confRet = (await page.textContent('.ns-modal')).replace(/ /g, ' ');
-  check('conferência da retirada mostra total negativo', confRet.includes('-R$ 58,00') && confRet.includes('retiradas'));
+  await page.click('text=Conferir \u2192');
+  const confRet = (await page.textContent('.ns-modal')).replace(/\u00a0/g, ' ');
+  check('confer\u00eancia mostra pedido negativo com aviso de cr\u00e9dito', confRet.includes('-R$ 58,00') && confRet.includes('CR\u00c9DITO'));
   await page.click('text=Assinar →');
   const cvR = page.locator('.assinatura-cv');
   const bbR = await cvR.boundingBox();
@@ -356,16 +358,16 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
     visita: JSON.parse(localStorage.getItem('ns_c_visitas')).find(v => v.pedido_id),
     cli: JSON.parse(localStorage.getItem('ns_c_clientes'))[0]
   }));
-  check('retirada salva: tipo retirada, total −58,00', ret.pedido.tipo === 'retirada' && ret.pedido.total_valor === -58);
+  check('pedido negativo salvo: total −58,00', ret.pedido.total_valor === -58);
   check('crédito abate na comissão: 10% de −58 = −5,80', ret.visita.comissao_pct === 10 && ret.visita.comissao_valor === -5.8);
-  check('retirada não conta como compra do cliente', ret.cli.ultimo_pedido_em == null);
+  check('pedido só de recolhimento não conta como compra', ret.cli.ultimo_pedido_em == null);
   const pdfRet = await page.evaluate(async () => {
     const p = JSON.parse(localStorage.getItem('ns_c_pedidos'))[0];
     const blob = await window.NSPedido.gerarPDF(p.id);
     const txt = new TextDecoder('latin1').decode(new Uint8Array(await blob.arrayBuffer()));
-    return txt.includes('Retirada de Mercadoria') && txt.includes('CRÉDITO DO CLIENTE');
+    return txt.includes('Recolhimento com Cr\xe9dito') && txt.includes('CR\xc9DITO DO CLIENTE');
   });
-  check('PDF da retirada sai como "Crédito do Cliente"', pdfRet === true);
+  check('PDF do pedido negativo sai como "Crédito do Cliente"', pdfRet === true);
   await page.locator('.ns-overlay').last().locator('.btn-icon').first().click();
 
   check('sem erros de JavaScript na página', erros.length === 0);

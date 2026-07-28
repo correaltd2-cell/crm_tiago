@@ -11,6 +11,8 @@
   // ---------- Talão: cálculo de item ----------
   // unidades colocadas = placas × unidades da placa (P/G)
   // vendidas = colocadas − dev_display − dev_quebrada
+  //   (pode ficar NEGATIVO: 0 placas + devolução = recolher peças antigas,
+  //    o valor negativo desconta do total e vira crédito do cliente)
   // valor = vendidas × preço unitário da tabela do pedido
   function calcItem({ placas, unidPorPlaca, devDisplay, devQuebrada, precoUnit }) {
     placas = Math.max(0, parseInt(placas, 10) || 0);
@@ -18,7 +20,7 @@
     devDisplay = Math.max(0, parseInt(devDisplay, 10) || 0);
     devQuebrada = Math.max(0, parseInt(devQuebrada, 10) || 0);
     const colocadas = placas * unidPorPlaca;
-    const vendidas = Math.max(0, colocadas - devDisplay - devQuebrada);
+    const vendidas = colocadas - devDisplay - devQuebrada;
     const valor = round2(vendidas * (Number(precoUnit) || 0));
     return { colocadas, devDisplay, devQuebrada, vendidas, valor };
   }
