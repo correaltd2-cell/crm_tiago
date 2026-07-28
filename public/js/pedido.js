@@ -11,15 +11,30 @@
 
   function sessao() { return window.NSApp.sessao(); }
 
-  // ============ NOVO PEDIDO (wizard) ============
-  function novo(clientePre) {
-    const ped = {
+  // ============ NOVO PEDIDO (wizard) — também edita um pedido concluído ============
+  function novo(clientePre, pedidoExistente) {
+    const editando = !!pedidoExistente;
+    const ped = editando ? {
+      id: pedidoExistente.id, cliente_id: pedidoExistente.cliente_id,
+      data: pedidoExistente.data_pedido, tabela: pedidoExistente.tabela,
+      condicao_pagamento: pedidoExistente.condicao_pagamento,
+      itens: DB.all('pedido_itens').filter(i => i.pedido_id === pedidoExistente.id)
+        .map(i => Object.assign({}, i)),
+      obs: pedidoExistente.observacoes || '',
+      assinatura: pedidoExistente.assinatura || null,
+      assinante_nome: pedidoExistente.assinante_nome || null,
+      deixou_display: !!pedidoExistente.deixou_display,
+      material_deixado: pedidoExistente.material_deixado || ''
+    } : {
       id: DB.uuid(), cliente_id: clientePre ? clientePre.id : null,
       data: hojeISO(), tabela: null, condicao_pagamento: null,
       itens: [], obs: '', assinatura: null
     };
-    const m = modal(el('div'), { titulo: 'Novo Pedido', full: true, bloqueado: true });
-    passoCliente();
+    const m = modal(el('div'), {
+      titulo: editando ? '✏ Editar Pedido nº ' + (pedidoExistente.numero || '') : 'Novo Pedido',
+      full: true, bloqueado: true
+    });
+    if (editando) passoItens(); else passoCliente();
 
     // ---- Passo 1: cliente (busca parcial CNPJ / nome / cidade) ----
     function passoCliente() {
@@ -279,16 +294,18 @@
         el('label', { class: 'row gap8 mt4' }, chkDisplay, el('span', null, '🪧 Deixei display/mostruário neste cliente')),
         el('div', { class: 'mt4' }, materialIn),
         el('div', { class: 'mt8' }, obsIn),
+        editando ? el('p', { class: 'sub mt8' },
+          '✍ A assinatura já colhida será mantida — as alterações só recalculam valores e comissão.') : null,
         el('div', { class: 'row gap8 mt12' },
           el('button', { class: 'btn btn-sec grow', onclick: () => { guardar(); passoItens(); } }, '← Itens'),
           el('button', { class: 'btn grow', onclick: () => {
             guardar();
             if (!ped.condicao_pagamento) {
               prazoIn.focus();
-              return toast('Escreva a CONDIÇÃO DE PAGAMENTO (prazo) antes de assinar.', 'erro');
+              return toast('Escreva a CONDIÇÃO DE PAGAMENTO (prazo) antes de ' + (editando ? 'salvar' : 'assinar') + '.', 'erro');
             }
-            passoAssinatura();
-          } }, 'Assinar →'))));
+            if (editando) salvarConcluido(); else passoAssinatura();
+          } }, editando ? '💾 Salvar alterações' : 'Assinar →'))));
 
       function guardar() {
         ped.obs = obsIn.value;
@@ -373,21 +390,33 @@
 
       // 1) pedido rascunho → 2) itens → 3) visita → 4) concluir (ordem respeitada pela fila offline;
       // no servidor o trigger de conclusão recalcula tudo e reaproveita a visita do dia)
-      const numero = DB.all('pedidos').reduce((m, p) => Math.max(m, Number(p.numero) || 0), 0) + 1;
-      DB.insert('pedidos', {
-        id: ped.id, numero, cliente_id: ped.cliente_id, representante_id: rep.id,
-        data_pedido: ped.data, tabela: ped.tabela, condicao_pagamento: ped.condicao_pagamento,
-        deixou_display: !!ped.deixou_display, material_deixado: ped.material_deixado || null,
-        status: 'rascunho', observacoes: ped.obs || null
-      });
-      for (const it of ped.itens) DB.insert('pedido_itens', Object.assign({ pedido_id: ped.id }, it));
+      if (editando) {
+        // edição: mantém número, assinatura e a % de comissão original —
+        // só os itens/valores/prazo são regravados e recalculados
+        DB.removeWhere('pedido_itens', i => i.pedido_id === ped.id);
+      } else {
+        const numero = DB.all('pedidos').reduce((m, p) => Math.max(m, Number(p.numero) || 0), 0) + 1;
+        DB.insert('pedidos', {
+          id: ped.id, numero, cliente_id: ped.cliente_id, representante_id: rep.id,
+          data_pedido: ped.data, tabela: ped.tabela, condicao_pagamento: ped.condicao_pagamento,
+          deixou_display: !!ped.deixou_display, material_deixado: ped.material_deixado || null,
+          status: 'rascunho', observacoes: ped.obs || null
+        });
+      }
+      for (const it of ped.itens) DB.insert('pedido_itens', Object.assign({}, it, { pedido_id: ped.id }));
 
-      const jaComprou = C.clienteJaComprou(cli,
+      // % de cliente novo: na edição preserva a % original da visita;
+      // pedido negativo (recolhimento) nunca usa % de cliente novo
+      const visOriginal = editando ? DB.all('visitas').find(v => v.pedido_id === ped.id) : null;
+      const pctNovoRep = (rep.comissao_pct_novo != null) ? Number(rep.comissao_pct_novo) : 15;
+      let clienteNovo;
+      if (tot.valor < 0) clienteNovo = false;
+      else if (visOriginal && visOriginal.comissao_pct != null)
+        clienteNovo = Number(visOriginal.comissao_pct) === pctNovoRep;
+      else clienteNovo = !C.clienteJaComprou(cli,
         DB.all('visitas').filter(v => v.cliente_id === ped.cliente_id));
-      // pedido negativo (recolhimento) nunca usa % de cliente novo:
-      // o crédito abate na comissão de reposição
       const com = C.calcComissao({
-        valor: tot.valor, clienteNovo: tot.valor < 0 ? false : !jaComprou,
+        valor: tot.valor, clienteNovo,
         pctNovo: rep.comissao_pct_novo, pctReposicao: rep.comissao_pct,
         dataPedido: ped.data, recebimentoDias: cli.recebimento_dias || 0
       });
@@ -409,9 +438,12 @@
 
       DB.update('pedidos', ped.id, {
         status: 'concluido',
+        tabela: ped.tabela, condicao_pagamento: ped.condicao_pagamento,
+        deixou_display: !!ped.deixou_display, material_deixado: ped.material_deixado || null,
         total_unid_colocadas: tot.colocadas, total_unid_dev_display: tot.devDisplay,
         total_unid_dev_quebrada: tot.devQuebrada, total_unid_vendidas: tot.vendidas,
-        total_valor: tot.valor, assinatura: ped.assinatura, assinado_em: agora,
+        total_valor: tot.valor, assinatura: ped.assinatura,
+        assinado_em: editando ? (pedidoExistente.assinado_em || agora) : agora,
         assinante_nome: ped.assinante_nome || null,
         visita_id: visitaId, observacoes: ped.obs || null
       });
@@ -438,9 +470,11 @@
         DB.insert('cliente_produtos', { id: cli.id + '_' + pid, cliente_id: cli.id, produto_id: pid, representante_id: rep.id });
 
       m.fechar();
-      toast(com.valor < 0
-        ? 'Pedido concluído com CRÉDITO de ' + C.fmtMoney(Math.abs(tot.valor)) + ' ao cliente (comissão abatida em ' + C.fmtMoney(Math.abs(com.valor)) + ').'
-        : 'Pedido concluído! Comissão de ' + com.pct + '% (' + C.fmtMoney(com.valor) + ') registrada.');
+      toast(editando
+        ? '✏ Pedido atualizado! Novo total ' + C.fmtMoney(tot.valor) + ' · comissão recalculada (' + com.pct + '% = ' + C.fmtMoney(com.valor) + ').'
+        : com.valor < 0
+          ? 'Pedido concluído com CRÉDITO de ' + C.fmtMoney(Math.abs(tot.valor)) + ' ao cliente (comissão abatida em ' + C.fmtMoney(Math.abs(com.valor)) + ').'
+          : 'Pedido concluído! Comissão de ' + com.pct + '% (' + C.fmtMoney(com.valor) + ') registrada.');
       const salvo = DB.byId('pedidos', ped.id);
       abrir(salvo.id, true);
       if (window.NSApp.aoConcluirPedido) window.NSApp.aoConcluirPedido(salvo);
@@ -457,9 +491,9 @@
       m.body.appendChild(conteudo);
       m.body.appendChild(el('button', {
         class: 'btn-link mt16', onclick: async () => {
-          if (await confirmar('Descartar este pedido?')) m.fechar();
+          if (await confirmar(editando ? 'Descartar as alterações? O pedido continua como estava.' : 'Descartar este pedido?')) m.fechar();
         }
-      }, 'Cancelar pedido'));
+      }, editando ? 'Descartar alterações' : 'Cancelar pedido'));
     }
   }
 
@@ -519,7 +553,11 @@
         } else {
           window.open(URL.createObjectURL(blob), '_blank') || window.NSUI.baixar(blob, nomeCupom);
         }
-      } }, '🧾 Cupom 58mm (impressora térmica)'));
+      } }, '🧾 Cupom 58mm (impressora térmica)'),
+      p.status === 'concluido' ? el('button', { class: 'btn big btn-sec', onclick: () => {
+        mAbrir.fechar();
+        novo(null, p);
+      } }, '✏ Editar pedido (itens, prazo, devoluções)') : null);
 
     const linhas = itens.map(it => {
       const pr = DB.byId('produtos', it.produto_id) || {};

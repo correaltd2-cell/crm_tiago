@@ -383,6 +383,36 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   check('PDF do pedido negativo sai como "Crédito do Cliente"', pdfRet === true);
   await page.locator('.ns-overlay').last().locator('.btn-icon').first().click();
 
+  // editar pedido concluído: corrigir quantidade e prazo sem excluir
+  await page.click('#tabs button[data-v=pedidos]');
+  await page.waitForTimeout(200);
+  await page.locator('#view .item-lista').first().click();
+  await page.locator('.ns-overlay').last().locator('text=\u270f Editar pedido').click();
+  await page.waitForTimeout(300);
+  await page.locator('.ns-overlay').last().locator('.card-item button:has-text("editar")').first().click();
+  await page.waitForTimeout(200);
+  const itemEd = page.locator('.ns-overlay').last();
+  await itemEd.locator('.stepper').nth(1).locator('button', { hasText: '+' }).click(); // dev 4 \u2192 5
+  await itemEd.locator('button:has-text("Salvar")').click();
+  await page.waitForTimeout(150);
+  await page.click('text=Conferir \u2192');
+  await page.fill('.ns-modal input[placeholder*="Prazo"]', '45 dias');
+  await page.click('text=Salvar altera\u00e7\u00f5es');
+  await page.waitForTimeout(400);
+  const ed = await page.evaluate(() => ({
+    p: JSON.parse(localStorage.getItem('ns_c_pedidos'))[0],
+    v: JSON.parse(localStorage.getItem('ns_c_visitas')).find(x => x.pedido_id),
+    nItens: JSON.parse(localStorage.getItem('ns_c_pedido_itens')).length
+  }));
+  check('edição: total recalculado (\u221272,50) e prazo trocado para 45 dias',
+    ed.p.total_valor === -72.5 && ed.p.condicao_pagamento === '45 dias');
+  check('edição: comissão recalculada mantendo a % (10% \u2192 \u22127,25)',
+    ed.v.comissao_pct === 10 && ed.v.comissao_valor === -7.25);
+  check('edição: assinatura e assinante preservados, itens sem duplicar',
+    !!ed.p.assinatura && ed.p.assinante_nome === 'Maria Souza' && ed.nItens === 1);
+  await page.locator('.ns-overlay').last().locator('.btn-icon').first().click();
+  await page.waitForTimeout(200);
+
   check('sem erros de JavaScript na página', erros.length === 0);
   if (erros.length) console.error(erros.join('\n'));
 

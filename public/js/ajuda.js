@@ -45,7 +45,8 @@ FAZER UM PEDIDO (talão digital)
 5. Confira o resumo, escreva o NOME DE QUEM ASSINA (obrigatório — o sistema não conclui sem ele) e colha a ASSINATURA do cliente na tela (dedo ou caneta; dá para limpar e refazer). O nome sai impresso no talão junto da assinatura.
 6. Pronto: dá para VISUALIZAR O PDF do talão, COMPARTILHAR (WhatsApp/e-mail), IMPRIMIR (impressora do celular) e gerar o CUPOM 58MM para mini impressora térmica Bluetooth. Para imprimir na impressorinha térmica: toque em "Cupom 58mm", escolha COMPARTILHAR e selecione o aplicativo da impressora na lista (o app que veio com a impressora, que conecta nela por Bluetooth). O cupom já sai no formato estreito da bobina, com letras no tamanho certo. A assinatura fica gravada para sempre no pedido.
 • Concluir o pedido já registra a visita do dia com o valor vendido e calcula a comissão sozinho.
-• Para excluir um pedido errado: aba Pedidos → abra o pedido → "Excluir pedido" (desfaz também a visita e a comissão).
+• ERROU ALGO NO PEDIDO? Não precisa excluir e refazer: aba Pedidos → abra o pedido → "✏ EDITAR PEDIDO". Dá para corrigir quantidades, devoluções, adicionar/remover produtos, trocar a tabela e o PRAZO. A assinatura já colhida é mantida e o total e a comissão são recalculados sozinhos (mantendo a % original de cliente novo ou reposição).
+• Para excluir um pedido errado de vez: aba Pedidos → abra o pedido → "Excluir pedido" (desfaz também a visita e a comissão).
 
 COMISSÕES (regras)
 • Cliente NOVO (nunca comprou): 15% no primeiro pedido. Reposição (já comprou antes): 10%. Os percentuais são por vendedor (Admin → Vendedores).
