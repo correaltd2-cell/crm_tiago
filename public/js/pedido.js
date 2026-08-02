@@ -574,6 +574,19 @@
       el('button', { class: 'btn big btn-sec', onclick: async () => {
         imprimirBlob(await gerarPDF(pedidoId));
       } }, '🖨 Imprimir'),
+      // impressão direta na térmica 58mm via app Bluetooth Print (protocolo bprint://):
+      // o app busca o JSON do pedido no endpoint e monta a impressão nativamente
+      el('button', { class: 'btn big btn-sec', onclick: () => {
+        if (!navigator.onLine)
+          return toast('A impressão via Bluetooth Print precisa de internet (o app busca o pedido no servidor).', 'erro');
+        const url = location.origin + '/api/cupom?id=' + encodeURIComponent(p.id);
+        toast('Abrindo o Bluetooth Print…');
+        location.href = 'bprint://' + url;
+        setTimeout(() => {
+          if (!document.hidden)
+            toast('O app não abriu. Instale o "Bluetooth Print" (grátis, App Store) para imprimir na impressorinha.', 'erro');
+        }, 2500);
+      } }, '🖨 Imprimir 58mm (Bluetooth Print)'),
       el('button', { class: 'btn big btn-sec', onclick: async () => {
         const blob = await gerarCupom(pedidoId);
         const nomeCupom = 'cupom-' + (p.numero || String(p.id).slice(0, 8)) + '.png';
@@ -584,7 +597,7 @@
         } else {
           abrirBlob(blob, nomeCupom);
         }
-      } }, '🧾 Cupom 58mm (impressora térmica)'),
+      } }, '🧾 Cupom 58mm (imagem p/ outros apps)'),
       p.status === 'concluido' ? el('button', { class: 'btn big btn-sec', onclick: () => {
         mAbrir.fechar();
         novo(null, p);

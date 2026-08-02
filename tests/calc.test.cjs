@@ -114,6 +114,32 @@ eq('projeção = 57,5% da meta', mt.projecaoPct, 57.5);
 mt = C.calcMeta({ metaMes: 200000, hoje: '2026-07-28', vendidoMes: 0, metaDiaManual: 10000 });
 eq('meta do dia manual tem prioridade', mt.metaDia, 10000);
 
+console.log('Endpoint Bluetooth Print (JSON do cupom):');
+const { montarLinhas } = require('../api/cupom.js');
+const linhasBt = montarLinhas({
+  pedido: { id: 'ped-1', numero: 16, data_pedido: '2026-07-30', tabela: 'lucro',
+    condicao_pagamento: '30/45/60', total_unid_colocadas: 480, total_unid_dev_display: 310,
+    total_unid_dev_quebrada: 10, total_unid_vendidas: 160, total_valor: 3285.1,
+    assinatura: 'data:image/png;base64,x', assinante_nome: 'Raissa' },
+  itens: [{ produto_id: 'p1', tamanho: 'G', placas: 1, unid_colocadas: 99,
+    dev_display: 64, dev_quebrada: 1, unid_vendidas: 34, preco_unit: 14.5, valor_total: 493 }],
+  cliente: { nome: 'Rede SAMIR FCT2* Lj421 Seara', cnpj_cpf: '10768389001498', cidade: 'Seara', uf: 'SC' },
+  rep: { nome: 'Denilson', contato: '(54) 9999-0000' },
+  produtos: [{ id: 'p1', codigo: '8073', nome: 'BRP Ponto de Luz', variacao: 'Zircônia' }],
+  observacoes: 'Troca mediante a guarda das partes.',
+  baseURL: 'https://app-newstar.vercel.app'
+});
+eq('cabeçalho NEW STAR grande, negrito e centralizado',
+  JSON.stringify(linhasBt[0]), JSON.stringify({ type: 0, content: 'NEW STAR', bold: 1, align: 1, format: 2 }));
+eq('todas as linhas têm type válido (0 texto ou 1 imagem)',
+  linhasBt.every(l => l.type === 0 || l.type === 1), true);
+eq('contato do vendedor presente', linhasBt.some(l => String(l.content).includes('(54) 9999-0000')), true);
+eq('item com TOTAL em negrito à direita',
+  linhasBt.some(l => l.content === 'TOTAL R$ 493,00' && l.bold === 1 && l.align === 2), true);
+eq('assinatura vira imagem apontando para o endpoint',
+  linhasBt.some(l => l.type === 1 && l.path === 'https://app-newstar.vercel.app/api/assinatura?id=ped-1' && l.align === 1), true);
+eq('CNPJ formatado no cupom', linhasBt.some(l => String(l.content).includes('10.768.389/0014-98')), true);
+
 console.log('CNPJ/CPF formatado:');
 eq('CNPJ com pontuação', C.fmtCNPJ('09446409000100'), '09.446.409/0001-00');
 eq('CPF com pontuação', C.fmtCNPJ('12345678901'), '123.456.789-01');
