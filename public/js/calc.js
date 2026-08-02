@@ -230,8 +230,10 @@
   //   diaPertoBase: dia reservado para a região da base (ex.: 5 = sexta em Passo Fundo)
   //   baseCoord: {lat,lng} da base do vendedor (define a região "de casa")
   // Devolve atribuições {id, data, regiao, semana, dia} limitadas ao ciclo de 7 semanas.
+  //   regiaoPrioritaria: região escolhida pelo vendedor para começar o roteiro
+  //     (o sistema recomenda a mais urgente, mas quem decide é a pessoa)
   function planejarPorRegioes({ clientes, hoje, cicloInicio, porDia, horizonteDias,
-    diasTrabalho, diaPertoBase, baseCoord }) {
+    diasTrabalho, diaPertoBase, baseCoord, regiaoPrioritaria }) {
     porDia = porDia || 6; horizonteDias = horizonteDias || 45;
     const trabalha = (diasTrabalho && diasTrabalho.length) ? diasTrabalho : [1, 2, 3, 4, 5];
     const regiaoBase = (diaPertoBase && baseCoord) ? regiaoDoCliente(baseCoord, 1e9) : null;
@@ -293,9 +295,12 @@
       filaBase = porRegiao[regiaoBase].slice(0, capacidadeBase);
       porRegiao[regiaoBase] = porRegiao[regiaoBase].slice(capacidadeBase);
     }
-    const ordem = regiaoBase
+    let ordem = regiaoBase
       ? regioes.filter(r => r !== regiaoBase).concat(porRegiao[regiaoBase] && porRegiao[regiaoBase].length ? [regiaoBase] : [])
       : regioes;
+    // região escolhida pelo vendedor vai para a frente da rotação
+    if (regiaoPrioritaria && ordem.includes(regiaoPrioritaria))
+      ordem = [regiaoPrioritaria].concat(ordem.filter(r => r !== regiaoPrioritaria));
     const atribuicoes = [];
     let ri = 0, dias = 0;
     const filaDe = (reg) => porRegiao[reg] || [];

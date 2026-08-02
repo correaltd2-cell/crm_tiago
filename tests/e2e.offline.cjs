@@ -283,7 +283,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page.waitForSelector('.ns-overlay');
   const rot = await page.locator('.ns-overlay').last().textContent();
   check('Meu Roteiro: preferências de dias e agenda aparecem',
-    rot.includes('Dias em que trabalho') && rot.includes('Dia perto de casa') && rot.includes('Agenda das pr\u00f3ximas semanas'));
+    rot.includes('Dias em que trabalho') && rot.includes('Dia perto de casa') && rot.includes('Por qual regi\u00e3o quer come\u00e7ar?') && rot.includes('Agenda das pr\u00f3ximas semanas'));
   await page.locator('.ns-overlay').last().locator('.btn-icon').first().click();
   await page.waitForTimeout(200);
 

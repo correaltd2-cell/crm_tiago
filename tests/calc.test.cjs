@@ -169,6 +169,16 @@ eq('todos os 4 clientes agendados', p2.atribuicoes.length, 4);
 eq('clientes da base aparecem na sexta',
   p2.atribuicoes.some(a => a.regiao === 'Passo Fundo' && new Date(a.data + 'T12:00:00').getDay() === 5), true);
 
+console.log('Região escolhida pelo vendedor:');
+const p3 = C.planejarPorRegioes({
+  clientes: cls2, hoje: '2026-08-02', cicloInicio: '2026-07-27', porDia: 2,
+  regiaoPrioritaria: 'Passo Fundo'
+});
+eq('vendedor escolheu Passo Fundo: o roteiro começa por ela mesmo sendo menos urgente',
+  p3.atribuicoes[0].regiao, 'Passo Fundo');
+eq('as demais regiões vêm depois, por urgência',
+  p3.atribuicoes[p3.atribuicoes.length - 1].regiao, 'Chapecó');
+
 console.log('Classe A/B/C (prioridade no reencaixe):');
 eq('A antes de B, C e D por último', [{classe:'C'},{classe:'D'},{classe:'A'},{},{classe:'B'}]
   .sort((a,b) => C.classeRank(a) - C.classeRank(b)).map(c => c.classe || 'B').join(''), 'ABBCD');

@@ -61,6 +61,7 @@ MAIS → MEU ROTEIRO (🗓) — para o vendedor autônomo organizar a própria a
 • DIAS EM QUE TRABALHO: desmarque os dias que não atende (ex.: segunda para organizar estoque). O roteiro só agenda nos dias marcados.
 • DIA PERTO DE CASA: escolha um dia (ex.: sexta) para o roteiro puxar clientes da região da sua base — assim sexta-feira fica perto de casa.
 • AGENDA DAS PRÓXIMAS SEMANAS: toque num dia para ver os clientes. "↔ MOVER" muda um cliente de dia (o sistema sugere os melhores dias, de preferência na mesma região e com vaga). "🚫 LIBERAR ESTE DIA" esvazia o dia (folga, estoque, imprevisto) e reencaixa os clientes sozinho nos melhores dias — quem não couber fica aguardando e o sistema avisa.
+• ESCOLHER A REGIÃO DA SEMANA (🎯): a lista mostra cada região com a situação dela — quantos clientes vencidos, o maior atraso e quantos vencem nos próximos 14 dias. A mais urgente vem com ⭐ (recomendada), mas QUEM ESCOLHE É O VENDEDOR: se não dá para ir a Joaçaba nesta semana, toque em outra região e o roteiro remonta começando por ela (o resto continua por urgência).
 • Depois de mudar as preferências, toque em "🗺 Regerar roteiro com minhas preferências". O sistema continua sendo o guia: ele sempre mostra quem precisa de visita e sugere quando e onde repor — mas quem manda na agenda é o vendedor.
 
 MAIS → RELATÓRIOS (📊)

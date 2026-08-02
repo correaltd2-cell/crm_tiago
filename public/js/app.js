@@ -1622,7 +1622,7 @@
 
   // gera/regrava o roteiro por regiões respeitando as preferências do vendedor
   // (dias que trabalha e o "dia perto de casa" do autônomo)
-  function gerarRoteiroRep(repId) {
+  function gerarRoteiroRep(repId, regiaoPrioritaria) {
     const rep = DB.byId('representantes', repId) || {};
     const cls = clientesDoRep(repId).map(c => Object.assign({}, c, {
       regiao: c.regiao || C.regiaoDoCliente(c)
@@ -1633,7 +1633,8 @@
       porDia: Number(DB.config('visitas_dia_min', 6)),
       diasTrabalho: rep.dias_trabalho || [1, 2, 3, 4, 5],
       diaPertoBase: rep.dia_perto_base || null,
-      baseCoord: rep.lat_base != null ? { lat: rep.lat_base, lng: rep.lng_base } : null
+      baseCoord: rep.lat_base != null ? { lat: rep.lat_base, lng: rep.lng_base } : null,
+      regiaoPrioritaria: regiaoPrioritaria || null
     });
     const agendadosIds = new Set(plano.atribuicoes.map(a => a.id));
     for (const a of plano.atribuicoes)
@@ -1765,6 +1766,41 @@
           render();
         }
       }, '🗺 Regerar roteiro com minhas preferências'));
+
+      // ---- escolher a região para começar (recomendação × decisão da pessoa) ----
+      wrap.appendChild(el('h3', { class: 'mt16' }, '🎯 Por qual região quer começar?'));
+      wrap.appendChild(el('p', { class: 'sub' },
+        'O sistema recomenda a mais urgente (⭐), mas a escolha é sua: toque numa região e o roteiro remonta começando por ela.'));
+      const hoje = hojeISO();
+      const statsRegiao = C.REGIOES.map(r => {
+        const meus = clientesDoRep(rep.id).filter(c =>
+          (c.regiao || C.regiaoDoCliente(c)) === r.nome && c.lat != null);
+        let vencidos = 0, maiorAtraso = 0, aVencer = 0;
+        for (const c of meus) {
+          const base = c.ultima_visita_em || c.ultimo_pedido_em;
+          if (!base) { vencidos++; maiorAtraso = Math.max(maiorAtraso, 999); continue; }
+          const d = new Date(base + 'T12:00:00');
+          d.setDate(d.getDate() + (c.frequencia_dias || 45));
+          const dif = Math.round((new Date(hoje + 'T12:00:00') - d) / 86400000);
+          if (dif >= 0) { vencidos++; maiorAtraso = Math.max(maiorAtraso, dif); }
+          else if (dif >= -14) aVencer++;
+        }
+        return { nome: r.nome, total: meus.length, vencidos, aVencer, maiorAtraso };
+      }).filter(s => s.total > 0)
+        .sort((a, b) => b.vencidos - a.vencidos || b.maiorAtraso - a.maiorAtraso);
+      const listaReg = el('div', { class: 'col gap8 mt8' });
+      statsRegiao.forEach((sr, i) => listaReg.appendChild(el('button', {
+        class: 'item-lista', onclick: async () => {
+          if (!(await confirmar('Remontar o roteiro começando pela região ' + sr.nome + '?'))) return;
+          const res = gerarRoteiroRep(rep.id, sr.nome);
+          toast('🗺 Roteiro remontado começando por ' + sr.nome + ' (' + res.agendados + ' clientes em ' + res.dias + ' dias).');
+          render();
+        }
+      }, el('strong', null, (i === 0 ? '⭐ ' : '') + sr.nome + (i === 0 ? ' — recomendada' : '')),
+        el('span', { class: 'sub' }, sr.vencidos + ' vencido(s)' +
+          (sr.maiorAtraso ? ' (maior atraso: ' + sr.maiorAtraso + 'd)' : '') +
+          ' · ' + sr.aVencer + ' vencendo em 14d · ' + sr.total + ' clientes na região'))));
+      wrap.appendChild(listaReg);
 
       // ---- agenda editável ----
       wrap.appendChild(el('h3', { class: 'mt16' }, 'Agenda das próximas semanas'));
