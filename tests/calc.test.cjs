@@ -149,6 +149,26 @@ eq('bloco de Chapecó fecha antes de Passo Fundo',
 eq('fora de rota não entra', plano.atribuicoes.some(a => a.id === 'd1'), false);
 eq('semana/dia coerentes com o ciclo', plano.atribuicoes[0].semana >= 1 && !!plano.atribuicoes[0].dia, true);
 
+console.log('Planejador com preferências do vendedor autônomo:');
+const cls2 = [
+  { id: 'x1', lat: -27.10, lng: -52.61, ultima_visita_em: '2026-05-01', frequencia_dias: 45 }, // Chapecó
+  { id: 'x2', lat: -27.11, lng: -52.62, ultima_visita_em: '2026-05-02', frequencia_dias: 45 }, // Chapecó
+  { id: 'x3', lat: -28.26, lng: -52.41, ultima_visita_em: '2026-05-03', frequencia_dias: 45 }, // Passo Fundo (base)
+  { id: 'x4', lat: -28.25, lng: -52.42, ultima_visita_em: '2026-05-04', frequencia_dias: 45 }  // Passo Fundo (base)
+];
+const p2 = C.planejarPorRegioes({
+  clientes: cls2, hoje: '2026-08-02', cicloInicio: '2026-07-27', porDia: 2,
+  diasTrabalho: [2, 3, 4, 5], diaPertoBase: 5, baseCoord: { lat: -28.2622, lng: -52.4083 }
+});
+eq('sem segunda: nenhum agendamento cai na segunda-feira',
+  p2.atribuicoes.every(a => new Date(a.data + 'T12:00:00').getDay() !== 1), true);
+eq('sexta é dia perto de casa: só região Passo Fundo',
+  p2.atribuicoes.filter(a => new Date(a.data + 'T12:00:00').getDay() === 5)
+    .every(a => a.regiao === 'Passo Fundo'), true);
+eq('todos os 4 clientes agendados', p2.atribuicoes.length, 4);
+eq('clientes da base aparecem na sexta',
+  p2.atribuicoes.some(a => a.regiao === 'Passo Fundo' && new Date(a.data + 'T12:00:00').getDay() === 5), true);
+
 console.log('Classe A/B/C (prioridade no reencaixe):');
 eq('A antes de B, C e D por último', [{classe:'C'},{classe:'D'},{classe:'A'},{},{classe:'B'}]
   .sort((a,b) => C.classeRank(a) - C.classeRank(b)).map(c => c.classe || 'B').join(''), 'ABBCD');

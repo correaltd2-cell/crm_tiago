@@ -969,6 +969,7 @@
     const s = sessao();
     view.appendChild(el('h2', null, 'Mais'));
     const item = (rot, fn) => el('button', { class: 'item-lista mt8', onclick: fn }, el('strong', null, rot));
+    view.appendChild(item('🗓 Meu Roteiro — dias, folgas e reencaixes', telaMeuRoteiro));
     view.appendChild(item('📊 Relatórios — venda do dia, metas e redes', telaRelatorios));
     view.appendChild(item('💰 Financeiro — comissões a receber e despesas', telaFinanceiro));
     view.appendChild(item('📍 Geocodificar clientes', telaGeocode));
@@ -1610,30 +1611,187 @@
       el('p', { class: 'aviso mt8' }, 'Isso regrava o dia de visita de todos os clientes ativos do representante.'),
       el('button', {
         class: 'btn big w100 mt12', onclick: async () => {
-          const res = gerarRoteiro(rep.id);
+          const res = gerarRoteiroRep(rep.id);
           m.fechar();
           toast(`🗺 Roteiro gerado: ${res.agendados} clientes em ${res.dias} dias, região por região` +
             (res.semDia ? ` (+${res.semDia} aguardam a próxima geração)` : '') + '.');
         }
       }, '🗺 Gerar roteiro por regiões')), { titulo: 'Roteiro por regiões' });
 
-    function gerarRoteiro(repId) {
-      const cls = clientesDoRep(repId).map(c => Object.assign({}, c, {
-        regiao: c.regiao || C.regiaoDoCliente(c)
-      }));
-      const plano = C.planejarPorRegioes({
-        clientes: cls, hoje: hojeISO(),
-        cicloInicio: DB.config('ciclo_inicio', '2026-07-27'),
-        porDia: Number(DB.config('visitas_dia_min', 6))
+  }
+
+  // gera/regrava o roteiro por regiões respeitando as preferências do vendedor
+  // (dias que trabalha e o "dia perto de casa" do autônomo)
+  function gerarRoteiroRep(repId) {
+    const rep = DB.byId('representantes', repId) || {};
+    const cls = clientesDoRep(repId).map(c => Object.assign({}, c, {
+      regiao: c.regiao || C.regiaoDoCliente(c)
+    }));
+    const plano = C.planejarPorRegioes({
+      clientes: cls, hoje: hojeISO(),
+      cicloInicio: DB.config('ciclo_inicio', '2026-07-27'),
+      porDia: Number(DB.config('visitas_dia_min', 6)),
+      diasTrabalho: rep.dias_trabalho || [1, 2, 3, 4, 5],
+      diaPertoBase: rep.dia_perto_base || null,
+      baseCoord: rep.lat_base != null ? { lat: rep.lat_base, lng: rep.lng_base } : null
+    });
+    const agendadosIds = new Set(plano.atribuicoes.map(a => a.id));
+    for (const a of plano.atribuicoes)
+      DB.update('clientes', a.id, { semana_padrao: a.semana, dia_semana_padrao: a.dia, regiao: a.regiao });
+    // quem não entrou nesta rodada fica sem dia fixo (entra na próxima geração/reencaixe)
+    for (const c of cls)
+      if (!agendadosIds.has(c.id) && c.semana_padrao != null)
+        DB.update('clientes', c.id, { semana_padrao: null, dia_semana_padrao: null, regiao: c.regiao || null });
+    return { agendados: plano.atribuicoes.length, dias: plano.dias, semDia: plano.semDia };
+  }
+
+  // ---------- Meu Roteiro: agenda autogerenciável do vendedor autônomo ----------
+  // O vendedor escolhe os dias que trabalha, o "dia perto de casa", libera dias
+  // (folga/estoque) e move clientes — o sistema sugere onde reencaixar.
+  function telaMeuRoteiro() {
+    const s = sessao();
+    if (s.consolidado) return toast('Escolha um vendedor no topo para ver o roteiro dele.', 'erro');
+    const rep = DB.byId('representantes', s.rep.id);
+    const wrap = el('div');
+    const m = modal(wrap, { titulo: '🗓 Meu Roteiro — ' + rep.nome, full: true });
+    const maxDia = Number(DB.config('visitas_dia_max', 9));
+    const alvoDia = Number(DB.config('visitas_dia_min', 6));
+    const cicloIni = DB.config('ciclo_inicio', '2026-07-27');
+    const NOMES = ['', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta'];
+    render();
+
+    function membrosDoDia(dataISO) {
+      const ciclo = C.cicloDoDia(dataISO, cicloIni);
+      return clientesDoRep(rep.id).filter(c =>
+        c.semana_padrao === ciclo.semana && C.mesmoDia(c.dia_semana_padrao, ciclo.diaSemana));
+    }
+    function proximosDias(n) {
+      const out = []; let off = 0;
+      while (out.length < n && off < 60) {
+        const dISO = addDias(hojeISO(), off); off++;
+        const dw = new Date(dISO + 'T12:00:00').getDay();
+        if (dw >= 1 && dw <= 5) out.push({ data: dISO, dw });
+      }
+      return out;
+    }
+    function regiaoDoDia(membros) {
+      const cont = {};
+      membros.forEach(c => { const r = c.regiao || C.regiaoDoCliente(c); if (r) cont[r] = (cont[r] || 0) + 1; });
+      const top = Object.entries(cont).sort((a, b) => b[1] - a[1])[0];
+      return top ? top[0] : null;
+    }
+    // melhores dias para reencaixar um cliente: mesma região primeiro, com vaga
+    function sugerirDias(cliente, excluirData) {
+      const minhaRegiao = cliente.regiao || C.regiaoDoCliente(cliente);
+      return proximosDias(24)
+        .filter(d => d.data !== excluirData && d.data > hojeISO())
+        .filter(d => (rep.dias_trabalho || [1, 2, 3, 4, 5]).includes(d.dw))
+        .map(d => {
+          const membros = membrosDoDia(d.data);
+          return { d, membros, regiao: regiaoDoDia(membros), vagas: maxDia - membros.length };
+        })
+        .filter(x => x.vagas > 0)
+        .sort((a, b) =>
+          ((b.regiao === minhaRegiao ? 1 : 0) - (a.regiao === minhaRegiao ? 1 : 0)) ||
+          a.d.data.localeCompare(b.d.data))
+        .slice(0, 10);
+    }
+    function moverPara(cliente, dataISO) {
+      const ciclo = C.cicloDoDia(dataISO, cicloIni);
+      DB.update('clientes', cliente.id, {
+        semana_padrao: ciclo.semana, dia_semana_padrao: C.DIAS_SEMANA[ciclo.diaSemana]
       });
-      const agendadosIds = new Set(plano.atribuicoes.map(a => a.id));
-      for (const a of plano.atribuicoes)
-        DB.update('clientes', a.id, { semana_padrao: a.semana, dia_semana_padrao: a.dia, regiao: a.regiao });
-      // quem não entrou nesta rodada fica sem dia fixo (entra na próxima geração/reencaixe)
-      for (const c of cls)
-        if (!agendadosIds.has(c.id) && c.semana_padrao != null)
-          DB.update('clientes', c.id, { semana_padrao: null, dia_semana_padrao: null, regiao: c.regiao || null });
-      return { agendados: plano.atribuicoes.length, dias: plano.dias, semDia: plano.semDia };
+    }
+    function abrirMover(cliente) {
+      const ops = sugerirDias(cliente, null);
+      const mm = modal(el('div', null,
+        el('p', { class: 'sub' }, 'Para quando mover ' + cliente.nome + '? (sugestões da mesma região primeiro)'),
+        el('div', { class: 'col gap8 mt8' }, ops.map(o => el('button', {
+          class: 'item-lista', onclick: () => {
+            moverPara(cliente, o.d.data); mm.fechar();
+            toast('Movido para ' + dataBR(o.d.data) + '.'); render();
+          }
+        }, el('strong', null, NOMES[o.d.dw] + ' · ' + dataBR(o.d.data)),
+          el('span', { class: 'sub' }, (o.regiao ? '📍 ' + o.regiao + ' · ' : '') + o.membros.length + ' visitas (' + o.vagas + ' vagas)'))))),
+        { titulo: 'Mover cliente' });
+    }
+    async function liberarDia(dataISO, membros) {
+      if (!(await confirmar('Liberar ' + dataBR(dataISO) + ' (folga/estoque)? Os ' + membros.length +
+        ' clientes do dia serão reencaixados nos melhores dias — de preferência na mesma região.'))) return;
+      let movidos = 0, semDia = 0;
+      for (const c of membros) {
+        const ops = sugerirDias(c, dataISO).filter(o => membrosDoDia(o.d.data).length < maxDia);
+        const alvoBom = ops.find(o => o.membros.length < alvoDia) || ops[0];
+        if (alvoBom) { moverPara(c, alvoBom.d.data); movidos++; }
+        else { DB.update('clientes', c.id, { semana_padrao: null, dia_semana_padrao: null }); semDia++; }
+      }
+      toast('🚫 Dia liberado: ' + movidos + ' reencaixado(s)' +
+        (semDia ? ', ' + semDia + ' aguardam a próxima geração de roteiro' : '') + '.');
+      render();
+    }
+
+    function render() {
+      wrap.innerHTML = '';
+      // ---- preferências do autônomo ----
+      const trab = new Set(rep.dias_trabalho || [1, 2, 3, 4, 5]);
+      wrap.appendChild(el('h3', null, 'Dias em que trabalho'));
+      wrap.appendChild(el('div', { class: 'dias-scroll mt4' }, [1, 2, 3, 4, 5].map(dw => el('button', {
+        class: 'chip' + (trab.has(dw) ? ' ativo' : ''),
+        onclick: () => {
+          if (trab.has(dw)) { if (trab.size <= 1) return toast('Deixe ao menos um dia de trabalho.', 'erro'); trab.delete(dw); }
+          else trab.add(dw);
+          rep.dias_trabalho = Array.from(trab).sort();
+          DB.update('representantes', rep.id, { dias_trabalho: rep.dias_trabalho });
+          render();
+        }
+      }, NOMES[dw]))));
+      const regiaoBase = rep.lat_base != null ? C.regiaoDoCliente({ lat: rep.lat_base, lng: rep.lng_base }, 1e9) : null;
+      wrap.appendChild(el('h3', { class: 'mt12' }, 'Dia perto de casa' + (regiaoBase ? ' (região ' + regiaoBase + ')' : '')));
+      wrap.appendChild(el('div', { class: 'dias-scroll mt4' },
+        [[null, 'Nenhum'], [1, 'Segunda'], [2, 'Terça'], [3, 'Quarta'], [4, 'Quinta'], [5, 'Sexta']].map(([dw, rot]) => el('button', {
+          class: 'chip' + ((rep.dia_perto_base || null) === dw ? ' ativo' : ''),
+          onclick: () => {
+            rep.dia_perto_base = dw;
+            DB.update('representantes', rep.id, { dia_perto_base: dw });
+            render();
+          }
+        }, rot))));
+      wrap.appendChild(el('p', { class: 'sub mt4' },
+        'No dia escolhido, o roteiro puxa clientes da região da sua base — bom para ficar perto de casa.'));
+      wrap.appendChild(el('button', {
+        class: 'btn w100 mt8', onclick: () => {
+          const res = gerarRoteiroRep(rep.id);
+          toast('🗺 Roteiro regerado: ' + res.agendados + ' clientes em ' + res.dias + ' dias.');
+          render();
+        }
+      }, '🗺 Regerar roteiro com minhas preferências'));
+
+      // ---- agenda editável ----
+      wrap.appendChild(el('h3', { class: 'mt16' }, 'Agenda das próximas semanas'));
+      wrap.appendChild(el('p', { class: 'sub' }, 'Toque num dia para abrir. Dá para liberar o dia (folga/estoque) e mover clientes — o sistema sugere onde reencaixar.'));
+      for (const d of proximosDias(20)) {
+        const membros = membrosDoDia(d.data);
+        const reg = regiaoDoDia(membros);
+        const folga = !(rep.dias_trabalho || [1, 2, 3, 4, 5]).includes(d.dw);
+        const det = el('details', { class: 'card-visita mt8' });
+        det.appendChild(el('summary', null,
+          el('strong', null, NOMES[d.dw] + ' · ' + dataBR(d.data)),
+          el('span', { class: 'sub' }, folga ? ' 🚫 dia sem trabalho' :
+            (membros.length ? ' · ' + membros.length + ' visitas' + (reg ? ' · 📍 ' + reg : '') : ' · livre'))));
+        if (membros.length) {
+          const listaEl = el('div', { class: 'col gap8 mt8' });
+          membros.forEach(c => listaEl.appendChild(el('div', { class: 'row space' },
+            el('div', null, el('strong', null, c.nome),
+              el('div', { class: 'sub' }, [c.cidade, c.uf].filter(Boolean).join(' - '))),
+            el('button', { class: 'btn-mini', onclick: () => abrirMover(c) }, '↔ Mover'))));
+          det.appendChild(listaEl);
+          det.appendChild(el('button', {
+            class: 'btn-link mt8', style: 'color:#ef7076',
+            onclick: () => liberarDia(d.data, membros)
+          }, '🚫 Liberar este dia (folga/estoque)'));
+        }
+        wrap.appendChild(det);
+      }
     }
   }
 

@@ -57,6 +57,12 @@ COMISSÕES (regras)
 ABA PAINEL (números do mês)
 Faturamento (vendido), comissão gerada, A RECEBER no mês, despesas, líquido, km rodado, custo real por km, visitas hoje/mês, conversão de visitas em pedidos, clientes ativos, atrasados e vencendo, ranking das linhas mais vendidas e alertas de ciclo (tocar abre a ficha).
 
+MAIS → MEU ROTEIRO (🗓) — para o vendedor autônomo organizar a própria agenda
+• DIAS EM QUE TRABALHO: desmarque os dias que não atende (ex.: segunda para organizar estoque). O roteiro só agenda nos dias marcados.
+• DIA PERTO DE CASA: escolha um dia (ex.: sexta) para o roteiro puxar clientes da região da sua base — assim sexta-feira fica perto de casa.
+• AGENDA DAS PRÓXIMAS SEMANAS: toque num dia para ver os clientes. "↔ MOVER" muda um cliente de dia (o sistema sugere os melhores dias, de preferência na mesma região e com vaga). "🚫 LIBERAR ESTE DIA" esvazia o dia (folga, estoque, imprevisto) e reencaixa os clientes sozinho nos melhores dias — quem não couber fica aguardando e o sistema avisa.
+• Depois de mudar as preferências, toque em "🗺 Regerar roteiro com minhas preferências". O sistema continua sendo o guia: ele sempre mostra quem precisa de visita e sugere quando e onde repor — mas quem manda na agenda é o vendedor.
+
 MAIS → RELATÓRIOS (📊)
 • VENDA DO DIA: valor vendido hoje, quantos pedidos e as visitas do dia (na rota + fora da rota = total atendidos).
 • METAS: o gestor cadastra a META DO MÊS (ex.: R$ 200.000). O sistema divide pelos DIAS ÚTEIS (segunda a sexta) e mostra a meta do dia, a % da meta já batida e a PROJEÇÃO: "nesse ritmo o mês fecha em R$ X (Y% da meta)". Dá para definir uma meta do dia própria, se quiser um valor diferente da divisão automática.

@@ -275,6 +275,15 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   check('relatórios: rede Clamed agrupada', rel.includes('Clamed'));
   check('relatórios: contador de visitas do dia', rel.includes('atendidos') || rel.includes('Visitas:'));
   check('relatórios: contador de novos clientes (15%)', rel.includes('Novos clientes') && rel.includes('1 novo(s) cliente(s)'));
+
+  // Meu Roteiro: painel autogerenciável abre com preferências e agenda
+  await page.locator('.ns-overlay').last().locator('.btn-icon').first().click();
+  await page.waitForTimeout(200);
+  await page.click('text=\ud83d\uddd3 Meu Roteiro');
+  await page.waitForSelector('.ns-overlay');
+  const rot = await page.locator('.ns-overlay').last().textContent();
+  check('Meu Roteiro: preferências de dias e agenda aparecem',
+    rot.includes('Dias em que trabalho') && rot.includes('Dia perto de casa') && rot.includes('Agenda das pr\u00f3ximas semanas'));
   await page.locator('.ns-overlay').last().locator('.btn-icon').first().click();
   await page.waitForTimeout(200);
 

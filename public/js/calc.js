@@ -225,9 +225,16 @@
   // Planejador: percorre as regiões da mais urgente para a menos, preenchendo
   // dias úteis (porDia clientes/dia, agrupados por proximidade dentro da região).
   // Vencimento conta da ÚLTIMA VISITA (não do último pedido).
+  // Preferências do vendedor autônomo:
+  //   diasTrabalho: dias da semana que ele trabalha (1=Seg..5=Sex; padrão todos)
+  //   diaPertoBase: dia reservado para a região da base (ex.: 5 = sexta em Passo Fundo)
+  //   baseCoord: {lat,lng} da base do vendedor (define a região "de casa")
   // Devolve atribuições {id, data, regiao, semana, dia} limitadas ao ciclo de 7 semanas.
-  function planejarPorRegioes({ clientes, hoje, cicloInicio, porDia, horizonteDias }) {
+  function planejarPorRegioes({ clientes, hoje, cicloInicio, porDia, horizonteDias,
+    diasTrabalho, diaPertoBase, baseCoord }) {
     porDia = porDia || 6; horizonteDias = horizonteDias || 45;
+    const trabalha = (diasTrabalho && diasTrabalho.length) ? diasTrabalho : [1, 2, 3, 4, 5];
+    const regiaoBase = (diaPertoBase && baseCoord) ? regiaoDoCliente(baseCoord, 1e9) : null;
     const due = (c) => {
       const base = c.ultima_visita_em || c.ultimo_pedido_em;
       if (!base) return new Date(hoje + 'T12:00:00');
@@ -243,44 +250,74 @@
       .filter(x => x.regiao && x.due <= fim);
     const porRegiao = {};
     for (const x of eleg) (porRegiao[x.regiao] = porRegiao[x.regiao] || []).push(x);
-    const regioes = Object.keys(porRegiao).sort((a, b) =>
-      Math.min.apply(null, porRegiao[a].map(x => +x.due)) -
-      Math.min.apply(null, porRegiao[b].map(x => +x.due)));
-    // dias úteis a partir de amanhã — no máximo 34 (ciclo de 7 semanas sem repetir)
+    for (const r of Object.keys(porRegiao))
+      porRegiao[r] = porRegiao[r].sort((a, b) => a.due - b.due).map(x => x.c);
+    const regioes = Object.keys(porRegiao).sort((a, b) => {
+      const dueMin = (r) => Math.min.apply(null, (porRegiao[r].length ? porRegiao[r] : [null])
+        .map(c => c ? +due(c) : Infinity));
+      return dueMin(a) - dueMin(b);
+    });
+    // dias úteis (respeitando os dias de trabalho) — máx. 34 sem repetir o ciclo
     const slots = [];
     const d = new Date(hojeD); d.setDate(d.getDate() + 1);
-    while (slots.length < 34) {
+    let vistos = 0;
+    while (slots.length < 34 && vistos < 60) {
       const dw = d.getDay();
-      if (dw >= 1 && dw <= 5) slots.push(d.toISOString().slice(0, 10));
+      if (dw >= 1 && dw <= 5) {
+        vistos++;
+        if (trabalha.includes(dw)) slots.push({ data: d.toISOString().slice(0, 10), dw });
+      }
       d.setDate(d.getDate() + 1);
     }
-    const atribuicoes = [];
-    let si = 0;
-    for (const reg of regioes) {
-      if (si >= slots.length) break;
-      const fila = porRegiao[reg].sort((a, b) => a.due - b.due).map(x => x.c);
-      while (fila.length && si < slots.length) {
-        const grupo = [fila.shift()];
-        while (grupo.length < porDia && fila.length) {
-          const cx = {
-            lat: grupo.reduce((s, g) => s + g.lat, 0) / grupo.length,
-            lng: grupo.reduce((s, g) => s + g.lng, 0) / grupo.length
-          };
-          let melhor = 0, md = Infinity;
-          for (let i = 0; i < fila.length; i++) {
-            const dd = haversineKm(cx, fila[i]);
-            if (dd < md) { md = dd; melhor = i; }
-          }
-          grupo.push(fila.splice(melhor, 1)[0]);
+    const montarGrupo = (fila) => {
+      const grupo = [fila.shift()];
+      while (grupo.length < porDia && fila.length) {
+        const cx = {
+          lat: grupo.reduce((s, g) => s + g.lat, 0) / grupo.length,
+          lng: grupo.reduce((s, g) => s + g.lng, 0) / grupo.length
+        };
+        let melhor = 0, md = Infinity;
+        for (let i = 0; i < fila.length; i++) {
+          const dd = haversineKm(cx, fila[i]);
+          if (dd < md) { md = dd; melhor = i; }
         }
-        const dataISO = slots[si++];
-        const ciclo = cicloDoDia(dataISO, cicloInicio);
-        for (const c of grupo)
-          atribuicoes.push({ id: c.id, data: dataISO, regiao: reg,
-            semana: ciclo.semana, dia: DIAS_SEMANA[ciclo.diaSemana] });
+        grupo.push(fila.splice(melhor, 1)[0]);
       }
+      return grupo;
+    };
+    // a fila da região da base fica RESERVADA para os dias "perto de casa";
+    // só o excedente (que não cabe nesses dias) entra na rotação normal, no fim
+    let filaBase = null;
+    if (regiaoBase && porRegiao[regiaoBase] && porRegiao[regiaoBase].length) {
+      const capacidadeBase = slots.filter(s => s.dw === diaPertoBase).length * porDia;
+      filaBase = porRegiao[regiaoBase].slice(0, capacidadeBase);
+      porRegiao[regiaoBase] = porRegiao[regiaoBase].slice(capacidadeBase);
     }
-    return { atribuicoes, regioes, elegiveis: eleg.length, dias: si,
+    const ordem = regiaoBase
+      ? regioes.filter(r => r !== regiaoBase).concat(porRegiao[regiaoBase] && porRegiao[regiaoBase].length ? [regiaoBase] : [])
+      : regioes;
+    const atribuicoes = [];
+    let ri = 0, dias = 0;
+    const filaDe = (reg) => porRegiao[reg] || [];
+    for (const slot of slots) {
+      let reg = null, fila = null;
+      // dia perto de casa: puxa da fila reservada da base
+      if (filaBase && slot.dw === diaPertoBase && filaBase.length) { reg = regiaoBase; fila = filaBase; }
+      else {
+        while (ri < ordem.length && !filaDe(ordem[ri]).length) ri++;
+        if (ri < ordem.length) { reg = ordem[ri]; fila = porRegiao[reg]; }
+        else if (filaBase && filaBase.length) continue; // a base espera o dia perto de casa
+        else break;
+      }
+      if (!reg || !fila.length) continue;
+      const grupo = montarGrupo(fila);
+      const ciclo = cicloDoDia(slot.data, cicloInicio);
+      for (const c of grupo)
+        atribuicoes.push({ id: c.id, data: slot.data, regiao: reg,
+          semana: ciclo.semana, dia: DIAS_SEMANA[ciclo.diaSemana] });
+      dias++;
+    }
+    return { atribuicoes, regioes, elegiveis: eleg.length, dias,
       semDia: eleg.length - atribuicoes.length };
   }
 
