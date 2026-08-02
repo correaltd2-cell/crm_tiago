@@ -381,12 +381,18 @@
     }
     if (pag.length) paginas.push(pag);
 
-    // desenha cada página com altura sob medida
-    const pgs = paginas.map((itensPg, pi) => {
+    // desenha cada página; com várias páginas, todas com a MESMA altura
+    // (apps de impressora térmica deformam páginas de tamanhos diferentes)
+    const altDe = (itensPg, pi) => {
       const contHead = pi > 0 ? CONT_H : 0;
       const alturaConteudo = itensPg.reduce((s, x) => s + x.h, 0) +
         itensPg.filter(x => x.k === 't' && x.size >= 8).length * 2; // folga p/ fontes maiores
-      const alt = Math.max(160, alturaConteudo + contHead + CM * 2 + 22);
+      return Math.max(160, alturaConteudo + contHead + CM * 2 + 22);
+    };
+    const altUniforme = paginas.length > 1
+      ? Math.max.apply(null, paginas.map(altDe)) : null;
+    const pgs = paginas.map((itensPg, pi) => {
+      const alt = altUniforme || altDe(itensPg, pi);
       const pg = Page();
       let y = alt - CM - 10;
       const desenharTxt = (x) => {
