@@ -345,9 +345,16 @@
         }, rotuloDia(off, dISO));
       })));
 
+    const regiaoDia = (() => {
+      const cont = {};
+      doDia.forEach(c => { const r = c.regiao || C.regiaoDoCliente(c); if (r) cont[r] = (cont[r] || 0) + 1; });
+      const top = Object.entries(cont).sort((a, b) => b[1] - a[1])[0];
+      return top ? top[0] : null;
+    })();
     view.appendChild(el('div', { class: 'row space mt8' },
       el('h2', null, (ehHoje ? 'Hoje' : rotuloDia(diaOffset, dataVista)) + ' · ' + dataBR(dataVista)),
-      el('span', { class: 'badge' }, 'Semana ' + ciclo.semana + ' · ' +
+      el('span', { class: 'badge' }, (regiaoDia ? '📍 ' + regiaoDia + ' · ' : '') +
+        'Semana ' + ciclo.semana + ' · ' +
         ['', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'][ciclo.diaSemana])));
 
     const listaIds = rotaSalva ? rotaSalva.sequencia.map(x => x.cliente_id) : doDia.map(c => c.id);
@@ -545,8 +552,9 @@
       .forEach(p => DB.update('pendencias', p.id, { resolvida_em: new Date().toISOString() }));
   }
 
+  // Frequências da lógica do vendedor: A = 45d, B = 60d, C = 90d
   function freqDaClasse(cl) {
-    return Number(DB.config('freq_classe_' + cl.toLowerCase(), { A: 35, B: 60, C: 90, D: 120 }[cl] || 60));
+    return Number(DB.config('freq_classe_' + cl.toLowerCase(), { A: 45, B: 60, C: 90, D: 120 }[cl] || 45));
   }
   function aplicarClasse(clienteId, cl) {
     const c = DB.byId('clientes', clienteId);
@@ -739,15 +747,16 @@
       c.material_no_cliente ? el('div', { class: 'sub mt4' }, '📦 Material anotado: ' + c.material_no_cliente) : null,
       el('div', { class: 'row gap8 mt8' },
         el('span', { class: 'sub' }, 'Classe:'),
-        ...['A', 'B', 'C', 'D'].map(cl => el('button', {
-          class: 'btn-mini' + ((c.classe || 'B') === cl ? ' classe-ativa' : ''),
+        ...['A', 'B', 'C'].map(cl => el('button', {
+          class: 'btn-mini' + ((c.classe || 'A') === cl ? ' classe-ativa' : ''),
           onclick: (e) => {
             const freq = aplicarClasse(c.id, cl);
             e.currentTarget.parentElement.querySelectorAll('.btn-mini').forEach(b => b.classList.remove('classe-ativa'));
             e.currentTarget.classList.add('classe-ativa');
-            toast(`Classe ${cl}: visita a cada ${freq} dias` + (cl === 'A' ? ' · prioridade máxima' : cl === 'C' || cl === 'D' ? ' · prioridade baixa no reencaixe' : ''));
+            toast(`Classe ${cl}: visita a cada ${freq} dias desde a última visita.`);
           }
-        }, cl + ' · ' + freqDaClasse(cl) + 'd'))),
+        }, cl + ' · ' + freqDaClasse(cl) + 'd')),
+        el('span', { class: 'badge' }, '📍 ' + (c.regiao || C.regiaoDoCliente(c) || 'sem região'))),
 
       el('h4', { class: 'mt12' }, 'Ciclo de visitas'),
       el('div', { class: 'sub' },
@@ -970,7 +979,7 @@
       view.appendChild(item('💍 Produtos e preços', telaAdminProdutos));
       view.appendChild(item('🧑‍💼 Vendedores', telaAdminVendedores));
       view.appendChild(item('⚙ Configurações', telaAdminConfig));
-      view.appendChild(item('🗓 Redistribuir mês (virada de mês)', telaReplanejarMes));
+      view.appendChild(item('🗺 Gerar roteiro por regiões', telaReplanejarMes));
     }
     view.appendChild(el('button', { class: 'btn-link mt16', onclick: sair }, 'Sair (' + s.eu.email + ')'));
     view.appendChild(el('p', { class: 'sub mt8' }, 'NEW STAR — App do Vendedor · offline-first · v1'));
@@ -1584,59 +1593,47 @@
       }, 'Salvar configurações')), { titulo: 'Configurações', full: true });
   }
 
-  // ---------- Redistribuição mensal (virada de mês) ----------
+  // ---------- Gerar roteiro por REGIÕES (lógica do vendedor) ----------
+  // Blocos por região (Passo Fundo, Santa Rosa, Chapecó, Joaçaba, Erechim,
+  // Frederico Westphalen, São Miguel do Oeste), da mais urgente para a menos.
+  // O vencimento conta da ÚLTIMA VISITA (freq. A=45d, B=60d, C=90d).
   function telaReplanejarMes() {
     const s = sessao();
     if (s.consolidado) return toast('Selecione um representante no topo.', 'erro');
     const rep = s.rep;
     const m = modal(el('div', null,
-      el('p', null, 'Redistribui os clientes de ' + rep.nome + ' pelo ciclo de 7 semanas respeitando a frequência individual, ' +
-        DB.config('visitas_dia_min', 6) + '–' + DB.config('visitas_dia_max', 8) + ' visitas/dia e proximidade geográfica (menor km).'),
-      el('p', { class: 'aviso mt8' }, 'Isso regrava semana e dia do ciclo de todos os clientes ativos do representante.'),
+      el('p', null, 'Monta o roteiro em BLOCOS POR REGIÃO, começando pela região com clientes mais ' +
+        'atrasados. Cada dia útil recebe ' + DB.config('visitas_dia_min', 6) + ' visitas da mesma região, ' +
+        'agrupadas por proximidade. O vencimento de cada cliente conta da ÚLTIMA VISITA.'),
+      el('p', { class: 'sub mt8' }, 'Regiões: ' + C.REGIOES.map(r => r.nome).join(' · ') +
+        '. Clientes longe de todas (outros estados) ficam FORA DE ROTA — continuam no sistema, sem agendamento.'),
+      el('p', { class: 'aviso mt8' }, 'Isso regrava o dia de visita de todos os clientes ativos do representante.'),
       el('button', {
         class: 'btn big w100 mt12', onclick: async () => {
-          const res = replanejar(rep.id);
+          const res = gerarRoteiro(rep.id);
           m.fechar();
-          toast(`Redistribuído: ${res.n} clientes em ${res.dias} dias úteis (média ${res.media}/dia).`);
+          toast(`🗺 Roteiro gerado: ${res.agendados} clientes em ${res.dias} dias, região por região` +
+            (res.semDia ? ` (+${res.semDia} aguardam a próxima geração)` : '') + '.');
         }
-      }, '🗓 Redistribuir agora')), { titulo: 'Virada de mês' });
+      }, '🗺 Gerar roteiro por regiões')), { titulo: 'Roteiro por regiões' });
 
-    function replanejar(repId) {
-      const maxDia = Number(DB.config('visitas_dia_max', 8));
-      const minDia = Number(DB.config('visitas_dia_min', 6));
-      const cls = clientesDoRep(repId).slice();
-      // urgência: quem está mais perto de estourar o ciclo primeiro
-      cls.sort((a, b) => (a.proxima_visita_prevista || '9999').localeCompare(b.proxima_visita_prevista || '9999'));
-      const slots = []; // 7 semanas × 6 dias
-      for (let ss = 1; ss <= 7; ss++) for (let dd = 1; dd <= 5; dd++) slots.push({ s: ss, d: dd, membros: [] }); // dias úteis: Seg–Sex
-      const alvo = Math.min(maxDia, Math.max(minDia, Math.ceil(cls.length / slots.length)));
-      const restantes = new Set(cls.map(c => c.id));
-      for (const slot of slots) {
-        if (!restantes.size) break;
-        // semente: mais urgente restante
-        const seed = cls.find(c2 => restantes.has(c2.id));
-        slot.membros.push(seed); restantes.delete(seed.id);
-        // vizinhos mais próximos da semente (haversine) até o alvo
-        while (slot.membros.length < alvo && restantes.size) {
-          let melhor = null, melhorD = Infinity;
-          for (const c2 of cls) {
-            if (!restantes.has(c2.id)) continue;
-            const d2 = (seed.lat != null && c2.lat != null)
-              ? C.haversineKm(seed, c2)
-              : (seed.cidade === c2.cidade ? 0.5 : 999);
-            if (d2 < melhorD) { melhorD = d2; melhor = c2; }
-          }
-          if (!melhor) break;
-          slot.membros.push(melhor); restantes.delete(melhor.id);
-        }
-      }
-      let n = 0, dias = 0;
-      for (const slot of slots) {
-        if (!slot.membros.length) continue;
-        dias++;
-        for (const c2 of slot.membros) { DB.update('clientes', c2.id, { semana_padrao: slot.s, dia_semana_padrao: C.DIAS_SEMANA[slot.d] }); n++; }
-      }
-      return { n, dias, media: dias ? Math.round(n / dias * 10) / 10 : 0 };
+    function gerarRoteiro(repId) {
+      const cls = clientesDoRep(repId).map(c => Object.assign({}, c, {
+        regiao: c.regiao || C.regiaoDoCliente(c)
+      }));
+      const plano = C.planejarPorRegioes({
+        clientes: cls, hoje: hojeISO(),
+        cicloInicio: DB.config('ciclo_inicio', '2026-07-27'),
+        porDia: Number(DB.config('visitas_dia_min', 6))
+      });
+      const agendadosIds = new Set(plano.atribuicoes.map(a => a.id));
+      for (const a of plano.atribuicoes)
+        DB.update('clientes', a.id, { semana_padrao: a.semana, dia_semana_padrao: a.dia, regiao: a.regiao });
+      // quem não entrou nesta rodada fica sem dia fixo (entra na próxima geração/reencaixe)
+      for (const c of cls)
+        if (!agendadosIds.has(c.id) && c.semana_padrao != null)
+          DB.update('clientes', c.id, { semana_padrao: null, dia_semana_padrao: null, regiao: c.regiao || null });
+      return { agendados: plano.atribuicoes.length, dias: plano.dias, semDia: plano.semDia };
     }
   }
 

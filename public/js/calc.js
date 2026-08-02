@@ -198,6 +198,92 @@
     return null;
   }
 
+  // ---------- Regiões de roteiro (lógica do vendedor) ----------
+  // O roteiro anda em BLOCOS por região — assim nenhuma região é esquecida.
+  const REGIOES = [
+    { nome: 'Passo Fundo', lat: -28.2622, lng: -52.4083 },
+    { nome: 'Santa Rosa', lat: -27.8702, lng: -54.4796 },
+    { nome: 'Chapecó', lat: -27.0964, lng: -52.6183 },
+    { nome: 'Joaçaba', lat: -27.1720, lng: -51.5106 },
+    { nome: 'Erechim', lat: -27.6339, lng: -52.2697 },
+    { nome: 'Frederico Westphalen', lat: -27.3586, lng: -53.3958 },
+    { nome: 'São Miguel do Oeste', lat: -26.7242, lng: -53.5163 }
+  ];
+  // região = centro mais próximo; muito longe de todos (> limiteKm) = 'Fora de rota'
+  // (redes/CDs de outros estados ficam no sistema mas fora do roteiro de visitas)
+  function regiaoDoCliente(c, limiteKm) {
+    limiteKm = limiteKm || 150;
+    if (!c || c.lat == null || c.lng == null) return null;
+    let melhor = null, dist = Infinity;
+    for (const r of REGIOES) {
+      const d = haversineKm(c, r);
+      if (d < dist) { dist = d; melhor = r.nome; }
+    }
+    return dist <= limiteKm ? melhor : 'Fora de rota';
+  }
+
+  // Planejador: percorre as regiões da mais urgente para a menos, preenchendo
+  // dias úteis (porDia clientes/dia, agrupados por proximidade dentro da região).
+  // Vencimento conta da ÚLTIMA VISITA (não do último pedido).
+  // Devolve atribuições {id, data, regiao, semana, dia} limitadas ao ciclo de 7 semanas.
+  function planejarPorRegioes({ clientes, hoje, cicloInicio, porDia, horizonteDias }) {
+    porDia = porDia || 6; horizonteDias = horizonteDias || 45;
+    const due = (c) => {
+      const base = c.ultima_visita_em || c.ultimo_pedido_em;
+      if (!base) return new Date(hoje + 'T12:00:00');
+      const d = new Date(base + 'T12:00:00');
+      d.setDate(d.getDate() + (c.frequencia_dias || 45));
+      return d;
+    };
+    const hojeD = new Date(hoje + 'T12:00:00');
+    const fim = new Date(hojeD); fim.setDate(fim.getDate() + horizonteDias);
+    const eleg = clientes
+      .filter(c => c.lat != null && (c.regiao || regiaoDoCliente(c)) !== 'Fora de rota')
+      .map(c => ({ c, due: due(c), regiao: c.regiao || regiaoDoCliente(c) }))
+      .filter(x => x.regiao && x.due <= fim);
+    const porRegiao = {};
+    for (const x of eleg) (porRegiao[x.regiao] = porRegiao[x.regiao] || []).push(x);
+    const regioes = Object.keys(porRegiao).sort((a, b) =>
+      Math.min.apply(null, porRegiao[a].map(x => +x.due)) -
+      Math.min.apply(null, porRegiao[b].map(x => +x.due)));
+    // dias úteis a partir de amanhã — no máximo 34 (ciclo de 7 semanas sem repetir)
+    const slots = [];
+    const d = new Date(hojeD); d.setDate(d.getDate() + 1);
+    while (slots.length < 34) {
+      const dw = d.getDay();
+      if (dw >= 1 && dw <= 5) slots.push(d.toISOString().slice(0, 10));
+      d.setDate(d.getDate() + 1);
+    }
+    const atribuicoes = [];
+    let si = 0;
+    for (const reg of regioes) {
+      if (si >= slots.length) break;
+      const fila = porRegiao[reg].sort((a, b) => a.due - b.due).map(x => x.c);
+      while (fila.length && si < slots.length) {
+        const grupo = [fila.shift()];
+        while (grupo.length < porDia && fila.length) {
+          const cx = {
+            lat: grupo.reduce((s, g) => s + g.lat, 0) / grupo.length,
+            lng: grupo.reduce((s, g) => s + g.lng, 0) / grupo.length
+          };
+          let melhor = 0, md = Infinity;
+          for (let i = 0; i < fila.length; i++) {
+            const dd = haversineKm(cx, fila[i]);
+            if (dd < md) { md = dd; melhor = i; }
+          }
+          grupo.push(fila.splice(melhor, 1)[0]);
+        }
+        const dataISO = slots[si++];
+        const ciclo = cicloDoDia(dataISO, cicloInicio);
+        for (const c of grupo)
+          atribuicoes.push({ id: c.id, data: dataISO, regiao: reg,
+            semana: ciclo.semana, dia: DIAS_SEMANA[ciclo.diaSemana] });
+      }
+    }
+    return { atribuicoes, regioes, elegiveis: eleg.length, dias: si,
+      semDia: eleg.length - atribuicoes.length };
+  }
+
   // ---------- Metas (mês → dia útil, % batida e projeção de ritmo) ----------
   function diasUteisDoMes(mesISO) {
     const [a, m] = mesISO.split('-').map(Number);
@@ -284,6 +370,7 @@
     haversineKm, matrizHaversine, nearestNeighbor, comprimentoRota, doisOpt,
     otimizarRota, detourInsercao, decidirPernoite, sugestaoFrequencia,
     diasUteisDoMes, diasUteisAte, calcMeta, redeDoCliente,
+    REGIOES, regiaoDoCliente, planejarPorRegioes,
     parseCSV, toCSV, CICLOS
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

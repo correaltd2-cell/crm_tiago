@@ -121,6 +121,34 @@ eq('São Rafael pelo nome', C.redeDoCliente({ nome: 'Farmácias São Rafael Lj 0
 eq('sem rede = Independente', C.redeDoCliente({ nome: 'Farmácia Menino Jesus' }), 'Independente');
 eq('campo rede tem prioridade sobre o nome', C.redeDoCliente({ rede: 'MinhaRede', nome: 'Rede CLAMED' }), 'MinhaRede');
 
+console.log('Regiões de roteiro:');
+eq('cliente em Chapecó → região Chapecó', C.regiaoDoCliente({ lat: -27.10, lng: -52.61 }), 'Chapecó');
+eq('cliente em Sarandi → região Frederico ou Passo Fundo (mais próxima)',
+  ['Passo Fundo', 'Frederico Westphalen'].includes(C.regiaoDoCliente({ lat: -27.94, lng: -52.92 })), true);
+eq('Curitiba (outro estado) → Fora de rota', C.regiaoDoCliente({ lat: -25.43, lng: -49.27 }), 'Fora de rota');
+eq('sem coordenada → null', C.regiaoDoCliente({}), null);
+
+console.log('Planejador por regiões:');
+const cls = [
+  // região Chapecó, bem atrasados (última visita antiga)
+  { id: 'a1', lat: -27.10, lng: -52.61, ultima_visita_em: '2026-05-01', frequencia_dias: 45 },
+  { id: 'a2', lat: -27.11, lng: -52.62, ultima_visita_em: '2026-05-02', frequencia_dias: 45 },
+  // região Passo Fundo, menos atrasado
+  { id: 'b1', lat: -28.26, lng: -52.41, ultima_visita_em: '2026-07-01', frequencia_dias: 45 },
+  // em dia (vence longe) → fora do horizonte
+  { id: 'c1', lat: -28.26, lng: -52.40, ultima_visita_em: '2026-07-30', frequencia_dias: 90 },
+  // fora de rota (Curitiba)
+  { id: 'd1', lat: -25.43, lng: -49.27, ultima_visita_em: '2026-01-01', frequencia_dias: 45 }
+];
+const plano = C.planejarPorRegioes({ clientes: cls, hoje: '2026-08-02', cicloInicio: '2026-07-27', porDia: 2 });
+eq('agenda só os elegíveis (3): atrasados dentro do horizonte e na rota', plano.atribuicoes.length, 3);
+eq('região mais urgente (Chapecó) vem primeiro', plano.atribuicoes[0].regiao, 'Chapecó');
+eq('primeiro dia útil é 03/08 (segunda)', plano.atribuicoes[0].data, '2026-08-03');
+eq('bloco de Chapecó fecha antes de Passo Fundo',
+  plano.atribuicoes.filter(a => a.regiao === 'Chapecó').every(a => a.data <= plano.atribuicoes.find(x => x.regiao === 'Passo Fundo').data), true);
+eq('fora de rota não entra', plano.atribuicoes.some(a => a.id === 'd1'), false);
+eq('semana/dia coerentes com o ciclo', plano.atribuicoes[0].semana >= 1 && !!plano.atribuicoes[0].dia, true);
+
 console.log('Classe A/B/C (prioridade no reencaixe):');
 eq('A antes de B, C e D por último', [{classe:'C'},{classe:'D'},{classe:'A'},{},{classe:'B'}]
   .sort((a,b) => C.classeRank(a) - C.classeRank(b)).map(c => c.classe || 'B').join(''), 'ABBCD');
