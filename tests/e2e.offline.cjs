@@ -242,7 +242,42 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   check('cupom 58mm: PDF válido com página de 164pt de largura',
     cupomInfo.head === '%PDF-' && cupomInfo.largura === 164 && cupomInfo.xrefFecha);
   check('cupom 58mm: altura sob medida, assinatura e assinante presentes',
+
     cupomInfo.altura >= 220 && cupomInfo.temImg && cupomInfo.temAssinante);
+  // cupom grande (20 itens) divide em várias páginas curtas — páginas altas
+  // demais faziam a impressora térmica cortar a impressão no meio
+  const cupomGrande = await page.evaluate(async () => {
+    const itens = Array.from({ length: 20 }, (_, i) => ({
+      produto_id: 'x', tamanho: 'P', placas: 1, unid_colocadas: 48,
+      dev_display: 2, dev_quebrada: 1, unid_vendidas: 45, preco_unit: 12.6, valor_total: 567
+    }));
+    const blob = await window.NSPDF.gerarCupomPedido({
+      pedido: { numero: 99, data_pedido: '2026-08-02', tabela: 'simples', condicao_pagamento: '30 dias',
+        total_unid_colocadas: 960, total_unid_dev_display: 40, total_unid_dev_quebrada: 20,
+        total_unid_vendidas: 900, total_valor: 11340 },
+      itens, cliente: { nome: 'FARMACIA GRANDE', cnpj_cpf: '11222333000144', cidade: 'Chapecó', uf: 'SC' },
+      rep: { nome: 'Denilson', contato: '(49) 99999-0000' }, produtos: [], observacoes: ''
+    });
+    const txt = new TextDecoder('latin1').decode(new Uint8Array(await blob.arrayBuffer()));
+    const paginas = (txt.match(/\/Type \/Page /g) || []).length;
+    const count = Number((txt.match(/\/Count (\d+)/) || [])[1] || 0);
+    const alturas = Array.from(txt.matchAll(/\/MediaBox \[0 0 164 (\d+(?:\.\d+)?)\]/g)).map(m => Number(m[1]));
+    // xref: todos os offsets apontam para "N 0 obj"
+    const start = Number(txt.match(/startxref\n(\d+)\n%%EOF$/)[1]);
+    const tab = txt.slice(start).split('\n').slice(3);
+    let okOff = true, oi = 1;
+    for (const l of tab) {
+      const m2 = l.match(/^(\d{10}) 00000 n /);
+      if (!m2) break;
+      if (!txt.slice(Number(m2[1])).startsWith(oi + ' 0 obj')) { okOff = false; break; }
+      oi++;
+    }
+    return { paginas, count, maxAlt: Math.max.apply(null, alturas), okOff, temCont: txt.includes('continua\xe7\xe3o') };
+  });
+  check('cupom grande: várias páginas curtas (máx. ~700pt) com "continuação"',
+    cupomGrande.paginas > 1 && cupomGrande.count === cupomGrande.paginas &&
+    cupomGrande.maxAlt < 720 && cupomGrande.temCont);
+  check('cupom grande: estrutura interna válida (xref confere)', cupomGrande.okOff === true);
 
   // histórico: pedido consultável depois
   await page.locator('.ns-overlay').last().locator('.btn-icon').first().click(); // fecha modal do pedido

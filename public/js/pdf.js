@@ -292,81 +292,126 @@
     }
     const sigW = 110, sigH = img ? Math.min(48, sigW * img.h / img.w) : 0;
 
-    function desenhar(pg, alt) {
-      let y = alt - CM - 10;
-      const cx = CW / 2;
-      const t = (s, size, o) => {
-        o = o || {};
-        pg.text(o.al === 'center' ? cx : o.al === 'right' ? CW - CM : CM, y, s, size, o.b, o.al);
-      };
-      const dn = (h) => { y -= h; };
-      const hr = (forte) => { dn(4); pg.line(CM, y, CW - CM, y, forte ? 0.8 : 0.4); dn(10); };
+    // Conteúdo em BLOCOS indivisíveis, paginados em páginas curtas:
+    // páginas muito altas fazem o app da impressora térmica cortar a
+    // impressão no meio (pedidos grandes falhavam; pequenos passavam).
+    const ALT_MAX = 620; // altura máxima de conteúdo por página
+    const cx = CW / 2;
+    const blocos = [];
+    let atual = [];
+    const fecha = () => { if (atual.length) { blocos.push(atual); atual = []; } };
+    const txt = (s, size, o, h) => atual.push({ k: 't', s, size, o: o || {}, h });
+    const hr = (forte) => atual.push({ k: 'hr', forte: !!forte, h: 14 });
+    const esp = (h) => atual.push({ k: 'esp', h });
 
-      t('NEW STAR', 13, { b: true, al: 'center' }); dn(8);
-      t('APP DO VENDEDOR', 5.5, { al: 'center' }); dn(8);
-      t(Number(pedido.total_valor) < 0 ? 'RECOLHIMENTO — CRÉDITO DO CLIENTE' : 'TALÃO DE PEDIDO', 6.5, { al: 'center' });
-      hr(true);
-      t('Pedido nº ' + (pedido.numero || 'PENDENTE'), 8.5, { b: true }); dn(10);
-      t('Data: ' + dataBR(pedido.data_pedido), 7); dn(9);
-      t('Vendedor: ' + (rep.nome || ''), 7); dn(9);
-      if (rep.contato) { t('Contato: ' + rep.contato, 7); dn(9); }
-      t('Tabela: ' + nomeTabela, 7); dn(9);
-      for (const l of wrap('Cond. pgto: ' + (pedido.condicao_pagamento || '—'), 7, CIN)) { t(l, 7); dn(9); }
-      hr();
-      for (const l of wrap(cliente.nome || '', 8, CIN, true)) { t(l, 8, { b: true }); dn(10); }
-      if (cliente.cnpj_cpf) { t('CNPJ/CPF: ' + C.fmtCNPJ(cliente.cnpj_cpf), 6.5); dn(8); }
-      const cid = [cliente.cidade, cliente.uf].filter(Boolean).join(' - ');
-      if (cid) { t(cid, 6.5); dn(8); }
-      hr();
-      for (const it of itens) {
-        const p = prodDe(it.produto_id);
-        const nome = (p.codigo ? p.codigo + ' ' : '') + (p.nome || '') +
-          (p.variacao ? ' (' + p.variacao + ')' : '');
-        for (const l of wrap(nome, 7, CIN, true)) { t(l, 7, { b: true }); dn(9); }
-        t(it.tamanho === 'AV'
-          ? 'Avulso · ' + it.unid_colocadas + ' un'
-          : 'Placa ' + it.tamanho + ' ×' + it.placas + ' = ' + it.unid_colocadas + ' un', 6.5); dn(8);
-        t('Qtd. devolvida: ' + it.dev_display + ' · Qtd. quebrada: ' + it.dev_quebrada, 6.5); dn(8);
-        t('Qtd. vendida: ' + it.unid_vendidas + ' · Valor unit.: ' + C.fmtMoney(Number(it.preco_unit)), 6.5);
-        t('Total ' + C.fmtMoney(Number(it.valor_total)), 7.5, { b: true, al: 'right' }); dn(11);
-      }
-      hr();
-      t('Colocadas: ' + pedido.total_unid_colocadas, 6.5);
-      t('Dev display: ' + pedido.total_unid_dev_display, 6.5, { al: 'right' }); dn(8);
-      t('Vendidas: ' + pedido.total_unid_vendidas, 6.5, { b: true });
-      t('Quebradas: ' + pedido.total_unid_dev_quebrada, 6.5, { al: 'right' }); dn(11);
-      t(Number(pedido.total_valor) < 0 ? 'CRÉDITO' : 'TOTAL', 9, { b: true });
-      t(C.fmtMoney(Number(pedido.total_valor)), 10, { b: true, al: 'right' }); dn(12);
-      if (pedido.observacoes) {
-        hr();
-        for (const l of wrap('Obs.: ' + pedido.observacoes, 6.5, CIN)) { t(l, 6.5); dn(8); }
-      }
-      if (observacoes) {
-        hr();
-        for (const l of wrap(observacoes, 5.5, CIN)) { t(l, 5.5); dn(7); }
-      }
-      hr();
-      if (img) { dn(sigH); pg.image('/Im1', cx - sigW / 2, y, sigW, sigH); dn(8); }
-      else dn(22);
-      pg.line(cx - 55, y, cx + 55, y, 0.5); dn(9);
-      for (const l of wrap((pedido.assinante_nome ? pedido.assinante_nome + ' — ' : '') +
-        (cliente.nome || ''), 6.5, CIN)) { t(l, 6.5, { al: 'center' }); dn(8); }
-      t('Assinatura do cliente' + (pedido.assinado_em ? ' — ' +
-        new Date(pedido.assinado_em).toLocaleString('pt-BR') : ''), 5.5, { al: 'center' }); dn(6);
-      return y;
+    // cabeçalho
+    txt('NEW STAR', 13, { b: true, al: 'center' }, 8);
+    txt('APP DO VENDEDOR', 5.5, { al: 'center' }, 8);
+    txt(Number(pedido.total_valor) < 0 ? 'RECOLHIMENTO — CRÉDITO DO CLIENTE' : 'TALÃO DE PEDIDO', 6.5, { al: 'center' }, 0);
+    hr(true);
+    txt('Pedido nº ' + (pedido.numero || 'PENDENTE'), 8.5, { b: true }, 10);
+    txt('Data: ' + dataBR(pedido.data_pedido), 7, {}, 9);
+    txt('Vendedor: ' + (rep.nome || ''), 7, {}, 9);
+    if (rep.contato) txt('Contato: ' + rep.contato, 7, {}, 9);
+    txt('Tabela: ' + nomeTabela, 7, {}, 9);
+    for (const l of wrap('Cond. pgto: ' + (pedido.condicao_pagamento || '—'), 7, CIN)) txt(l, 7, {}, 9);
+    hr();
+    for (const l of wrap(cliente.nome || '', 8, CIN, true)) txt(l, 8, { b: true }, 10);
+    if (cliente.cnpj_cpf) txt('CNPJ/CPF: ' + C.fmtCNPJ(cliente.cnpj_cpf), 6.5, {}, 8);
+    const cid = [cliente.cidade, cliente.uf].filter(Boolean).join(' - ');
+    if (cid) txt(cid, 6.5, {}, 8);
+    hr();
+    fecha();
+    // um bloco por produto (nunca quebra no meio)
+    for (const it of itens) {
+      const p = prodDe(it.produto_id);
+      const nome = (p.codigo ? p.codigo + ' ' : '') + (p.nome || '') +
+        (p.variacao ? ' (' + p.variacao + ')' : '');
+      for (const l of wrap(nome, 7, CIN, true)) txt(l, 7, { b: true }, 9);
+      txt(it.tamanho === 'AV'
+        ? 'Avulso · ' + it.unid_colocadas + ' un'
+        : 'Placa ' + it.tamanho + ' ×' + it.placas + ' = ' + it.unid_colocadas + ' un', 6.5, {}, 8);
+      txt('Qtd. devolvida: ' + it.dev_display + ' · Qtd. quebrada: ' + it.dev_quebrada, 6.5, {}, 8);
+      txt('Qtd. vendida: ' + it.unid_vendidas + ' · Valor unit.: ' + C.fmtMoney(Number(it.preco_unit)), 6.5, {}, 8);
+      txt('Total ' + C.fmtMoney(Number(it.valor_total)), 7.5, { b: true, al: 'right' }, 11);
+      esp(2);
+      fecha();
     }
+    // totais
+    hr();
+    txt('Colocadas: ' + pedido.total_unid_colocadas +
+      ' · Devolvidas: ' + pedido.total_unid_dev_display, 6.5, {}, 8);
+    txt('Quebradas: ' + pedido.total_unid_dev_quebrada +
+      ' · Vendidas: ' + pedido.total_unid_vendidas, 6.5, {}, 11);
+    txt(Number(pedido.total_valor) < 0 ? 'CRÉDITO' : 'TOTAL', 9, { b: true }, 0);
+    txt(C.fmtMoney(Number(pedido.total_valor)), 10, { b: true, al: 'right' }, 12);
+    fecha();
+    if (pedido.observacoes) {
+      hr();
+      for (const l of wrap('Obs.: ' + pedido.observacoes, 6.5, CIN)) txt(l, 6.5, {}, 8);
+      fecha();
+    }
+    if (observacoes) {
+      hr();
+      for (const l of wrap(observacoes, 5.5, CIN)) txt(l, 5.5, {}, 7);
+      fecha();
+    }
+    // assinatura (bloco único)
+    hr();
+    if (img) atual.push({ k: 'img', h: sigH + 8 });
+    else esp(22);
+    atual.push({ k: 'lin', h: 9 });
+    for (const l of wrap((pedido.assinante_nome ? pedido.assinante_nome + ' — ' : '') +
+      (cliente.nome || ''), 6.5, CIN)) txt(l, 6.5, { al: 'center' }, 8);
+    txt('Assinatura do cliente' + (pedido.assinado_em ? ' — ' +
+      new Date(pedido.assinado_em).toLocaleString('pt-BR') : ''), 5.5, { al: 'center' }, 6);
+    fecha();
 
-    // 1ª passada mede a altura do conteúdo; 2ª desenha na página final
-    const H0 = 6000;
-    const sobra = desenhar(Page(), H0);
-    const CH = Math.max(220, H0 - sobra + CM + 8);
-    const pg = Page();
-    desenhar(pg, CH);
+    // paginação: junta blocos até ALT_MAX
+    const CONT_H = 26; // cabeçalho de continuação
+    const paginas = [];
+    let pag = [], usado = 0;
+    for (const bloco of blocos) {
+      const bh = bloco.reduce((s, x) => s + x.h, 0) + 8; // margem do 1º item do bloco
+      const teto = paginas.length === 0 ? ALT_MAX : ALT_MAX - CONT_H;
+      if (pag.length && usado + bh > teto) { paginas.push(pag); pag = []; usado = 0; }
+      pag = pag.concat(bloco);
+      usado += bh;
+    }
+    if (pag.length) paginas.push(pag);
+
+    // desenha cada página com altura sob medida
+    const pgs = paginas.map((itensPg, pi) => {
+      const contHead = pi > 0 ? CONT_H : 0;
+      const alturaConteudo = itensPg.reduce((s, x) => s + x.h, 0) +
+        itensPg.filter(x => x.k === 't' && x.size >= 8).length * 2; // folga p/ fontes maiores
+      const alt = Math.max(160, alturaConteudo + contHead + CM * 2 + 22);
+      const pg = Page();
+      let y = alt - CM - 10;
+      const desenharTxt = (x) => {
+        pg.text(x.o.al === 'center' ? cx : x.o.al === 'right' ? CW - CM : CM, y, x.s, x.size, x.o.b, x.o.al);
+        y -= x.h;
+      };
+      if (pi > 0) {
+        pg.text(CM, y, 'Pedido nº ' + (pedido.numero || 'PENDENTE') + ' — continuação (' + (pi + 1) + '/' + paginas.length + ')', 7, true);
+        y -= 6; pg.line(CM, y, CW - CM, y, 0.6); y -= 12;
+      }
+      for (const x of itensPg) {
+        if (x.k === 't') desenharTxt(x);
+        else if (x.k === 'hr') { y -= 4; pg.line(CM, y, CW - CM, y, x.forte ? 0.8 : 0.4); y -= 10; }
+        else if (x.k === 'esp') y -= x.h;
+        else if (x.k === 'img') { y -= sigH; pg.image('/Im1', cx - sigW / 2, y, sigW, sigH); y -= 8; }
+        else if (x.k === 'lin') { pg.line(cx - 55, y, cx + 55, y, 0.5); y -= 9; }
+      }
+      return { pg, alt };
+    });
 
     const pdf = PDFWriter();
     pdf.add('<< /Type /Catalog /Pages 2 0 R >>');
-    const pageId = img ? 6 : 5;
-    pdf.add('<< /Type /Pages /Kids [' + pageId + ' 0 R] /Count 1 >>');
+    const firstPageId = img ? 6 : 5;
+    pdf.add('<< /Type /Pages /Kids [' +
+      pgs.map((_, i) => (firstPageId + 2 * i) + ' 0 R').join(' ') +
+      '] /Count ' + pgs.length + ' >>');
     pdf.add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
     pdf.add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
     if (img) {
@@ -377,10 +422,13 @@
     }
     const res = '/Resources << /Font << /F1 3 0 R /F2 4 0 R >>' +
       (img ? ' /XObject << /Im1 5 0 R >>' : '') + ' >>';
-    pdf.add('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + CW + ' ' + CH + '] ' + res +
-      ' /Contents ' + (pageId + 1) + ' 0 R >>');
-    const st = pg.stream();
-    pdf.add('<< /Length ' + st.length + ' >>\nstream\n' + st + '\nendstream');
+    for (const { pg, alt } of pgs) {
+      const idPagina = pdf.objs.length + 1; // o conteúdo entra logo em seguida
+      pdf.add('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + CW + ' ' + alt + '] ' + res +
+        ' /Contents ' + (idPagina + 1) + ' 0 R >>');
+      const st = pg.stream();
+      pdf.add('<< /Length ' + st.length + ' >>\nstream\n' + st + '\nendstream');
+    }
     return pdf.build();
   }
 
