@@ -284,7 +284,8 @@
         tot.valor < 0 ? el('div', { class: 'aviso mt4' },
           '↩ Pedido NEGATIVO — o valor vira CRÉDITO do cliente.') : null,
         el('div', { class: 'sub mt4' },
-          `${cli.nome} · ${dataBR(ped.data)} · Vendedor: ${rep.nome} · ` +
+          `${cli.nome} · ${dataBR(ped.data)} · Vendedor: ${rep.nome}` +
+          ((rep.contato || rep.telefone) ? ' (' + (rep.contato || rep.telefone) + ')' : '') + ' · ' +
           `Tabela ${ped.tabela === 'lucro' ? 'Lucro Presumido' : 'Simples'}` +
           (ped.condicao_pagamento ? ' · ' + ped.condicao_pagamento : '')),
         el('div', { class: 'tabela-scroll mt8' , html:
@@ -600,6 +601,12 @@
         (Number(p.total_valor) < 0 ? '↩ CRÉDITO · ' : '') +
         `${p.status.toUpperCase()} · Tabela ${p.tabela === 'lucro' ? 'Lucro Presumido' : 'Simples'}` +
         (p.condicao_pagamento ? ' · ' + p.condicao_pagamento : '')),
+      (() => {
+        const rp = DB.byId('representantes', p.representante_id) || {};
+        const fone = rp.contato || rp.telefone || rp.celular || '';
+        return el('div', { class: 'sub mt4' }, '🧑‍💼 Vendedor: ' + (rp.nome || '—') +
+          (fone ? ' · 📞 ' + fone : ' · ⚠ sem telefone no cadastro (Admin → Vendedores)'));
+      })(),
       el('h3', { class: 'mt8' }, cli.nome || '—'),
       el('div', { class: 'tabela-scroll mt8', html:
         `<table class="tabela"><thead><tr><th>Cód</th><th>Produto</th><th>Tam</th><th>Placas</th><th>Coloc.</th>` +

@@ -146,7 +146,7 @@
 
     // Vendedor / tabela
     pg.text(M, y, 'Vendedor: ' + (rep.nome || ''), 9, true);
-    pg.text(M + 220, y, 'Contato: ' + (rep.contato || '—'), 9);
+    pg.text(M + 220, y, 'Contato: ' + (rep.contato || rep.telefone || rep.celular || '—'), 9);
     pg.text(W - M, y, 'Tabela: ' + nomeTabela, 9, true, 'right');
     y -= 14;
     pg.text(M, y, 'Condição de pagamento: ' + (pedido.condicao_pagamento || '—'), 9);
@@ -311,8 +311,9 @@
     hr(true);
     txt('Pedido nº ' + (pedido.numero || 'PENDENTE'), 8.5, { b: true }, 10);
     txt('Data: ' + dataBR(pedido.data_pedido), 7, {}, 9);
+    const foneRep = rep.contato || rep.telefone || rep.celular || '';
     txt('Vendedor: ' + (rep.nome || ''), 7, {}, 9);
-    if (rep.contato) txt('Contato: ' + rep.contato, 7, {}, 9);
+    if (foneRep) txt('Contato do vendedor: ' + foneRep, 7, {}, 9);
     txt('Tabela: ' + nomeTabela, 7, {}, 9);
     for (const l of wrap('Cond. pgto: ' + (pedido.condicao_pagamento || '—'), 7, CIN)) txt(l, 7, {}, 9);
     hr();
@@ -332,8 +333,8 @@
         ? 'Avulso · ' + it.unid_colocadas + ' un'
         : 'Placa ' + it.tamanho + ' ×' + it.placas + ' = ' + it.unid_colocadas + ' un', 6.5, {}, 8);
       txt('Qtd. devolvida: ' + it.dev_display + ' · Qtd. quebrada: ' + it.dev_quebrada, 6.5, {}, 8);
-      txt('Qtd. vendida: ' + it.unid_vendidas + ' · Valor unit.: ' + C.fmtMoney(Number(it.preco_unit)), 6.5, {}, 8);
-      txt('Total ' + C.fmtMoney(Number(it.valor_total)), 7.5, { b: true, al: 'right' }, 11);
+      txt('Qtd. vendida: ' + it.unid_vendidas + ' · Valor unit.: ' + C.fmtMoney(Number(it.preco_unit)), 6.5, {}, 9);
+      txt('TOTAL ' + C.fmtMoney(Number(it.valor_total)), 8.5, { b: true, al: 'right' }, 12);
       esp(2);
       fecha();
     }
