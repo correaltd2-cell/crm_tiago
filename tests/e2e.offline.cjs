@@ -225,25 +225,16 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   }, dados.pedido.id);
   check('xref do PDF consistente (' + xrefOk + ')', xrefOk === 'ok');
 
-  // cupom 58mm para impressora térmica: página estreita (164pt) e válida
+  // cupom 58mm: agora é IMAGEM PNG (formato nativo dos apps de impressora)
   const cupomInfo = await page.evaluate(async (pid) => {
     const blob = await window.NSPedido.gerarCupom(pid);
-    const buf = new Uint8Array(await blob.arrayBuffer());
-    const txt = new TextDecoder('latin1').decode(buf);
-    const media = txt.match(/\/MediaBox \[0 0 (\d+) (\d+(?:\.\d+)?)\]/);
-    return {
-      head: txt.slice(0, 5), largura: media ? Number(media[1]) : 0,
-      altura: media ? Number(media[2]) : 0,
-      temImg: txt.includes('/DCTDecode') && txt.includes('/Im1'),
-      temAssinante: txt.includes('Jo\xe3o da Silva'),
-      xrefFecha: /startxref\n\d+\n%%EOF$/.test(txt)
-    };
+    const bmp = await createImageBitmap(blob);
+    return { type: blob.type, w: bmp.width, h: bmp.height, tam: blob.size };
   }, dados.pedido.id);
-  check('cupom 58mm: PDF válido com página de 164pt de largura',
-    cupomInfo.head === '%PDF-' && cupomInfo.largura === 164 && cupomInfo.xrefFecha);
-  check('cupom 58mm: altura sob medida, assinatura e assinante presentes',
-
-    cupomInfo.altura >= 220 && cupomInfo.temImg && cupomInfo.temAssinante);
+  check('cupom 58mm: imagem PNG com 384px de largura (tira térmica)',
+    cupomInfo.type === 'image/png' && cupomInfo.w === 384);
+  check('cupom 58mm: tira com conteúdo e assinatura desenhados',
+    cupomInfo.h > 500 && cupomInfo.tam > 5000);
   // cupom grande (20 itens) divide em várias páginas curtas — páginas altas
   // demais faziam a impressora térmica cortar a impressão no meio
   const cupomGrande = await page.evaluate(async () => {

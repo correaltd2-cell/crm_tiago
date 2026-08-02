@@ -439,5 +439,123 @@
     return pdf.build();
   }
 
-  window.NSPDF = { gerarPDFPedido, gerarCupomPedido };
+  // ---------- cupom 58mm como IMAGEM (PNG) ----------
+  // Os apps das mini impressoras térmicas rasterizam PDF de forma instável
+  // (impressões cortadas no meio). Imagem é o formato NATIVO deles: uma tira
+  // contínua de 384px de largura (58mm ≈ 384 pontos térmicos) que o próprio
+  // app fatia e imprime inteira.
+  async function gerarCupomImagem({ pedido, itens, cliente, rep, produtos, observacoes }) {
+    const W = 384, M = 14, IN = W - 2 * M, CX = W / 2;
+    const dataBR = (iso) => iso ? iso.split('-').reverse().join('/') : '';
+    const prodDe = (id) => (produtos.find(p => p.id === id) || {});
+    const nomeTabela = pedido.tabela === 'lucro' ? 'Lucro Presumido' : 'Tabela Simples';
+    const fone = rep.contato || rep.telefone || rep.celular || '';
+    const negativo = Number(pedido.total_valor) < 0;
+
+    // assinatura (PNG original, sem conversão)
+    const imgAss = pedido.assinatura ? await new Promise((res) => {
+      const im = new Image();
+      im.onload = () => res(im);
+      im.onerror = () => res(null);
+      im.src = pedido.assinatura;
+    }) : null;
+
+    const cv = document.createElement('canvas');
+    const ctx = cv.getContext('2d');
+    const fonte = (px, b) => (b ? '700 ' : '') + px + 'px Arial, Helvetica, sans-serif';
+    function quebra(texto, px, b, maxW) {
+      ctx.font = fonte(px, b);
+      const palavras = String(texto || '').split(/\s+/);
+      const linhas = []; let atual = '';
+      for (const p of palavras) {
+        const tent = atual ? atual + ' ' + p : p;
+        if (ctx.measureText(tent).width <= maxW || !atual) atual = tent;
+        else { linhas.push(atual); atual = p; }
+      }
+      if (atual) linhas.push(atual);
+      return linhas;
+    }
+
+    function render(pintar) {
+      let y = 18;
+      if (pintar) ctx.textBaseline = 'top'; // texto desenhado a partir do topo (sem invadir a linha acima)
+      const t = (s, px, o) => {
+        o = o || {};
+        if (pintar) {
+          ctx.font = fonte(px, o.b);
+          ctx.fillStyle = '#000';
+          ctx.textAlign = o.al || 'left';
+          ctx.fillText(s, o.al === 'center' ? CX : o.al === 'right' ? W - M : M, y);
+        }
+        y += o.h != null ? o.h : px + 6;
+      };
+      const multi = (s, px, b, o) => { for (const l of quebra(s, px, b, IN)) t(l, px, Object.assign({ b }, o)); };
+      const hr = (grossa) => {
+        y += 2;
+        if (pintar) { ctx.fillStyle = '#000'; ctx.fillRect(M, y, IN, grossa ? 3 : 1.5); }
+        y += 16;
+      };
+
+      t('NEW STAR', 30, { b: true, al: 'center' });
+      t('APP DO VENDEDOR', 12, { al: 'center' });
+      t(negativo ? 'RECOLHIMENTO — CRÉDITO DO CLIENTE' : 'TALÃO DE PEDIDO', 14, { al: 'center' });
+      hr(true);
+      t('Pedido nº ' + (pedido.numero || 'PENDENTE'), 20, { b: true });
+      t('Data: ' + dataBR(pedido.data_pedido), 15);
+      t('Vendedor: ' + (rep.nome || ''), 15);
+      if (fone) t('Contato do vendedor: ' + fone, 15);
+      t('Tabela: ' + nomeTabela, 15);
+      multi('Cond. pgto: ' + (pedido.condicao_pagamento || '—'), 15, false);
+      hr();
+      multi(cliente.nome || '', 17, true);
+      if (cliente.cnpj_cpf) t('CNPJ/CPF: ' + C.fmtCNPJ(cliente.cnpj_cpf), 14);
+      const cid = [cliente.cidade, cliente.uf].filter(Boolean).join(' - ');
+      if (cid) t(cid, 14);
+      hr();
+      for (const it of itens) {
+        const p = prodDe(it.produto_id);
+        multi((p.codigo ? p.codigo + ' ' : '') + (p.nome || '') +
+          (p.variacao ? ' (' + p.variacao + ')' : ''), 15, true);
+        t(it.tamanho === 'AV'
+          ? 'Avulso · ' + it.unid_colocadas + ' un'
+          : 'Placa ' + it.tamanho + ' ×' + it.placas + ' = ' + it.unid_colocadas + ' un', 14);
+        t('Qtd. devolvida: ' + it.dev_display + ' · Qtd. quebrada: ' + it.dev_quebrada, 14);
+        t('Qtd. vendida: ' + it.unid_vendidas + ' · Valor unit.: ' + C.fmtMoney(Number(it.preco_unit)), 14);
+        t('TOTAL ' + C.fmtMoney(Number(it.valor_total)), 18, { b: true, al: 'right', h: 28 });
+      }
+      hr();
+      t('Colocadas: ' + pedido.total_unid_colocadas + ' · Devolvidas: ' + pedido.total_unid_dev_display, 14);
+      t('Quebradas: ' + pedido.total_unid_dev_quebrada + ' · Vendidas: ' + pedido.total_unid_vendidas, 14, { h: 24 });
+      if (pintar) {
+        ctx.font = fonte(20, true); ctx.fillStyle = '#000';
+        ctx.textAlign = 'left'; ctx.fillText(negativo ? 'CRÉDITO' : 'TOTAL', M, y);
+        ctx.textAlign = 'right'; ctx.fillText(C.fmtMoney(Number(pedido.total_valor)), W - M, y);
+      }
+      y += 30;
+      if (pedido.observacoes) { hr(); multi('Obs.: ' + pedido.observacoes, 14, false); }
+      if (observacoes) { hr(); multi(observacoes, 12, false); }
+      hr();
+      if (imgAss) {
+        const aw = 240, ah = Math.min(110, aw * imgAss.height / imgAss.width);
+        if (pintar) ctx.drawImage(imgAss, CX - aw / 2, y, aw, ah);
+        y += ah + 10;
+      } else y += 46;
+      if (pintar) { ctx.fillStyle = '#000'; ctx.fillRect(CX - 120, y, 240, 1.5); }
+      y += 18;
+      multi((pedido.assinante_nome ? pedido.assinante_nome + ' — ' : '') + (cliente.nome || ''),
+        14, false, { al: 'center' });
+      t('Assinatura do cliente' + (pedido.assinado_em ? ' — ' +
+        new Date(pedido.assinado_em).toLocaleString('pt-BR') : ''), 12, { al: 'center' });
+      y += 14;
+      return y;
+    }
+
+    const altura = Math.ceil(render(false));
+    cv.width = W; cv.height = altura;
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, altura);
+    render(true);
+    return new Promise((res) => cv.toBlob(res, 'image/png'));
+  }
+
+  window.NSPDF = { gerarPDFPedido, gerarCupomPedido, gerarCupomImagem };
 })();

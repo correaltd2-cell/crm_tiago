@@ -522,14 +522,16 @@
     return window.NSPDF.gerarPDFPedido({ pedido: p, itens, cliente, rep, produtos: DB.all('produtos'), observacoes });
   }
 
-  // Cupom estreito para mini impressoras térmicas Bluetooth (bobina 58mm)
+  // Cupom para mini impressoras térmicas Bluetooth (bobina 58mm) — sai como
+  // IMAGEM (formato nativo desses apps; o PDF era rasterizado de forma
+  // instável e a impressão cortava no meio)
   async function gerarCupom(pedidoId) {
     const p = DB.byId('pedidos', pedidoId);
     const itens = DB.all('pedido_itens').filter(i => i.pedido_id === pedidoId);
     const cliente = DB.byId('clientes', p.cliente_id) || {};
     const rep = DB.byId('representantes', p.representante_id) || {};
     const observacoes = DB.config('pdf_observacoes', '');
-    return window.NSPDF.gerarCupomPedido({ pedido: p, itens, cliente, rep, produtos: DB.all('produtos'), observacoes });
+    return window.NSPDF.gerarCupomImagem({ pedido: p, itens, cliente, rep, produtos: DB.all('produtos'), observacoes });
   }
 
   // impressão sem vazar memória: um iframe único reaproveitado e URLs
@@ -574,8 +576,8 @@
       } }, '🖨 Imprimir'),
       el('button', { class: 'btn big btn-sec', onclick: async () => {
         const blob = await gerarCupom(pedidoId);
-        const nomeCupom = 'cupom-' + (p.numero || String(p.id).slice(0, 8)) + '.pdf';
-        const file = new File([blob], nomeCupom, { type: 'application/pdf' });
+        const nomeCupom = 'cupom-' + (p.numero || String(p.id).slice(0, 8)) + '.png';
+        const file = new File([blob], nomeCupom, { type: 'image/png' });
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
           toast('Escolha o app da impressora na lista de compartilhar.');
           await navigator.share({ files: [file], title: 'Cupom New Star' }).catch(() => {});
