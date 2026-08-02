@@ -2,6 +2,17 @@
 (function (root) {
   'use strict';
 
+  // ---------- Documentos ----------
+  // 14 dígitos → 00.000.000/0000-00 · 11 dígitos → 000.000.000-00
+  function fmtCNPJ(v) {
+    const d = String(v || '').replace(/\D/g, '');
+    if (d.length === 14)
+      return d.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
+    if (d.length === 11)
+      return d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+    return String(v || '');
+  }
+
   // ---------- Dinheiro ----------
   function round2(n) { return Math.round((n + Number.EPSILON) * 100) / 100; }
   function fmtMoney(n) {
@@ -407,6 +418,7 @@
   }
 
   const api = {
+    fmtCNPJ,
     round2, fmtMoney, calcItem, calcTotais, calcComissao, cicloDoDia,
     DIAS_SEMANA, normDia, mesmoDia, clienteJaComprou, classeRank,
     haversineKm, matrizHaversine, nearestNeighbor, comprimentoRota, doisOpt,

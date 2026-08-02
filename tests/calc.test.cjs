@@ -114,6 +114,12 @@ eq('projeção = 57,5% da meta', mt.projecaoPct, 57.5);
 mt = C.calcMeta({ metaMes: 200000, hoje: '2026-07-28', vendidoMes: 0, metaDiaManual: 10000 });
 eq('meta do dia manual tem prioridade', mt.metaDia, 10000);
 
+console.log('CNPJ/CPF formatado:');
+eq('CNPJ com pontuação', C.fmtCNPJ('09446409000100'), '09.446.409/0001-00');
+eq('CPF com pontuação', C.fmtCNPJ('12345678901'), '123.456.789-01');
+eq('já formatado continua certo', C.fmtCNPJ('09.446.409/0001-00'), '09.446.409/0001-00');
+eq('valor estranho volta como veio', C.fmtCNPJ('123'), '123');
+
 console.log('Rede do cliente:');
 eq('Clamed pelo nome', C.redeDoCliente({ nome: 'Rede CLAMED PP 679 Getúlio III' }), 'Clamed');
 eq('Agafarma pelo nome', C.redeDoCliente({ nome: '[Agafarma 26 JA] Agafarma Tucunduva' }), 'Agafarma');

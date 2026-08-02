@@ -118,7 +118,7 @@
     { t: 'Tam.',      w: 26,  k: 'tamanho' },
     { t: 'Placas',    w: 32,  k: 'placas' },
     { t: 'Coloc.',    w: 38,  k: 'unid_colocadas' },
-    { t: 'Dev.Displ', w: 44,  k: 'dev_display' },
+    { t: 'Devolv.',   w: 44,  k: 'dev_display' },
     { t: 'Dev.Queb',  w: 44,  k: 'dev_quebrada' },
     { t: 'Vend.',     w: 36,  k: 'unid_vendidas' },
     { t: 'Preço',     w: 50,  k: 'preco_unit', money: true },
@@ -156,7 +156,7 @@
     pg.rect(M, y - 62, W - 2 * M, 62);
     let cy = y - 12;
     pg.text(M + 8, cy, (cliente.nome || ''), 10, true);
-    pg.text(W - M - 8, cy, 'CNPJ/CPF: ' + (cliente.cnpj_cpf || '—'), 9, false, 'right');
+    pg.text(W - M - 8, cy, 'CNPJ/CPF: ' + (cliente.cnpj_cpf ? C.fmtCNPJ(cliente.cnpj_cpf) : '—'), 9, false, 'right');
     cy -= 13;
     pg.text(M + 8, cy, 'Contato: ' + (cliente.contato || '—') + '   Tel: ' + (cliente.telefone || '—') + '   Cel: ' + (cliente.celular || '—'), 8.5);
     cy -= 12;
@@ -304,16 +304,17 @@
 
       t('NEW STAR', 13, { b: true, al: 'center' }); dn(8);
       t('APP DO VENDEDOR', 5.5, { al: 'center' }); dn(8);
-      t(Number(pedido.total_valor) < 0 ? 'RECOLHIMENTO — CRÉDITO DO CLIENTE' : 'TALÃO DE PEDIDO — CONSIGNAÇÃO', 6.5, { al: 'center' });
+      t(Number(pedido.total_valor) < 0 ? 'RECOLHIMENTO — CRÉDITO DO CLIENTE' : 'TALÃO DE PEDIDO', 6.5, { al: 'center' });
       hr(true);
       t('Pedido nº ' + (pedido.numero || 'PENDENTE'), 8.5, { b: true }); dn(10);
       t('Data: ' + dataBR(pedido.data_pedido), 7); dn(9);
       t('Vendedor: ' + (rep.nome || ''), 7); dn(9);
+      if (rep.contato) { t('Contato: ' + rep.contato, 7); dn(9); }
       t('Tabela: ' + nomeTabela, 7); dn(9);
       for (const l of wrap('Cond. pgto: ' + (pedido.condicao_pagamento || '—'), 7, CIN)) { t(l, 7); dn(9); }
       hr();
       for (const l of wrap(cliente.nome || '', 8, CIN, true)) { t(l, 8, { b: true }); dn(10); }
-      if (cliente.cnpj_cpf) { t('CNPJ/CPF: ' + cliente.cnpj_cpf, 6.5); dn(8); }
+      if (cliente.cnpj_cpf) { t('CNPJ/CPF: ' + C.fmtCNPJ(cliente.cnpj_cpf), 6.5); dn(8); }
       const cid = [cliente.cidade, cliente.uf].filter(Boolean).join(' - ');
       if (cid) { t(cid, 6.5); dn(8); }
       hr();
@@ -323,16 +324,11 @@
           (p.variacao ? ' (' + p.variacao + ')' : '');
         for (const l of wrap(nome, 7, CIN, true)) { t(l, 7, { b: true }); dn(9); }
         t(it.tamanho === 'AV'
-          ? it.unid_colocadas + ' un avulsas'
-          : it.placas + ' placa' + (it.placas > 1 ? 's' : '') + ' ' + it.tamanho + ' = ' +
-            it.unid_colocadas + ' un colocadas', 6.5); dn(8);
-        if (it.dev_display || it.dev_quebrada) {
-          t('Dev display: ' + it.dev_display + ' · Quebrada: ' + it.dev_quebrada, 6.5); dn(8);
-        }
-        t(it.unid_vendidas < 0
-          ? 'crédito: ' + (-it.unid_vendidas) + ' × ' + C.fmtMoney(Number(it.preco_unit))
-          : it.unid_vendidas + ' vend. × ' + C.fmtMoney(Number(it.preco_unit)), 6.5);
-        t(C.fmtMoney(Number(it.valor_total)), 7.5, { b: true, al: 'right' }); dn(11);
+          ? 'Avulso · ' + it.unid_colocadas + ' un'
+          : 'Placa ' + it.tamanho + ' ×' + it.placas + ' = ' + it.unid_colocadas + ' un', 6.5); dn(8);
+        t('Qtd. devolvida: ' + it.dev_display + ' · Qtd. quebrada: ' + it.dev_quebrada, 6.5); dn(8);
+        t('Qtd. vendida: ' + it.unid_vendidas + ' · Valor unit.: ' + C.fmtMoney(Number(it.preco_unit)), 6.5);
+        t('Total ' + C.fmtMoney(Number(it.valor_total)), 7.5, { b: true, al: 'right' }); dn(11);
       }
       hr();
       t('Colocadas: ' + pedido.total_unid_colocadas, 6.5);

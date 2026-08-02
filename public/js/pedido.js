@@ -11,6 +11,12 @@
 
   function sessao() { return window.NSApp.sessao(); }
 
+  // ⚠ = cliente com pendência aberta ou observação interna anotada
+  function temAlertaCliente(clienteId) {
+    return DB.all('pendencias').some(p => p.cliente_id === clienteId && !p.resolvida_em) ||
+      DB.all('cliente_notas').some(n => n.cliente_id === clienteId);
+  }
+
   // ============ NOVO PEDIDO (wizard) — também edita um pedido concluído ============
   function novo(clientePre, pedidoExistente) {
     const editando = !!pedidoExistente;
@@ -58,9 +64,9 @@
           lista.appendChild(el('button', {
             class: 'item-lista', onclick: () => { ped.cliente_id = c.id; passoTabela(); }
           },
-            el('strong', null, c.nome),
+            el('strong', null, (temAlertaCliente(c.id) ? '⚠ ' : '') + c.nome),
             el('span', { class: 'sub' }, [c.cidade, c.uf].filter(Boolean).join(' - ') +
-              (c.cnpj_cpf ? ' · ' + c.cnpj_cpf : '') + (c.rede ? ' · ' + c.rede : ''))));
+              (c.cnpj_cpf ? ' · ' + C.fmtCNPJ(c.cnpj_cpf) : '') + (c.rede ? ' · ' + c.rede : ''))));
         }
         if (!cls.length) lista.appendChild(el('p', { class: 'vazio' }, 'Nenhum cliente encontrado.'));
       }
@@ -258,6 +264,8 @@
         class: 'input big', placeholder: 'Prazo… ex.: 7 dias, 30 dias, 30/60',
         value: ped.condicao_pagamento || cli.condicao_pagamento_padrao || ''
       });
+      // data do pedido editável: pedido esquecido de ontem entra na data certa
+      const dataIn = el('input', { class: 'input big', type: 'date', value: ped.data || hojeISO() });
       const chkDisplay = el('input', { type: 'checkbox' });
       if (ped.deixou_display) chkDisplay.checked = true;
       const materialIn = el('input', {
@@ -286,6 +294,9 @@
         el('div', { class: 'total-bar mt8' },
           el('span', null, `${tot.colocadas} colocadas · ${tot.devDisplay} display · ${tot.devQuebrada} quebradas · ${tot.vendidas} vendidas`),
           el('strong', null, C.fmtMoney(tot.valor))),
+        el('h3', { class: 'mt12' }, 'Data do pedido'),
+        dataIn,
+        el('p', { class: 'sub mt4' }, 'Esqueceu de lançar ontem? Troque a data — o pedido entra na meta e na comissão do dia certo.'),
         el('h3', { class: 'mt12' }, 'Condição de pagamento (prazo) *'),
         prazoIn,
         cli.condicao_pagamento_padrao ? el('p', { class: 'sub mt4' },
@@ -312,6 +323,7 @@
         ped.condicao_pagamento = prazoIn.value.trim();
         ped.deixou_display = chkDisplay.checked;
         ped.material_deixado = materialIn.value.trim();
+        if (dataIn.value && /^\d{4}-\d{2}-\d{2}$/.test(dataIn.value)) ped.data = dataIn.value;
       }
     }
 
@@ -427,6 +439,7 @@
         v.data_visita === ped.data && (!v.pedido_id || v.pedido_id === ped.id));
       const visitaBody = {
         realizada: true, fez_pedido: true, pedido_id: ped.id, valor_pedido: tot.valor,
+        data_visita: ped.data,
         comissao_pct: com.pct, comissao_valor: com.valor, comissao_recebimento_em: com.recebimentoEm
       };
       visitaBody.produtos = Array.from(new Set(ped.itens.map(i => i.produto_id)));
@@ -438,6 +451,7 @@
 
       DB.update('pedidos', ped.id, {
         status: 'concluido',
+        data_pedido: ped.data,
         tabela: ped.tabela, condicao_pagamento: ped.condicao_pagamento,
         deixou_display: !!ped.deixou_display, material_deixado: ped.material_deixado || null,
         total_unid_colocadas: tot.colocadas, total_unid_dev_display: tot.devDisplay,
@@ -482,7 +496,7 @@
 
     function cabecalhoCliente(cli, p) {
       return el('div', { class: 'chip-cliente' },
-        el('strong', null, cli.nome),
+        el('strong', null, (temAlertaCliente(cli.id) ? '⚠ ' : '') + cli.nome),
         el('span', { class: 'sub' }, [cli.cidade, cli.uf].filter(Boolean).join(' - ') +
           (p && p.tabela ? ' · Tabela ' + (p.tabela === 'lucro' ? 'Lucro Presumido' : 'Simples') : '')));
     }
@@ -517,6 +531,26 @@
     return window.NSPDF.gerarCupomPedido({ pedido: p, itens, cliente, rep, produtos: DB.all('produtos'), observacoes });
   }
 
+  // impressão sem vazar memória: um iframe único reaproveitado e URLs
+  // revogadas depois do uso (imprimir vários pedidos seguidos travava o app)
+  let frameImpressao = null;
+  function imprimirBlob(blob) {
+    const url = URL.createObjectURL(blob);
+    if (frameImpressao) { try { frameImpressao.remove(); } catch (e) {} }
+    frameImpressao = el('iframe', { style: 'display:none', src: url });
+    document.body.appendChild(frameImpressao);
+    frameImpressao.onload = () => setTimeout(() => {
+      try { frameImpressao.contentWindow.print(); } catch (e) {}
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    }, 200);
+  }
+  function abrirBlob(blob, nomeArq) {
+    const url = URL.createObjectURL(blob);
+    const w = window.open(url, '_blank');
+    if (!w) window.NSUI.baixar(blob, nomeArq);
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }
+
   function abrir(pedidoId, recemConcluido) {
     const p = DB.byId('pedidos', pedidoId);
     if (!p) return;
@@ -525,9 +559,7 @@
     const nomeArq = 'pedido-' + (p.numero || String(p.id).slice(0, 8)) + '.pdf';
     const acoes = el('div', { class: 'col gap8 mt12' },
       el('button', { class: 'btn big', onclick: async () => {
-        const blob = await gerarPDF(pedidoId);
-        const url = URL.createObjectURL(blob);
-        window.open(url, '_blank') || window.NSUI.baixar(blob, nomeArq);
+        abrirBlob(await gerarPDF(pedidoId), nomeArq);
       } }, '📄 Visualizar PDF'),
       el('button', { class: 'btn big btn-sec', onclick: async () => {
         const blob = await gerarPDF(pedidoId);
@@ -537,11 +569,7 @@
         else { window.NSUI.baixar(blob, nomeArq); toast('PDF baixado (compartilhamento não suportado neste navegador).'); }
       } }, '📤 Compartilhar PDF'),
       el('button', { class: 'btn big btn-sec', onclick: async () => {
-        const blob = await gerarPDF(pedidoId);
-        const url = URL.createObjectURL(blob);
-        const fr = el('iframe', { style: 'display:none', src: url });
-        document.body.appendChild(fr);
-        fr.onload = () => setTimeout(() => { fr.contentWindow.print(); }, 200);
+        imprimirBlob(await gerarPDF(pedidoId));
       } }, '🖨 Imprimir'),
       el('button', { class: 'btn big btn-sec', onclick: async () => {
         const blob = await gerarCupom(pedidoId);
@@ -551,7 +579,7 @@
           toast('Escolha o app da impressora na lista de compartilhar.');
           await navigator.share({ files: [file], title: 'Cupom New Star' }).catch(() => {});
         } else {
-          window.open(URL.createObjectURL(blob), '_blank') || window.NSUI.baixar(blob, nomeCupom);
+          abrirBlob(blob, nomeCupom);
         }
       } }, '🧾 Cupom 58mm (impressora térmica)'),
       p.status === 'concluido' ? el('button', { class: 'btn big btn-sec', onclick: () => {

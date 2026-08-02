@@ -325,11 +325,13 @@
     const atrasados = alertasCiclo(rep.id).atrasados.map(a => a.c)
       .filter(c => !doDia.some(d => d.id === c.id) && !pendentes.some(pp => pp.id === c.id));
 
-    // partida: pernoite da véspera > base do representante
+    // partida: posição de HOJE ("Estou aqui") > pernoite da véspera > base
     const vespera = addDias(dataVista, -1);
-    const pernoite = DB.all('pernoites').find(p => p.representante_id === rep.id && p.data === vespera);
+    const pernoiteHoje = ehHoje ? DB.all('pernoites').find(p => p.representante_id === rep.id && p.data === dataVista) : null;
+    const pernoite = pernoiteHoje ||
+      DB.all('pernoites').find(p => p.representante_id === rep.id && p.data === vespera);
     const partida = pernoite
-      ? { lat: pernoite.lat, lng: pernoite.lng, label: '📍 Pernoite: ' + (pernoite.local_desc || 'posição salva') }
+      ? { lat: pernoite.lat, lng: pernoite.lng, label: '📍 ' + (pernoite.local_desc || 'posição salva') }
       : (rep.lat_base != null ? { lat: rep.lat_base, lng: rep.lng_base, label: '🏠 Base: ' + (rep.cidade_base || '') } : null);
 
     const rotaSalva = DB.all('rotas').find(r => r.representante_id === rep.id && r.data_rota === dataVista);
@@ -388,6 +390,30 @@
     if (pendentes.length || atrasados.length)
       view.appendChild(el('div', { class: 'sub mt4' },
         `Fila de reencaixe: ${pendentes.length} pendente(s), ${atrasados.length} atrasado(s) — entram na rota se o desvio compensar (prioridade A > B > C).`));
+    if (ehHoje)
+      view.appendChild(el('button', {
+        class: 'btn-link mt4', onclick: () => {
+          const busca = el('input', { class: 'input big', placeholder: 'Buscar cliente… (nome, cidade ou CNPJ)' });
+          const listaF = el('div', { class: 'lista mt8' });
+          const mf = modal(el('div', null, busca, listaF), { titulo: '➕ Visita fora da rota' });
+          const rend = () => {
+            const q = busca.value.trim().toLowerCase();
+            const qNum = q.replace(/\D/g, '');
+            listaF.innerHTML = '';
+            DB.all('clientes').filter(c2 => c2.status !== 'inativo' && !listaCls.some(x => x.id === c2.id))
+              .filter(c2 => !q || (c2.nome || '').toLowerCase().includes(q) ||
+                (c2.cidade || '').toLowerCase().includes(q) ||
+                (qNum && (c2.cnpj_cpf || '').replace(/\D/g, '').includes(qNum)))
+              .slice(0, 30)
+              .forEach(c2 => listaF.appendChild(el('button', {
+                class: 'item-lista', onclick: () => { mf.fechar(); dialogoVisita(c2); }
+              }, el('strong', null, c2.nome),
+                el('span', { class: 'sub' }, [c2.cidade, c2.uf].filter(Boolean).join(' - ')))));
+          };
+          busca.oninput = rend; rend();
+          setTimeout(() => busca.focus(), 50);
+        }
+      }, '➕ Registrar visita fora da rota'));
     if (antecipados)
       view.appendChild(el('div', { class: 'sub mt4' },
         `✅ ${antecipados} cliente(s) deste dia já foi(ram) atendido(s) antecipadamente e saiu(íram) da lista.`));
@@ -396,34 +422,57 @@
     view.appendChild(listaEl);
     renderLista();
 
+    // "Foi atendido?" — um botão só resume visita com/sem pedido e não realizada
+    function dialogoVisita(c) {
+      const dv = modal(el('div', { class: 'col gap8' },
+        el('p', { class: 'sub' }, c.nome + ' — o cliente foi atendido?'),
+        el('button', { class: 'btn big', onclick: () => { dv.fechar(); window.NSPedido.novo(c); } }, '🧾 Sim — fez pedido'),
+        el('button', { class: 'btn btn-sec big', onclick: () => { dv.fechar(); visitaSemPedido(c); } }, '✅ Sim — mas sem pedido'),
+        el('button', { class: 'btn btn-sec big', onclick: () => { dv.fechar(); naoRealizada(c); } }, '❌ Não foi atendido (motivo)')),
+        { titulo: '✔ Registrar visita' });
+    }
+
+    function temAlerta(c) {
+      return DB.all('pendencias').some(p => p.cliente_id === c.id && !p.resolvida_em) || !!ultimaNota(c.id);
+    }
+
     function renderLista() {
       listaEl.innerHTML = '';
-      if (!listaCls.length) {
+      const pendentesDia = ehHoje ? listaCls.filter(c => !visitou(c.id)) : listaCls.slice();
+      const feitosDia = ehHoje ? listaCls.filter(c => visitou(c.id)) : [];
+      if (!pendentesDia.length && !feitosDia.length) {
         listaEl.appendChild(el('p', { class: 'vazio' }, ehHoje
           ? 'Nenhum cliente programado para hoje. 🎉'
           : 'Nenhum cliente programado para este dia.'));
         return;
       }
-      listaCls.forEach((c, i) => {
-        const v = ehHoje ? visitou(c.id) : null;
+      // menos botões: toque no cartão abre a ficha; ações essenciais embaixo
+      pendentesDia.forEach((c, i) => {
         const seqInfo = rotaSalva && rotaSalva.sequencia.find(x => x.cliente_id === c.id);
-        listaEl.appendChild(el('div', { class: 'card-visita' + (v ? ' feito' : '') },
-          el('div', { class: 'row space' },
+        listaEl.appendChild(el('div', { class: 'card-visita' },
+          el('div', { class: 'row space', onclick: () => fichaCliente(c.id) },
             el('div', null,
-              el('strong', null, `${i + 1}. ${c.nome}`),
+              el('strong', null, (temAlerta(c) ? '⚠ ' : '') + `${i + 1}. ${c.nome}`),
               el('div', { class: 'sub' }, [c.endereco, c.cidade].filter(Boolean).join(' · ') +
-                (seqInfo && seqInfo.reencaixado ? ' · 🔁 reencaixado' : '') +
-                (c.geocoding_status !== 'preciso' ? ' · 📍' + c.geocoding_status : '')),
+                (seqInfo && seqInfo.reencaixado ? ' · 🔁 reencaixado' : '')),
               (() => { const n = ultimaNota(c.id); return n ? el('div', { class: 'nota-previa' },
-                '📝 ' + (n.length > 90 ? n.slice(0, 90) + '…' : n)) : null; })()),
-            v ? el('span', { class: 'badge ok' }, v.fez_pedido ? '✅ pedido' : '✅ visitado') : null),
+                '📝 ' + (n.length > 90 ? n.slice(0, 90) + '…' : n)) : null; })())),
           el('div', { class: 'row gap8 mt8' },
             el('button', { class: 'btn-mini', onclick: () => abrirGPS(c) }, '🗺 GPS'),
-            el('button', { class: 'btn-mini', onclick: () => fichaCliente(c.id) }, '👁 Ficha'),
-            (ehHoje && !v) ? el('button', { class: 'btn-mini', onclick: () => window.NSPedido.novo(c) }, '🧾 Pedido') : null,
-            (ehHoje && !v) ? el('button', { class: 'btn-mini', onclick: () => visitaSemPedido(c) }, '✔ Sem pedido') : null,
-            (ehHoje && !v) ? el('button', { class: 'btn-mini vermelho', onclick: () => naoRealizada(c) }, '✖ Não realizada') : null)));
+            ehHoje ? el('button', { class: 'btn-mini', onclick: () => dialogoVisita(c) }, '✔ Registrar visita') : null)));
       });
+      // visitados saem da lista e ficam num resumo recolhido
+      if (feitosDia.length) {
+        const det = el('details', { class: 'card-visita mt8' });
+        det.appendChild(el('summary', null, el('strong', null, '✅ Já atendidos hoje (' + feitosDia.length + ')')));
+        feitosDia.forEach(c => {
+          const v = visitou(c.id);
+          det.appendChild(el('div', { class: 'row space mt8', onclick: () => fichaCliente(c.id) },
+            el('span', null, c.nome),
+            el('span', { class: 'badge ok' }, v && v.fez_pedido ? '✅ pedido' : '✅ visitado')));
+        });
+        listaEl.appendChild(det);
+      }
     }
 
     async function otimizar() {
@@ -513,7 +562,7 @@
         const existente = DB.all('pernoites').find(p => p.representante_id === rep.id && p.data === hoje);
         const body = { representante_id: rep.id, data: hoje, lat: pos.coords.latitude, lng: pos.coords.longitude, local_desc: 'GPS ' + new Date().toLocaleTimeString('pt-BR') };
         if (existente) DB.update('pernoites', existente.id, body); else DB.insert('pernoites', body);
-        toast('📍 Posição salva! A rota de amanhã parte daqui.');
+        toast('📍 Posição salva! A rota de HOJE (reotimize) e a de amanhã partem daqui.');
       }, () => toast('Não foi possível obter o GPS.', 'erro'), { enableHighAccuracy: true, timeout: 15000 });
     }
 
@@ -592,9 +641,11 @@
   }
 
   function abrirGPS(c) {
-    const dest = (c.lat != null && c.geocoding_status !== 'falhou')
-      ? c.lat + ',' + c.lng
-      : encodeURIComponent(R.enderecoCompleto(c));
+    // endereço escrito leva à porta certa; coordenada só quando não há endereço
+    // (a coordenada "aproximada" cai no centro da cidade, não no cliente)
+    const dest = (c.endereco && c.cidade)
+      ? encodeURIComponent([c.endereco, c.bairro, c.cidade, c.uf].filter(Boolean).join(', '))
+      : (c.lat != null ? c.lat + ',' + c.lng : encodeURIComponent(R.enderecoCompleto(c)));
     window.open('https://www.google.com/maps/dir/?api=1&destination=' + dest, '_blank');
   }
 
@@ -710,7 +761,7 @@
 
     modal(el('div', null,
       el('div', { class: 'sub' },
-        (c.cnpj_cpf ? 'CNPJ ' + c.cnpj_cpf + ' · ' : '') + [c.endereco, c.bairro, c.cidade, c.uf].filter(Boolean).join(', ')),
+        (c.cnpj_cpf ? 'CNPJ ' + C.fmtCNPJ(c.cnpj_cpf) + ' · ' : '') + [c.endereco, c.bairro, c.cidade, c.uf].filter(Boolean).join(', ')),
       el('div', { class: 'sub mt4' },
         'Contato: ' + (c.contato || '—') + ' · ' + (c.telefone || c.celular || '—') +
         (c.rede ? ' · Rede ' + c.rede + (c.recebimento_dias ? ' (comissão +' + c.recebimento_dias + 'd)' : '') : '') +
@@ -1038,6 +1089,11 @@
           el('div', { class: 'progresso-barra' }, el('div', { class: 'progresso-fill', style: 'width:' + Math.min(100, pctDia) + '%' }))));
       }
 
+      // meta do ano
+      const metaAno = Number(DB.config('meta_ano_valor', 0));
+      const pedsAno = peds.filter(p => (p.data_pedido || '').slice(0, 4) === hoje.slice(0, 4));
+      const vendAno = pedsAno.reduce((t, p) => t + Number(p.total_valor || 0), 0);
+
       wrap.appendChild(el('h3', { class: 'mt16' }, '🎯 Meta do mês — ' + rotuloMes(mes)));
       if (metaMes > 0) {
         wrap.appendChild(el('div', { class: 'progresso mt4' },
@@ -1051,6 +1107,24 @@
       } else {
         wrap.appendChild(el('p', { class: 'sub mt4' }, 'Nenhuma meta cadastrada para o mês.'));
       }
+      // meta do ano
+      wrap.appendChild(el('h3', { class: 'mt16' }, '🏆 Meta do ano — ' + hoje.slice(0, 4)));
+      if (metaAno > 0) {
+        const pctAno = C.round2(vendAno / metaAno * 100);
+        // ritmo pelos meses decorridos (mês atual conta proporcional aos dias úteis)
+        const mesesDecorridos = (Number(mes.slice(5)) - 1) + (mt.uteisDecorridos / (mt.uteisTotal || 1));
+        const projAno = mesesDecorridos > 0 ? C.round2(vendAno / mesesDecorridos * 12) : 0;
+        wrap.appendChild(el('div', { class: 'progresso mt4' },
+          el('div', { class: 'progresso-info' },
+            `${C.fmtMoney(vendAno)} de ${C.fmtMoney(metaAno)} · ${pctAno}% da meta do ano`),
+          el('div', { class: 'progresso-barra' }, el('div', { class: 'progresso-fill', style: 'width:' + Math.min(100, pctAno) + '%' }))));
+        wrap.appendChild(el('div', { class: (projAno >= metaAno ? 'sugestao' : 'aviso') + ' mt8' },
+          `📈 Nesse ritmo o ano fecha em ${C.fmtMoney(projAno)} — ${metaAno > 0 ? C.round2(projAno / metaAno * 100) : 0}% da meta.`));
+      } else {
+        wrap.appendChild(el('p', { class: 'sub mt4' },
+          C.fmtMoney(vendAno) + ' vendidos no ano. Nenhuma meta anual cadastrada.'));
+      }
+
       // meta de novos clientes (vendas a 15% — interessante para o vendedor)
       wrap.appendChild(el('h3', { class: 'mt16' }, '🆕 Novos clientes no mês (comissão 15%)'));
       if (metaNovos > 0) {
@@ -1069,11 +1143,13 @@
         const inMeta = el('input', { class: 'input', type: 'number', inputmode: 'decimal', placeholder: 'Meta do MÊS em R$ (ex.: 200000)', value: metaMes || '' });
         const inMetaDia = el('input', { class: 'input', type: 'number', inputmode: 'decimal', placeholder: 'Meta do DIA em R$ (vazio = mês ÷ dias úteis)', value: metaDiaManual || '' });
         const inMetaNovos = el('input', { class: 'input', type: 'number', inputmode: 'numeric', placeholder: 'Meta de NOVOS CLIENTES no mês (ex.: 10)', value: metaNovos || '' });
-        wrap.appendChild(el('div', { class: 'col gap8 mt8' }, inMeta, inMetaDia, inMetaNovos,
+        const inMetaAno = el('input', { class: 'input', type: 'number', inputmode: 'decimal', placeholder: 'Meta do ANO em R$ (ex.: 2400000)', value: metaAno || '' });
+        wrap.appendChild(el('div', { class: 'col gap8 mt8' }, inMeta, inMetaDia, inMetaAno, inMetaNovos,
           el('button', {
             class: 'btn w100', onclick: () => {
               DB.upsertConfig('meta_mes_valor', Number(inMeta.value) || 0);
               DB.upsertConfig('meta_dia_valor', Number(inMetaDia.value) || 0);
+              DB.upsertConfig('meta_ano_valor', Number(inMetaAno.value) || 0);
               DB.upsertConfig('meta_novos_clientes', Number(inMetaNovos.value) || 0);
               toast('Metas salvas!'); render();
             }
