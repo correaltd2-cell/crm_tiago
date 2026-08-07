@@ -87,7 +87,6 @@ function montarLinhas({ pedido, itens, cliente, rep, produtos, observacoes, base
   t('Colocadas: ' + pedido.total_unid_colocadas + ' | Devolvidas: ' + pedido.total_unid_dev_display);
   t('Quebradas: ' + pedido.total_unid_dev_quebrada + ' | Vendidas: ' + pedido.total_unid_vendidas);
   t((negativo ? 'CREDITO ' : 'TOTAL ') + fmtBR(pedido.total_valor), { bold: 1, align: 2, format: 1 });
-  if (pedido.observacoes) t('Obs.: ' + pedido.observacoes);
   if (observacoes) t(observacoes);
   t('--------------------------------', { align: 1 });
   if (pedido.assinatura && baseURL)

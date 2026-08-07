@@ -230,6 +230,28 @@
     const d = new Date().getDay(); // 0=dom
     return (d >= 1 && d <= 5) ? DIAS_ROTA[d - 1] : 'Segunda';
   }
+  // segunda-feira da semana que está sendo planejada: no sábado/domingo já
+  // aponta para a PRÓXIMA semana (é quando o vendedor organiza os dias)
+  function segundaDaSemanaPlanejada() {
+    const h = new Date(hojeISO() + 'T12:00:00');
+    const dw = h.getDay(); // 0=dom .. 6=sáb
+    const d = new Date(h);
+    if (dw === 0) d.setDate(d.getDate() + 1);            // domingo → segunda de amanhã
+    else if (dw === 6) d.setDate(d.getDate() + 2);       // sábado → segunda da próxima
+    else d.setDate(d.getDate() - (dw - 1));              // seg–sex → segunda desta semana
+    return d;
+  }
+  function dataDoDia(dia) {
+    const seg = segundaDaSemanaPlanejada();
+    seg.setDate(seg.getDate() + DIAS_ROTA.indexOf(dia));
+    return seg.toISOString().slice(0, 10);
+  }
+  function rotuloSemana() {
+    const ini = dataDoDia('Segunda'), fim = dataDoDia('Sexta');
+    const curta = (iso) => iso.slice(8, 10) + '/' + iso.slice(5, 7);
+    const proxima = new Date(ini + 'T12:00:00') > new Date(hojeISO() + 'T12:00:00');
+    return (proxima ? 'Próxima semana' : 'Esta semana') + ' · ' + curta(ini) + ' a ' + curta(fim);
+  }
   function diasEntre(iso) {
     if (!iso) return null;
     return Math.round((new Date(hojeISO() + 'T12:00:00') - new Date(String(iso).slice(0, 10) + 'T12:00:00')) / 86400000);
@@ -246,6 +268,8 @@
     const d = diasEntre(c.ultima_visita_em);
     return d != null ? d : diasSemPedido(c);
   }
+  // texto amigável (9999 = nunca comprou/visitou)
+  const txtDias = (n, oque) => n >= 9999 ? 'sem ' + oque + ' registrado' : n + 'd sem ' + oque;
   // ordem padrão da seleção: prioridade (A→C) e depois quem está há mais tempo sem pedido
   function ordenarParaRota(lista) {
     return lista.sort((a, b) =>
@@ -257,6 +281,14 @@
   }
   function temAlerta(c) {
     return DB.all('pendencias').some(p => p.cliente_id === c.id && !p.resolvida_em) || !!ultimaNota(c.id);
+  }
+  // 🔴 atrasado · 🟡 vencendo · 🟢 em dia · ⚪ sem registro (mesmo farol da aba Clientes)
+  function statusDoCliente(c) {
+    return statusCliente(c, hojeISO(), Number(DB.config('alerta_vencendo_dias', 7)));
+  }
+  // triângulo amarelo com "?" preto quando o cliente tem observação/pendência
+  function marcaAlerta(c) {
+    return temAlerta(c) ? el('span', { class: 'alerta-obs', title: 'Este cliente tem observação' }, '?') : null;
   }
   function visitaDeHoje(clienteId) {
     return DB.all('visitas').find(v => v.cliente_id === clienteId && v.data_visita === hojeISO() && v.realizada);
@@ -275,11 +307,12 @@
       if (!lista.length) { view.appendChild(el('p', { class: 'vazio' }, 'Sem rota criada para ' + diaRota + '.')); continue; }
       const box = el('div', { class: 'col gap8 mt8' });
       lista.forEach((c, i) => box.appendChild(el('div', {
-        class: 'card-visita' + (visitaDeHoje(c.id) ? ' feito' : ''), onclick: () => fichaCliente(c.id)
+        class: 'card-visita st-' + statusDoCliente(c).k + (visitaDeHoje(c.id) ? ' feito' : ''),
+        onclick: () => fichaCliente(c.id)
       },
         el('div', { class: 'row space' },
           el('div', null,
-            el('strong', null, (temAlerta(c) ? '⚠ ' : '') + `${i + 1}. ${c.nome}`),
+            el('strong', null, el('span', { class: 'st-tag ' + statusDoCliente(c).k }), marcaAlerta(c), `${i + 1}. ${c.nome}`),
             el('div', { class: 'sub' }, [c.cidade, c.uf].filter(Boolean).join(' - '))),
           visitaDeHoje(c.id) ? el('span', { class: 'badge ok' }, '✅') : null))));
       view.appendChild(box);
@@ -290,10 +323,12 @@
 
   // ---- abas dos dias da semana ----
   function abaDias(aoTrocar) {
-    return el('div', { class: 'dias-scroll' }, DIAS_ROTA.map(d => el('button', {
-      class: 'chip' + (d === diaRota ? ' ativo' : ''),
-      onclick: () => { diaRota = d; aoTrocar(); }
-    }, d)));
+    return el('div', null,
+      el('div', { class: 'sub' }, '🗓 ' + rotuloSemana()),
+      el('div', { class: 'dias-scroll mt4' }, DIAS_ROTA.map(d => el('button', {
+        class: 'chip' + (d === diaRota ? ' ativo' : ''),
+        onclick: () => { diaRota = d; aoTrocar(); }
+      }, d + ' ' + dataDoDia(d).slice(8, 10) + '/' + dataDoDia(d).slice(5, 7)))));
   }
 
   // ---- tela principal da rota ----
@@ -319,7 +354,17 @@
 
     view.appendChild(el('button', {
       class: 'btn big w100 mt12', onclick: () => telaCriarRota(rep)
-    }, '➕ Criar rota de ' + diaRota));
+    }, (lista.length ? '✏ Editar rota de ' : '➕ Criar rota de ') + diaRota));
+    if (lista.length)
+      view.appendChild(el('button', {
+        class: 'btn btn-sec w100 mt8', onclick: async () => {
+          if (!(await confirmar('Resetar a rota de ' + diaRota + '? Os ' + lista.length +
+            ' cliente(s) voltam para a lista de disponíveis.'))) return;
+          lista.forEach(c => DB.update('clientes', c.id, { rota_dia: null, rota_ordem: null }));
+          toast('Rota de ' + diaRota + ' zerada.');
+          nav('hoje');
+        }
+      }, '🗑 Resetar rota de ' + diaRota));
 
     const listaEl = el('div', { class: 'col gap8 mt12' });
     view.appendChild(listaEl);
@@ -330,13 +375,15 @@
     }
     lista.forEach((c, i) => {
       const v = visitaDeHoje(c.id);
-      listaEl.appendChild(el('div', { class: 'card-visita' + (v ? ' feito' : '') },
+      const st = statusDoCliente(c);
+      listaEl.appendChild(el('div', { class: 'card-visita st-' + st.k + (v ? ' feito' : '') },
         el('div', { class: 'row space', onclick: () => fichaCliente(c.id) },
           el('div', null,
-            el('strong', null, (temAlerta(c) ? '⚠ ' : '') + `${i + 1}. ${c.nome}`),
+            el('strong', null, el('span', { class: 'st-tag ' + st.k }), marcaAlerta(c), `${i + 1}. ${c.nome}`),
+            el('div', { class: 'sub' }, st.dot + ' ' + st.rot),
             el('div', { class: 'sub' }, [c.endereco, c.cidade, c.uf].filter(Boolean).join(' · ')),
             el('div', { class: 'sub' }, 'Classe ' + (c.classe || 'A') +
-              ' · ' + diasSemPedido(c) + 'd sem pedido · ' + diasSemAtendimento(c) + 'd sem visita'),
+              ' · ' + txtDias(diasSemPedido(c), 'pedido') + ' · ' + txtDias(diasSemAtendimento(c), 'visita')),
             (() => { const n = ultimaNota(c.id); return n ? el('div', { class: 'nota-previa' },
               '📝 ' + (n.length > 90 ? n.slice(0, 90) + '…' : n)) : null; })()),
           v ? el('span', { class: 'badge ok' }, v.fez_pedido ? '✅ pedido' : '✅ visitado') : null),
@@ -413,13 +460,15 @@
         infoEl.textContent = cls.length + ' cliente(s) disponível(is) · ordenados por prioridade e tempo sem pedido';
         listaEl.innerHTML = '';
         cls.slice(0, 80).forEach(c => {
-          listaEl.appendChild(el('div', { class: 'card-visita' },
+          const st = statusDoCliente(c);
+          listaEl.appendChild(el('div', { class: 'card-visita st-' + st.k },
             el('div', { onclick: () => fichaCliente(c.id) },
-              el('strong', null, (temAlerta(c) ? '⚠ ' : '') + c.nome),
+              el('strong', null, el('span', { class: 'st-tag ' + st.k }), marcaAlerta(c), c.nome),
+              el('div', { class: 'sub' }, st.dot + ' ' + st.rot),
               el('div', { class: 'sub' }, [c.cidade, c.uf].filter(Boolean).join(' - ') +
                 ' · ' + (c.regiao || C.regiaoDoCliente(c) || 'sem região')),
               el('div', { class: 'sub' }, 'Classe ' + (c.classe || 'A') +
-                ' · ' + diasSemPedido(c) + 'd sem pedido · ' + diasSemAtendimento(c) + 'd sem visita')),
+                ' · ' + txtDias(diasSemPedido(c), 'pedido') + ' · ' + txtDias(diasSemAtendimento(c), 'visita'))),
             el('button', {
               class: 'btn-mini mt8', onclick: () => {
                 const ordem = clientesDaRota(rep.id, diaRota).length + 1;
@@ -670,7 +719,7 @@
       el('div', { class: 'row gap8 mt8' },
         el('button', { class: 'btn-mini', onclick: () => abrirGPS(c) }, '🗺 GPS (' + c.geocoding_status + ')'),
         el('button', { class: 'btn-mini', onclick: () => window.NSPedido.novo(c) }, '🧾 Novo pedido'),
-        s.papel === 'gestor' ? el('button', { class: 'btn-mini', onclick: () => editarCliente(c.id) }, '✏ Editar') : null),
+        el('button', { class: 'btn-mini', onclick: () => editarCliente(c.id) }, '✏ Editar')),
       // material deixado no cliente (display/mostruário) — vira relatório
       el('div', { class: 'row gap8 mt8' },
         el('button', {
@@ -925,9 +974,9 @@
     view.appendChild(item('💰 Financeiro — comissões a receber e despesas', telaFinanceiro));
     view.appendChild(item('📍 Geocodificar clientes', telaGeocode));
     view.appendChild(item('🎨 Aparência (cores do app)', telaAparencia));
+    view.appendChild(item('👥 Clientes (cadastrar, editar, excluir, importar/exportar)', telaAdminClientes));
     if (s.papel === 'gestor') {
       view.appendChild(el('h3', { class: 'mt16' }, 'Administração'));
-      view.appendChild(item('👥 Clientes (CRUD / Importar CSV / Exportar)', telaAdminClientes));
       view.appendChild(item('💍 Produtos e preços', telaAdminProdutos));
       view.appendChild(item('🧑‍💼 Vendedores', telaAdminVendedores));
       view.appendChild(item('⚙ Configurações', telaAdminConfig));

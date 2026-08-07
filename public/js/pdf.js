@@ -218,12 +218,6 @@
       C.fmtMoney(Number(pedido.total_valor)), 12, true, 'right');
     y -= 34;
 
-    if (pedido.observacoes) {
-      const l = wrap('Observações do pedido: ' + pedido.observacoes, 8.5, W - 2 * M);
-      l.forEach(t => { pg.text(M, y, t, 8.5); y -= 11; });
-      y -= 4;
-    }
-
     // Observações padrão do talão (configuráveis no admin)
     if (observacoes) {
       const l = wrap(observacoes, 7.5, W - 2 * M);
@@ -347,11 +341,6 @@
     txt(Number(pedido.total_valor) < 0 ? 'CRÉDITO' : 'TOTAL', 9, { b: true }, 0);
     txt(C.fmtMoney(Number(pedido.total_valor)), 10, { b: true, al: 'right' }, 12);
     fecha();
-    if (pedido.observacoes) {
-      hr();
-      for (const l of wrap('Obs.: ' + pedido.observacoes, 6.5, CIN)) txt(l, 6.5, {}, 8);
-      fecha();
-    }
     if (observacoes) {
       hr();
       for (const l of wrap(observacoes, 5.5, CIN)) txt(l, 5.5, {}, 7);
@@ -532,7 +521,6 @@
         ctx.textAlign = 'right'; ctx.fillText(C.fmtMoney(Number(pedido.total_valor)), W - M, y);
       }
       y += 30;
-      if (pedido.observacoes) { hr(); multi('Obs.: ' + pedido.observacoes, 14, false); }
       if (observacoes) { hr(); multi(observacoes, 12, false); }
       hr();
       if (imgAss) {

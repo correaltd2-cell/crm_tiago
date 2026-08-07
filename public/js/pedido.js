@@ -147,9 +147,21 @@
           function rend() {
             const q = busca.value.trim().toLowerCase();
             lista.innerHTML = '';
-            DB.all('produtos').filter(p => p.ativo !== false)
-              .filter(p => !q || nomeProd(p).toLowerCase().includes(q) || (p.codigo || '').includes(q))
-              .sort((a, b) => (a.codigo || '').localeCompare(b.codigo || ''))
+            // só produtos ATIVOS e com preço na tabela escolhida (inativos não aparecem)
+            const ativos = DB.all('produtos').filter(p =>
+              p.ativo !== false && String(p.ativo) !== 'false' && p.status !== 'inativo' &&
+              precoDe(p, ped.tabela) != null);
+            // quem casa com a busca vem primeiro (código/começo do nome antes do meio)
+            const rank = (p) => {
+              if (!q) return 3;
+              const cod = String(p.codigo || '').toLowerCase(), nome = nomeProd(p).toLowerCase();
+              if (cod === q) return 0;
+              if (cod.startsWith(q) || nome.startsWith(q)) return 1;
+              return 2;
+            };
+            ativos
+              .filter(p => !q || nomeProd(p).toLowerCase().includes(q) || String(p.codigo || '').toLowerCase().includes(q))
+              .sort((a, b) => rank(a) - rank(b) || String(a.codigo || '').localeCompare(String(b.codigo || '')))
               .forEach(p => {
                 const preco = precoDe(p, ped.tabela);
                 const semPreco = preco == null;
@@ -170,6 +182,12 @@
           }
           rend();
           box.appendChild(busca); box.appendChild(lista);
+          // resultado sempre visível: rola a lista e o modal para o topo a cada busca
+          busca.addEventListener('input', () => {
+            lista.scrollTop = 0;
+            if (box.parentElement) box.parentElement.scrollTop = 0;
+          });
+          setTimeout(() => busca.focus(), 60);
         }
 
         function formQtde() {
@@ -331,65 +349,87 @@
     // ---- Passo 5: assinatura ----
     function passoAssinatura() {
       const cli = DB.byId('clientes', ped.cliente_id) || {};
-      const wrapCv = el('div', { class: 'assinatura-area' });
-      const cv = el('canvas', { class: 'assinatura-cv' });
-      wrapCv.appendChild(cv);
       const nomeAssinante = el('input', {
         class: 'input big', placeholder: 'Nome de quem assina * (obrigatório)',
         value: ped.assinante_nome || cli.contato || ''
       });
+      // a assinatura é colhida em TELA CHEIA (área grande e confortável) e,
+      // ao confirmar, volta para esta tela do pedido com a prévia
+      const previa = el('div', { class: 'sub mt8' }, 'Nenhuma assinatura colhida ainda.');
+      const imgPrev = el('img', { style: 'display:none;max-width:100%;background:#fff;border-radius:10px;margin-top:8px' });
       const cont = el('div', null,
         el('h3', null, 'Assinatura do cliente'),
-        el('p', { class: 'sub' }, 'Informe o nome de quem assina e colha a assinatura no quadro.'),
+        el('p', { class: 'sub' }, 'Informe o nome de quem assina e toque no botão para o cliente assinar em tela cheia.'),
         nomeAssinante,
-        wrapCv,
-        el('div', { class: 'row gap8 mt8' },
-          el('button', { class: 'btn btn-sec grow', onclick: () => { strokes.length = 0; desenhar(); } }, 'Limpar'),
-          el('button', { class: 'btn btn-sec grow', onclick: () => { strokes.pop(); desenhar(); } }, 'Refazer último')),
+        el('button', { class: 'btn big w100 mt12', onclick: abrirTelaCheia }, '✍ Assinar em tela cheia'),
+        previa, imgPrev,
         el('div', { class: 'row gap8 mt12' },
           el('button', { class: 'btn btn-sec grow', onclick: passoConferencia }, '← Voltar'),
           el('button', { class: 'btn grow', onclick: concluir }, '✓ Confirmar e concluir')));
       corpo(cont);
+      if (ped.assinatura) { imgPrev.src = ped.assinatura; imgPrev.style.display = 'block'; previa.textContent = '✍ Assinatura colhida — toque no botão para refazer.'; }
 
-      const ctx = cv.getContext('2d');
-      const strokes = [];
-      let atual = null;
-      function ajustar() {
-        const r = wrapCv.getBoundingClientRect();
-        const dpr = window.devicePixelRatio || 1;
-        cv.width = r.width * dpr; cv.height = 220 * dpr;
-        cv.style.width = r.width + 'px'; cv.style.height = '220px';
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        desenhar();
-      }
-      function desenhar() {
-        ctx.clearRect(0, 0, cv.width, cv.height);
-        ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#16233b';
-        for (const s of strokes) {
-          ctx.beginPath();
-          s.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
-          ctx.stroke();
+      function abrirTelaCheia() {
+        if (!nomeAssinante.value.trim()) {
+          nomeAssinante.focus();
+          return toast('Informe o NOME de quem assina antes de colher a assinatura.', 'erro');
         }
+        const cvF = el('canvas');
+        const area = el('div', { class: 'area' }, cvF);
+        const tela = el('div', { class: 'assina-full' },
+          el('div', { class: 'topo' },
+            el('strong', null, 'Assinatura de ' + nomeAssinante.value.trim()),
+            el('div', { class: 'sub' }, cli.nome || '')),
+          area,
+          el('div', { class: 'acoes' },
+            el('button', { class: 'btn btn-sec grow', onclick: () => { st.length = 0; pinta(); } }, 'Limpar'),
+            el('button', { class: 'btn btn-sec grow', onclick: () => { tela.remove(); } }, 'Cancelar'),
+            el('button', {
+              class: 'btn grow', onclick: () => {
+                if (!st.length || st.every(x => x.length < 2)) return toast('Colete a assinatura antes de confirmar.', 'erro');
+                ped.assinatura = cvF.toDataURL('image/png');
+                ped.assinante_nome = nomeAssinante.value.trim();
+                imgPrev.src = ped.assinatura; imgPrev.style.display = 'block';
+                previa.textContent = '✍ Assinatura colhida — toque no botão para refazer.';
+                tela.remove();
+                toast('Assinatura salva. Agora toque em "Confirmar e concluir".');
+              }
+            }, '✓ Confirmar assinatura')));
+        document.body.appendChild(tela);
+        const cx = cvF.getContext('2d');
+        const st = [];
+        let tr = null;
+        const dpr = window.devicePixelRatio || 1;
+        setTimeout(() => {
+          const r = area.getBoundingClientRect();
+          cvF.width = r.width * dpr; cvF.height = r.height * dpr;
+          cx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          pinta();
+        }, 40);
+        function pinta() {
+          cx.clearRect(0, 0, cvF.width, cvF.height);
+          cx.lineWidth = 3.2; cx.lineCap = 'round'; cx.lineJoin = 'round'; cx.strokeStyle = '#16233b';
+          for (const linha of st) {
+            cx.beginPath();
+            linha.forEach((pt, i) => i ? cx.lineTo(pt.x, pt.y) : cx.moveTo(pt.x, pt.y));
+            cx.stroke();
+          }
+        }
+        const posF = (e) => { const r = cvF.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+        cvF.addEventListener('pointerdown', (e) => { e.preventDefault(); cvF.setPointerCapture(e.pointerId); tr = [posF(e)]; st.push(tr); });
+        cvF.addEventListener('pointermove', (e) => { if (tr) { tr.push(posF(e)); pinta(); } });
+        const fimF = () => { tr = null; };
+        cvF.addEventListener('pointerup', fimF); cvF.addEventListener('pointercancel', fimF);
       }
-      function pos(e) {
-        const r = cv.getBoundingClientRect();
-        return { x: e.clientX - r.left, y: e.clientY - r.top };
-      }
-      cv.addEventListener('pointerdown', (e) => { e.preventDefault(); cv.setPointerCapture(e.pointerId); atual = [pos(e)]; strokes.push(atual); });
-      cv.addEventListener('pointermove', (e) => { if (atual) { atual.push(pos(e)); desenhar(); } });
-      const fim = () => { atual = null; };
-      cv.addEventListener('pointerup', fim); cv.addEventListener('pointercancel', fim);
-      setTimeout(ajustar, 60);
 
       function concluir() {
         if (!nomeAssinante.value.trim()) {
           nomeAssinante.focus();
           return toast('Informe o NOME de quem assina — é obrigatório.', 'erro');
         }
-        if (!strokes.length || strokes.every(s => s.length < 2))
-          return toast('Colete a assinatura do cliente antes de concluir.', 'erro');
+        if (!ped.assinatura)
+          return toast('Toque em "Assinar em tela cheia" e colha a assinatura do cliente.', 'erro');
         ped.assinante_nome = nomeAssinante.value.trim();
-        ped.assinatura = cv.toDataURL('image/png');
         salvarConcluido();
       }
     }
@@ -574,19 +614,6 @@
       el('button', { class: 'btn big btn-sec', onclick: async () => {
         imprimirBlob(await gerarPDF(pedidoId));
       } }, '🖨 Imprimir'),
-      // impressão direta na térmica 58mm via app Bluetooth Print (protocolo bprint://):
-      // o app busca o JSON do pedido no endpoint e monta a impressão nativamente
-      el('button', { class: 'btn big btn-sec', onclick: () => {
-        if (!navigator.onLine)
-          return toast('A impressão via Bluetooth Print precisa de internet (o app busca o pedido no servidor).', 'erro');
-        const url = location.origin + '/api/cupom?id=' + encodeURIComponent(p.id);
-        toast('Abrindo o Bluetooth Print…');
-        location.href = 'bprint://' + url;
-        setTimeout(() => {
-          if (!document.hidden)
-            toast('O app não abriu. Instale o "Bluetooth Print" (grátis, App Store) para imprimir na impressorinha.', 'erro');
-        }, 2500);
-      } }, '🖨 Imprimir 58mm (Bluetooth Print)'),
       el('button', { class: 'btn big btn-sec', onclick: async () => {
         const blob = await gerarCupom(pedidoId);
         const nomeCupom = 'cupom-' + (p.numero || String(p.id).slice(0, 8)) + '.png';

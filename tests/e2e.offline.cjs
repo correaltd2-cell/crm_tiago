@@ -154,18 +154,24 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
 
   // assinatura no canvas
   await page.click('text=Assinar →');
-  const cv = page.locator('.assinatura-cv');
-  const bb = await cv.boundingBox();
-  await page.mouse.move(bb.x + 30, bb.y + 100);
-  await page.mouse.down();
-  for (let i = 0; i < 12; i++) await page.mouse.move(bb.x + 30 + i * 18, bb.y + 100 + Math.sin(i) * 30);
-  await page.mouse.up();
-  // sem o nome de quem assina, não conclui
+  // sem o nome de quem assina, não abre a tela cheia nem conclui
   await page.fill('.ns-modal input[placeholder*="Nome de quem assina"]', '');
   await page.click('text=✓ Confirmar e concluir');
   await page.waitForTimeout(250);
   check('não conclui sem o nome de quem assina', !(await page.isVisible('.sucesso-banner')));
   await page.fill('.ns-modal input[placeholder*="Nome de quem assina"]', 'João da Silva');
+  await page.click('text=✍ Assinar em tela cheia');
+  await page.waitForSelector('.assina-full canvas');
+  check('assinatura abre em TELA CHEIA', await page.isVisible('.assina-full'));
+  const cv = page.locator('.assina-full canvas');
+  const bb = await cv.boundingBox();
+  await page.mouse.move(bb.x + 40, bb.y + bb.height / 2);
+  await page.mouse.down();
+  for (let i = 0; i < 12; i++) await page.mouse.move(bb.x + 40 + i * 20, bb.y + bb.height / 2 + Math.sin(i) * 40);
+  await page.mouse.up();
+  await page.click('.assina-full button:has-text("Confirmar assinatura")');
+  await page.waitForTimeout(300);
+  check('após confirmar, volta para a tela do pedido', !(await page.isVisible('.assina-full')));
   await page.click('text=✓ Confirmar e concluir');
   await page.waitForSelector('.sucesso-banner');
   check('pedido concluído com assinatura', await page.isVisible('.sucesso-banner'));
@@ -342,6 +348,29 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page.waitForTimeout(400);
   const cliRota = await page.evaluate(() => JSON.parse(localStorage.getItem('ns_c_clientes'))[0].rota_dia);
   check('remover da rota devolve o cliente para a lista', cliRota == null);
+  // status colorido + alerta de observação + semana planejada + resetar rota
+  const rotaUI = await page.evaluate(() => ({
+    html: document.querySelector('#view').innerHTML,
+    txt: document.querySelector('#view').textContent
+  }));
+  check('abas mostram a semana planejada com as datas',
+    rotaUI.txt.includes('semana') && /Segunda \d{2}\/\d{2}/.test(rotaUI.txt));
+  // observação interna já cadastrada antes deve virar alerta no card da seleção
+  await page.locator('#view button:has-text("Criar rota")').click();
+  await page.waitForSelector('.ns-overlay');
+  const selUI = await page.evaluate(() => document.querySelector('.ns-overlay:last-of-type').innerHTML);
+  check('card da seleção mostra bolinha de status (verde/amarelo/vermelho)', /st-tag (vermelho|amarelo|verde|cinza)/.test(selUI));
+  await page.locator('.ns-overlay').last().locator('button:has-text("Adicionar à rota")').first().click();
+  await page.waitForTimeout(200);
+  await page.locator('.ns-overlay').last().locator('button:has-text("Concluir")').click();
+  await page.waitForTimeout(300);
+  check('botão de resetar rota aparece com a rota montada',
+    (await page.textContent('#view')).includes('Resetar rota'));
+  await page.locator('#view button:has-text("Resetar rota")').click();
+  await page.locator('.ns-overlay').last().locator('button:has-text("Confirmar")').click();
+  await page.waitForTimeout(400);
+  const aposReset = await page.evaluate(() => JSON.parse(localStorage.getItem('ns_c_clientes')).filter(c => c.rota_dia).length);
+  check('resetar rota devolve todos os clientes do dia', aposReset === 0);
 
   // classe A/B/C: tocar em C ajusta ciclo para 90 dias
   await page.click('#tabs button[data-v=clientes]');
@@ -424,13 +453,17 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   check('confer\u00eancia mostra pedido negativo com aviso de cr\u00e9dito', confRet.includes('-R$ 58,00') && confRet.includes('CR\u00c9DITO'));
   await page.fill('.ns-modal input[placeholder*="Prazo"]', '30 dias');
   await page.click('text=Assinar →');
-  const cvR = page.locator('.assinatura-cv');
-  const bbR = await cvR.boundingBox();
-  await page.mouse.move(bbR.x + 40, bbR.y + 90);
-  await page.mouse.down();
-  for (let i = 0; i < 10; i++) await page.mouse.move(bbR.x + 40 + i * 15, bbR.y + 90 + Math.cos(i) * 25);
-  await page.mouse.up();
   await page.fill('.ns-modal input[placeholder*="Nome de quem assina"]', 'Maria Souza');
+  await page.click('text=✍ Assinar em tela cheia');
+  await page.waitForSelector('.assina-full canvas');
+  const cvR = page.locator('.assina-full canvas');
+  const bbR = await cvR.boundingBox();
+  await page.mouse.move(bbR.x + 40, bbR.y + bbR.height / 2);
+  await page.mouse.down();
+  for (let i = 0; i < 10; i++) await page.mouse.move(bbR.x + 40 + i * 18, bbR.y + bbR.height / 2 + Math.cos(i) * 30);
+  await page.mouse.up();
+  await page.click('.assina-full button:has-text("Confirmar assinatura")');
+  await page.waitForTimeout(300);
   await page.click('text=✓ Confirmar e concluir');
   await page.waitForSelector('.sucesso-banner');
   const ret = await page.evaluate(() => ({
