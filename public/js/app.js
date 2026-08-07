@@ -119,7 +119,7 @@
   }
 
   // ================= SHELL =================
-  const VIEWS = { hoje: vHoje, clientes: vClientes, pedidos: vPedidos, dash: vDashboard, mais: vMais, ajuda: (v) => window.NSAjuda.view(v) };
+  const VIEWS = { hoje: vRota, clientes: vClientes, pedidos: vPedidos, dash: vDashboard, mais: vMais, ajuda: (v) => window.NSAjuda.view(v) };
   let viewAtual = 'hoje';
 
   function iniciarApp() {
@@ -222,375 +222,276 @@
   }
 
   // ================= VIEW: HOJE / PRÓXIMOS DIAS =================
-  let diaOffset = 0; // 0 = hoje · 1..7 = próximos dias
+  // ================= ROTA MANUAL (o vendedor monta) =================
+  const DIAS_ROTA = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta'];
+  let diaRota = null; // dia da semana em edição/visualização
 
-  function addDias(iso, n) {
-    const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n);
-    return d.toISOString().slice(0, 10);
+  function diaDeHoje() {
+    const d = new Date().getDay(); // 0=dom
+    return (d >= 1 && d <= 5) ? DIAS_ROTA[d - 1] : 'Segunda';
   }
-  function rotuloDia(off, iso) {
-    if (off === 0) return 'Hoje';
-    if (off === 1) return 'Amanhã';
-    const d = new Date(iso + 'T12:00:00');
-    return ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'][d.getDay()] + ' ' + iso.slice(8, 10) + '/' + iso.slice(5, 7);
+  function diasEntre(iso) {
+    if (!iso) return null;
+    return Math.round((new Date(hojeISO() + 'T12:00:00') - new Date(String(iso).slice(0, 10) + 'T12:00:00')) / 86400000);
+  }
+  // dias sem pedido: usa o último pedido; se nunca houve, o valor trazido da listagem
+  function diasSemPedido(c) {
+    const d = diasEntre(c.ultimo_pedido_em);
+    if (d != null) return d;
+    if (c.seed_dias_sem_pedido != null)
+      return Number(c.seed_dias_sem_pedido) + (diasEntre(c.seed_data_referencia) || 0);
+    return 9999;
+  }
+  function diasSemAtendimento(c) {
+    const d = diasEntre(c.ultima_visita_em);
+    return d != null ? d : diasSemPedido(c);
+  }
+  // ordem padrão da seleção: prioridade (A→C) e depois quem está há mais tempo sem pedido
+  function ordenarParaRota(lista) {
+    return lista.sort((a, b) =>
+      C.classeRank(a) - C.classeRank(b) || diasSemPedido(b) - diasSemPedido(a));
+  }
+  function clientesDaRota(repId, dia) {
+    return clientesDoRep(repId).filter(c => c.rota_dia === dia)
+      .sort((a, b) => (a.rota_ordem || 0) - (b.rota_ordem || 0));
+  }
+  function temAlerta(c) {
+    return DB.all('pendencias').some(p => p.cliente_id === c.id && !p.resolvida_em) || !!ultimaNota(c.id);
+  }
+  function visitaDeHoje(clienteId) {
+    return DB.all('visitas').find(v => v.cliente_id === clienteId && v.data_visita === hojeISO() && v.realizada);
   }
 
-  // Visão consolidada do gestor: rota do dia de TODOS os vendedores
-  // (somente leitura — para agir, escolher o vendedor no topo)
-  function vHojeConsolidado(view) {
-    const hoje = hojeISO();
-    const dataVista = addDias(hoje, diaOffset);
-    const ehHoje = diaOffset === 0;
-    const ciclo = C.cicloDoDia(dataVista, DB.config('ciclo_inicio', '2026-01-05'));
-    view.appendChild(el('div', { class: 'dias-scroll' },
-      Array.from({ length: 8 }, (_, off) => {
-        const dISO = addDias(hoje, off);
-        return el('button', {
-          class: 'chip' + (off === diaOffset ? ' ativo' : ''),
-          onclick: () => { diaOffset = off; nav('hoje'); }
-        }, rotuloDia(off, dISO));
-      })));
-    view.appendChild(el('div', { class: 'row space mt8' },
-      el('h2', null, (ehHoje ? 'Hoje' : rotuloDia(diaOffset, dataVista)) + ' · ' + dataBR(dataVista)),
-      el('span', { class: 'badge' }, 'Semana ' + ciclo.semana + ' · ' +
-        ['', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'][ciclo.diaSemana])));
-    const visitou = (cid) => DB.all('visitas').find(v => v.cliente_id === cid && v.data_visita === dataVista && v.realizada);
+  // ---- visão do gestor (todos os vendedores, somente leitura) ----
+  function vRotaConsolidado(view) {
+    if (!diaRota) diaRota = diaDeHoje();
+    view.appendChild(abaDias(() => nav('hoje')));
     const reps = DB.all('representantes').filter(r => r.papel !== 'gestor' && r.ativo !== false);
     for (const rep of reps) {
-      const doDiaTodos = clientesDoRep(rep.id).filter(c =>
-        c.semana_padrao === ciclo.semana && C.mesmoDia(c.dia_semana_padrao, ciclo.diaSemana));
-      const doDia = doDiaTodos.filter(c => !(c.ultima_visita_em && !visitou(c.id) &&
-        (new Date(dataVista) - new Date(c.ultima_visita_em)) / 86400000 < Math.max(7, (c.frequencia_dias || 60) / 2)));
-      const rotaSalva = DB.all('rotas').find(r => r.representante_id === rep.id && r.data_rota === dataVista);
-      const listaIds = rotaSalva ? rotaSalva.sequencia.map(x => x.cliente_id) : doDia.map(c => c.id);
-      const listaCls = listaIds.map(id => DB.byId('clientes', id)).filter(Boolean);
-      doDia.forEach(c => { if (!listaCls.some(x => x.id === c.id)) listaCls.push(c); });
-      const feitos = listaCls.filter(c => visitou(c.id)).length;
-      const foraRep = DB.all('visitas').filter(v => v.representante_id === rep.id &&
-        v.data_visita === dataVista && v.realizada &&
-        !listaCls.some(c => c.id === v.cliente_id)).length;
+      const lista = clientesDaRota(rep.id, diaRota);
+      const feitos = lista.filter(c => visitaDeHoje(c.id)).length;
       view.appendChild(el('h3', { class: 'mt16' }, '🧑‍💼 ' + rep.nome +
-        (listaCls.length || foraRep
-          ? ` — ${feitos}/${listaCls.length} da rota` + (foraRep ? ` + ${foraRep} fora = ${feitos + foraRep} atendidos` : '')
-          : '')));
-      if (rotaSalva)
-        view.appendChild(el('div', { class: 'rota-info mt4' },
-          `🛣 ${rotaSalva.distancia_total_km} km · ⏱ ~${Math.round(rotaSalva.tempo_total_min)} min` +
-          (rotaSalva.fonte_matriz === 'google' ? ' · Google' : ' · estimado')));
-      if (!listaCls.length) {
-        view.appendChild(el('p', { class: 'vazio' }, 'Nenhum cliente programado para este dia.'));
-        continue;
-      }
-      const listaEl = el('div', { class: 'col gap8 mt8' });
-      listaCls.forEach((c, i) => {
-        const v = visitou(c.id);
-        const seqInfo = rotaSalva && rotaSalva.sequencia.find(x => x.cliente_id === c.id);
-        listaEl.appendChild(el('div', {
-          class: 'card-visita' + (v ? ' feito' : ''),
-          onclick: () => fichaCliente(c.id)
-        },
-          el('div', { class: 'row space' },
-            el('div', null,
-              el('strong', null, `${i + 1}. ${c.nome}`),
-              el('div', { class: 'sub' }, [c.cidade, c.uf].filter(Boolean).join(' - ') +
-                (seqInfo && seqInfo.reencaixado ? ' · 🔁 reencaixado' : ''))),
-            v ? el('span', { class: 'badge ok' }, '✅') : null)));
-      });
-      view.appendChild(listaEl);
+        (lista.length ? ` — ${feitos}/${lista.length} visitados` : '')));
+      if (!lista.length) { view.appendChild(el('p', { class: 'vazio' }, 'Sem rota criada para ' + diaRota + '.')); continue; }
+      const box = el('div', { class: 'col gap8 mt8' });
+      lista.forEach((c, i) => box.appendChild(el('div', {
+        class: 'card-visita' + (visitaDeHoje(c.id) ? ' feito' : ''), onclick: () => fichaCliente(c.id)
+      },
+        el('div', { class: 'row space' },
+          el('div', null,
+            el('strong', null, (temAlerta(c) ? '⚠ ' : '') + `${i + 1}. ${c.nome}`),
+            el('div', { class: 'sub' }, [c.cidade, c.uf].filter(Boolean).join(' - '))),
+          visitaDeHoje(c.id) ? el('span', { class: 'badge ok' }, '✅') : null))));
+      view.appendChild(box);
     }
     view.appendChild(el('p', { class: 'sub mt12' },
-      'Visão do gestor (somente leitura). Para otimizar a rota ou registrar visitas, escolha o vendedor no topo.'));
+      'Visão do gestor (somente leitura). Para montar rotas, escolha o vendedor no topo.'));
   }
 
-  async function vHoje(view) {
+  // ---- abas dos dias da semana ----
+  function abaDias(aoTrocar) {
+    return el('div', { class: 'dias-scroll' }, DIAS_ROTA.map(d => el('button', {
+      class: 'chip' + (d === diaRota ? ' ativo' : ''),
+      onclick: () => { diaRota = d; aoTrocar(); }
+    }, d)));
+  }
+
+  // ---- tela principal da rota ----
+  function vRota(view) {
     const s = sessao();
-    if (s.consolidado) return vHojeConsolidado(view);
+    if (s.consolidado) return vRotaConsolidado(view);
     const rep = s.rep;
-    const hoje = hojeISO();
-    const dataVista = addDias(hoje, diaOffset);
-    const ehHoje = diaOffset === 0;
-    const ciclo = C.cicloDoDia(dataVista, DB.config('ciclo_inicio', '2026-01-05'));
-    const visitouEm = (cid, dia) => DB.all('visitas').find(v => v.cliente_id === cid && v.data_visita === dia && v.realizada);
-    // atendido antecipadamente (há menos de meio ciclo) sai da lista do dia
-    const atendidoRecente = (c) => c.ultima_visita_em && !visitouEm(c.id, dataVista) &&
-      (new Date(dataVista) - new Date(c.ultima_visita_em)) / 86400000 < Math.max(7, (c.frequencia_dias || 60) / 2);
-    const doDiaTodos = clientesDoRep(rep.id).filter(c =>
-      c.semana_padrao === ciclo.semana && C.mesmoDia(c.dia_semana_padrao, ciclo.diaSemana));
-    const doDia = doDiaTodos.filter(c => !atendidoRecente(c));
-    const antecipados = doDiaTodos.length - doDia.length;
-    const pendencias = DB.all('pendencias').filter(p => !p.resolvida_em &&
-      (p.representante_id === rep.id || !p.representante_id));
-    const pendentes = pendencias.map(p => DB.byId('clientes', p.cliente_id)).filter(Boolean)
-      .filter(c => !doDia.some(d => d.id === c.id));
-    const atrasados = alertasCiclo(rep.id).atrasados.map(a => a.c)
-      .filter(c => !doDia.some(d => d.id === c.id) && !pendentes.some(pp => pp.id === c.id));
+    if (!diaRota) diaRota = diaDeHoje();
+    const lista = clientesDaRota(rep.id, diaRota);
 
-    // partida: posição de HOJE ("Estou aqui") > pernoite da véspera > base
-    const vespera = addDias(dataVista, -1);
-    const pernoiteHoje = ehHoje ? DB.all('pernoites').find(p => p.representante_id === rep.id && p.data === dataVista) : null;
-    const pernoite = pernoiteHoje ||
-      DB.all('pernoites').find(p => p.representante_id === rep.id && p.data === vespera);
-    const partida = pernoite
-      ? { lat: pernoite.lat, lng: pernoite.lng, label: '📍 ' + (pernoite.local_desc || 'posição salva') }
-      : (rep.lat_base != null ? { lat: rep.lat_base, lng: rep.lng_base, label: '🏠 Base: ' + (rep.cidade_base || '') } : null);
-
-    const rotaSalva = DB.all('rotas').find(r => r.representante_id === rep.id && r.data_rota === dataVista);
-    const visitou = (cid) => DB.all('visitas').find(v => v.cliente_id === cid && v.data_visita === dataVista && v.realizada);
-
-    // seletor: hoje + próximos 7 dias
-    view.appendChild(el('div', { class: 'dias-scroll' },
-      Array.from({ length: 8 }, (_, off) => {
-        const dISO = addDias(hoje, off);
-        return el('button', {
-          class: 'chip' + (off === diaOffset ? ' ativo' : ''),
-          onclick: () => { diaOffset = off; nav('hoje'); }
-        }, rotuloDia(off, dISO));
-      })));
-
-    const regiaoDia = (() => {
-      const cont = {};
-      doDia.forEach(c => { const r = c.regiao || C.regiaoDoCliente(c); if (r) cont[r] = (cont[r] || 0) + 1; });
-      const top = Object.entries(cont).sort((a, b) => b[1] - a[1])[0];
-      return top ? top[0] : null;
-    })();
+    view.appendChild(abaDias(() => nav('hoje')));
     view.appendChild(el('div', { class: 'row space mt8' },
-      el('h2', null, (ehHoje ? 'Hoje' : rotuloDia(diaOffset, dataVista)) + ' · ' + dataBR(dataVista)),
-      el('span', { class: 'badge' }, (regiaoDia ? '📍 ' + regiaoDia + ' · ' : '') +
-        'Semana ' + ciclo.semana + ' · ' +
-        ['', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'][ciclo.diaSemana])));
+      el('h2', null, 'Rota de ' + diaRota + (diaRota === diaDeHoje() ? ' (hoje)' : '')),
+      el('span', { class: 'badge' }, lista.length + ' cliente(s)')));
 
-    const listaIds = rotaSalva ? rotaSalva.sequencia.map(x => x.cliente_id) : doDia.map(c => c.id);
-    const listaCls = listaIds.map(id => DB.byId('clientes', id)).filter(Boolean);
-    doDia.forEach(c => { if (!listaCls.some(x => x.id === c.id)) listaCls.push(c); });
-
-    if (ehHoje) {
-      const feitos = listaCls.filter(c => visitou(c.id)).length;
-      // visitas de hoje a clientes que NÃO estão na rota do dia também contam
-      const foraRota = DB.all('visitas').filter(v => v.representante_id === rep.id &&
-        v.data_visita === dataVista && v.realizada &&
-        !listaCls.some(c => c.id === v.cliente_id)).length;
-      const pct = listaCls.length ? Math.round(feitos / listaCls.length * 100) : 0;
+    if (lista.length) {
+      const feitos = lista.filter(c => visitaDeHoje(c.id)).length;
+      const pct = Math.round(feitos / lista.length * 100);
       view.appendChild(el('div', { class: 'progresso mt8' },
-        el('div', { class: 'progresso-info' }, `${feitos} de ${listaCls.length} da rota` +
-          (foraRota ? ` + ${foraRota} fora da rota = ${feitos + foraRota} atendidos` : ' visitados') + ` · ${pct}%`),
+        el('div', { class: 'progresso-info' }, `${feitos} de ${lista.length} visitados · ${pct}%`),
         el('div', { class: 'progresso-barra' }, el('div', { class: 'progresso-fill', style: 'width:' + pct + '%' }))));
     }
 
-    if (rotaSalva)
-      view.appendChild(el('div', { class: 'rota-info mt8' },
-        `🛣 ${rotaSalva.distancia_total_km} km · ⏱ ~${Math.round(rotaSalva.tempo_total_min)} min · 💰 ${C.fmtMoney(Number(rotaSalva.custo_estimado || 0))}` +
-        (rotaSalva.fonte_matriz === 'google' ? ' · Google' : ' · estimado (offline)')));
-
-    view.appendChild(el('div', { class: 'row gap8 mt8' },
-      el('button', { class: 'btn grow', onclick: otimizar }, rotaSalva ? '🔄 Reotimizar rota' : '⚡ Otimizar rota'),
-      ehHoje ? el('button', { class: 'btn btn-sec', onclick: estouAqui }, '📍 Estou aqui') : null));
-    view.appendChild(el('div', { class: 'row space mt4' },
-      el('span', { class: 'sub' }, 'Partida: ' + (partida ? partida.label : '— defina a base ou a partida')),
-      el('button', { class: 'btn-link', onclick: trocarPartida }, '✎ trocar partida')));
-    if (pendentes.length || atrasados.length)
-      view.appendChild(el('div', { class: 'sub mt4' },
-        `Fila de reencaixe: ${pendentes.length} pendente(s), ${atrasados.length} atrasado(s) — entram na rota se o desvio compensar (prioridade A > B > C).`));
-    if (ehHoje)
-      view.appendChild(el('button', {
-        class: 'btn-link mt4', onclick: () => {
-          const busca = el('input', { class: 'input big', placeholder: 'Buscar cliente… (nome, cidade ou CNPJ)' });
-          const listaF = el('div', { class: 'lista mt8' });
-          const mf = modal(el('div', null, busca, listaF), { titulo: '➕ Visita fora da rota' });
-          const rend = () => {
-            const q = busca.value.trim().toLowerCase();
-            const qNum = q.replace(/\D/g, '');
-            listaF.innerHTML = '';
-            DB.all('clientes').filter(c2 => c2.status !== 'inativo' && !listaCls.some(x => x.id === c2.id))
-              .filter(c2 => !q || (c2.nome || '').toLowerCase().includes(q) ||
-                (c2.cidade || '').toLowerCase().includes(q) ||
-                (qNum && (c2.cnpj_cpf || '').replace(/\D/g, '').includes(qNum)))
-              .slice(0, 30)
-              .forEach(c2 => listaF.appendChild(el('button', {
-                class: 'item-lista', onclick: () => { mf.fechar(); dialogoVisita(c2); }
-              }, el('strong', null, c2.nome),
-                el('span', { class: 'sub' }, [c2.cidade, c2.uf].filter(Boolean).join(' - ')))));
-          };
-          busca.oninput = rend; rend();
-          setTimeout(() => busca.focus(), 50);
-        }
-      }, '➕ Registrar visita fora da rota'));
-    if (antecipados)
-      view.appendChild(el('div', { class: 'sub mt4' },
-        `✅ ${antecipados} cliente(s) deste dia já foi(ram) atendido(s) antecipadamente e saiu(íram) da lista.`));
+    view.appendChild(el('button', {
+      class: 'btn big w100 mt12', onclick: () => telaCriarRota(rep)
+    }, '➕ Criar rota de ' + diaRota));
 
     const listaEl = el('div', { class: 'col gap8 mt12' });
     view.appendChild(listaEl);
-    renderLista();
-
-    // "Foi atendido?" — um botão só resume visita com/sem pedido e não realizada
-    function dialogoVisita(c) {
-      const dv = modal(el('div', { class: 'col gap8' },
-        el('p', { class: 'sub' }, c.nome + ' — o cliente foi atendido?'),
-        el('button', { class: 'btn big', onclick: () => { dv.fechar(); window.NSPedido.novo(c); } }, '🧾 Sim — fez pedido'),
-        el('button', { class: 'btn btn-sec big', onclick: () => { dv.fechar(); visitaSemPedido(c); } }, '✅ Sim — mas sem pedido'),
-        el('button', { class: 'btn btn-sec big', onclick: () => { dv.fechar(); naoRealizada(c); } }, '❌ Não foi atendido (motivo)')),
-        { titulo: '✔ Registrar visita' });
+    if (!lista.length) {
+      listaEl.appendChild(el('p', { class: 'vazio' },
+        'Nenhum cliente na rota de ' + diaRota + '. Toque em "Criar rota" para escolher os clientes.'));
+      return;
     }
+    lista.forEach((c, i) => {
+      const v = visitaDeHoje(c.id);
+      listaEl.appendChild(el('div', { class: 'card-visita' + (v ? ' feito' : '') },
+        el('div', { class: 'row space', onclick: () => fichaCliente(c.id) },
+          el('div', null,
+            el('strong', null, (temAlerta(c) ? '⚠ ' : '') + `${i + 1}. ${c.nome}`),
+            el('div', { class: 'sub' }, [c.endereco, c.cidade, c.uf].filter(Boolean).join(' · ')),
+            el('div', { class: 'sub' }, 'Classe ' + (c.classe || 'A') +
+              ' · ' + diasSemPedido(c) + 'd sem pedido · ' + diasSemAtendimento(c) + 'd sem visita'),
+            (() => { const n = ultimaNota(c.id); return n ? el('div', { class: 'nota-previa' },
+              '📝 ' + (n.length > 90 ? n.slice(0, 90) + '…' : n)) : null; })()),
+          v ? el('span', { class: 'badge ok' }, v.fez_pedido ? '✅ pedido' : '✅ visitado') : null),
+        el('div', { class: 'row gap8 mt8' },
+          el('button', { class: 'btn-mini', onclick: () => dialogoVisita(c, rep) }, '✔ Registrar visita'),
+          el('button', { class: 'btn-mini vermelho', onclick: () => removerDaRota(c) }, '✖ Remover da rota'))));
+    });
+  }
 
-    function temAlerta(c) {
-      return DB.all('pendencias').some(p => p.cliente_id === c.id && !p.resolvida_em) || !!ultimaNota(c.id);
-    }
+  function removerDaRota(c) {
+    DB.update('clientes', c.id, { rota_dia: null, rota_ordem: null });
+    toast(c.nome + ' saiu da rota e voltou para a lista de clientes.');
+    nav('hoje');
+  }
 
-    function renderLista() {
-      listaEl.innerHTML = '';
-      const pendentesDia = ehHoje ? listaCls.filter(c => !visitou(c.id)) : listaCls.slice();
-      const feitosDia = ehHoje ? listaCls.filter(c => visitou(c.id)) : [];
-      if (!pendentesDia.length && !feitosDia.length) {
-        listaEl.appendChild(el('p', { class: 'vazio' }, ehHoje
-          ? 'Nenhum cliente programado para hoje. 🎉'
-          : 'Nenhum cliente programado para este dia.'));
-        return;
-      }
-      // menos botões: toque no cartão abre a ficha; ações essenciais embaixo
-      pendentesDia.forEach((c, i) => {
-        const seqInfo = rotaSalva && rotaSalva.sequencia.find(x => x.cliente_id === c.id);
-        listaEl.appendChild(el('div', { class: 'card-visita' },
-          el('div', { class: 'row space', onclick: () => fichaCliente(c.id) },
-            el('div', null,
-              el('strong', null, (temAlerta(c) ? '⚠ ' : '') + `${i + 1}. ${c.nome}`),
-              el('div', { class: 'sub' }, [c.endereco, c.cidade].filter(Boolean).join(' · ') +
-                (seqInfo && seqInfo.reencaixado ? ' · 🔁 reencaixado' : '')),
-              (() => { const n = ultimaNota(c.id); return n ? el('div', { class: 'nota-previa' },
-                '📝 ' + (n.length > 90 ? n.slice(0, 90) + '…' : n)) : null; })())),
-          el('div', { class: 'row gap8 mt8' },
-            el('button', { class: 'btn-mini', onclick: () => abrirGPS(c) }, '🗺 GPS'),
-            ehHoje ? el('button', { class: 'btn-mini', onclick: () => dialogoVisita(c) }, '✔ Registrar visita') : null)));
-      });
-      // visitados saem da lista e ficam num resumo recolhido
-      if (feitosDia.length) {
-        const det = el('details', { class: 'card-visita mt8' });
-        det.appendChild(el('summary', null, el('strong', null, '✅ Já atendidos hoje (' + feitosDia.length + ')')));
-        feitosDia.forEach(c => {
-          const v = visitou(c.id);
-          det.appendChild(el('div', { class: 'row space mt8', onclick: () => fichaCliente(c.id) },
-            el('span', null, c.nome),
-            el('span', { class: 'badge ok' }, v && v.fez_pedido ? '✅ pedido' : '✅ visitado')));
-        });
-        listaEl.appendChild(det);
-      }
-    }
+  // ---- tela de seleção de clientes (filtros + adicionar) ----
+  function telaCriarRota(rep) {
+    const wrap = el('div');
+    const m = modal(wrap, { titulo: '➕ Rota de ' + diaRota, full: true });
+    const f = { busca: '', cidade: '', regiao: '', classe: '', semPedido: '', semVisita: '' };
+    render();
 
-    async function otimizar() {
-      const restantes = listaCls.filter(c => !visitou(c.id));
-      if (!partida && !restantes.some(c => c.lat != null))
-        return toast('Sem coordenadas: geocodifique os clientes (Mais → Geocodificar) e defina a base do representante.', 'erro');
-      const start = partida || { lat: restantes.find(c => c.lat != null).lat, lng: restantes.find(c => c.lat != null).lng, label: '1º cliente' };
-      toast('Calculando melhor sequência…');
-      const rota = await R.montarRota({
-        partida: start,
-        fixos: doDia.filter(c => !visitou(c.id)),
-        candidatos: pendentes.concat(atrasados),
-        hojeISO: dataVista
-      });
-      R.salvarRota(rep.id, dataVista, rota, start);
-      // sugestão de pernoite ao fim do dia visto
-      const base = rep.lat_base != null ? { lat: rep.lat_base, lng: rep.lng_base } : null;
-      if (base && rota.ultimoPonto) {
-        const seguinteISO = addDias(dataVista, 1);
-        const cicloSeg = C.cicloDoDia(seguinteISO, DB.config('ciclo_inicio', '2026-01-05'));
-        const seguinte = clientesDoRep(rep.id).filter(c => c.semana_padrao === cicloSeg.semana && C.mesmoDia(c.dia_semana_padrao, cicloSeg.diaSemana) && c.lat != null)[0];
-        const dec = C.decidirPernoite({
-          ultimo: rota.ultimoPonto, base, primeiroAmanha: seguinte ? { lat: seguinte.lat, lng: seguinte.lng } : null,
-          distMinKm: Number(DB.config('pernoite_dist_km', 150)),
-          economiaMinKm: Number(DB.config('pernoite_economia_km', 60)),
-          fator: Number(DB.config('haversine_fator', 1.3))
-        });
-        if (dec.sugerir)
-          toast(`🛏 Sugestão: pernoitar na região (volta = ${Math.round(dec.dVolta)} km; economia ~${Math.round(dec.economia)} km).`);
-      }
-      nav('hoje');
-    }
+    function render() {
+      wrap.innerHTML = '';
+      const disponiveis = clientesDoRep(rep.id).filter(c => c.status !== 'inativo' && !c.rota_dia);
+      const cidades = Array.from(new Set(disponiveis.map(c => c.cidade).filter(Boolean))).sort();
+      const regioes = Array.from(new Set(disponiveis.map(c => c.regiao || C.regiaoDoCliente(c)).filter(Boolean))).sort();
 
-    // Simular/definir de onde a rota deste dia parte (ex.: "amanhã durmo em
-    // Joaçaba") — grava um pernoite na véspera do dia visto, sem precisar de GPS
-    function trocarPartida() {
-      const busca = el('input', { class: 'input big', placeholder: 'Cidade de partida… ex.: Joaçaba' });
-      const lista = el('div', { class: 'lista mt8' });
-      const mp = modal(el('div', null,
-        el('h3', null, 'Partida da rota — ' + rotuloDia(diaOffset, dataVista)),
-        el('p', { class: 'sub' }, 'Escolha a cidade de onde você vai sair neste dia (ex.: onde vai pernoitar).'),
-        busca, lista,
-        el('button', {
-          class: 'btn btn-sec w100 mt8', onclick: () => {
-            const ex = DB.all('pernoites').find(p => p.representante_id === rep.id && p.data === vespera);
-            if (ex) DB.remove('pernoites', ex.id);
-            mp.fechar(); toast('Partida voltou para a base (' + (rep.cidade_base || '') + ').'); nav('hoje');
-          }
-        }, '🏠 Usar a base: ' + (rep.cidade_base || '—'))));
-      function render() {
-        const q = busca.value.trim().toLowerCase();
-        lista.innerHTML = '';
-        const porCidade = {};
-        for (const c of DB.all('clientes'))
-          if (c.lat != null && c.cidade) (porCidade[c.cidade + '|' + (c.uf || '')] = porCidade[c.cidade + '|' + (c.uf || '')] || []).push(c);
-        Object.keys(porCidade)
-          .filter(k => !q || k.toLowerCase().includes(q))
-          .sort().slice(0, 25)
-          .forEach(k => {
-            const [cid, uf] = k.split('|');
-            const cls = porCidade[k];
-            const lat = cls.reduce((s, c) => s + c.lat, 0) / cls.length;
-            const lng = cls.reduce((s, c) => s + c.lng, 0) / cls.length;
-            lista.appendChild(el('button', {
-              class: 'item-lista', onclick: () => {
-                const body = { representante_id: rep.id, data: vespera, lat, lng, local_desc: cid + (uf ? ' - ' + uf : '') + ' (partida definida)' };
-                const ex = DB.all('pernoites').find(p => p.representante_id === rep.id && p.data === vespera);
-                if (ex) DB.update('pernoites', ex.id, body); else DB.insert('pernoites', body);
-                mp.fechar();
-                toast('🛏 Partida deste dia: ' + cid + '. Toque em Otimizar rota para recalcular.');
-                nav('hoje');
+      const naRota = clientesDaRota(rep.id, diaRota);
+      wrap.appendChild(el('div', { class: 'total-bar' },
+        el('span', null, 'Na rota de ' + diaRota),
+        el('strong', null, naRota.length + ' cliente(s)')));
+
+      const inBusca = el('input', { class: 'input big mt8', placeholder: 'Buscar nome, cidade ou CNPJ…', value: f.busca });
+      inBusca.oninput = () => { f.busca = inBusca.value; renderLista(); };
+      const sel = (chave, rotulo, opcoes) => {
+        const s = el('select', { class: 'input' },
+          el('option', { value: '' }, rotulo),
+          opcoes.map(o => el('option', { value: String(o.v != null ? o.v : o), selected: f[chave] === String(o.v != null ? o.v : o) ? '' : null },
+            o.t || o)));
+        s.onchange = () => { f[chave] = s.value; renderLista(); };
+        return s;
+      };
+      wrap.appendChild(inBusca);
+      wrap.appendChild(el('div', { class: 'row gap8 mt8' },
+        sel('cidade', '🏙 Todas as cidades', cidades),
+        sel('regiao', '📍 Todas as regiões', regioes)));
+      wrap.appendChild(el('div', { class: 'row gap8 mt8' },
+        sel('classe', '⭐ Todas as prioridades', [{ v: 'A', t: 'Classe A' }, { v: 'B', t: 'Classe B' }, { v: 'C', t: 'Classe C' }]),
+        sel('semPedido', '📦 Dias sem pedido', [{ v: '30', t: '30+ dias' }, { v: '45', t: '45+ dias' }, { v: '60', t: '60+ dias' }, { v: '90', t: '90+ dias' }, { v: '180', t: '180+ dias' }])));
+      wrap.appendChild(el('div', { class: 'row gap8 mt8' },
+        sel('semVisita', '🚗 Dias sem atendimento', [{ v: '30', t: '30+ dias' }, { v: '45', t: '45+ dias' }, { v: '60', t: '60+ dias' }, { v: '90', t: '90+ dias' }])));
+
+      const infoEl = el('div', { class: 'sub mt8' });
+      const listaEl = el('div', { class: 'col gap8 mt8' });
+      wrap.appendChild(infoEl); wrap.appendChild(listaEl);
+      wrap.appendChild(el('button', {
+        class: 'btn big w100 mt16', onclick: () => { m.fechar(); nav('hoje'); }
+      }, '✓ Concluir'));
+
+      function renderLista() {
+        const q = f.busca.trim().toLowerCase();
+        const qNum = q.replace(/\D/g, '');
+        let cls = clientesDoRep(rep.id).filter(c => c.status !== 'inativo' && !c.rota_dia);
+        if (q) cls = cls.filter(c => (c.nome || '').toLowerCase().includes(q) ||
+          (c.cidade || '').toLowerCase().includes(q) ||
+          (qNum && (c.cnpj_cpf || '').replace(/\D/g, '').includes(qNum)));
+        if (f.cidade) cls = cls.filter(c => c.cidade === f.cidade);
+        if (f.regiao) cls = cls.filter(c => (c.regiao || C.regiaoDoCliente(c)) === f.regiao);
+        if (f.classe) cls = cls.filter(c => (c.classe || 'A') === f.classe);
+        if (f.semPedido) cls = cls.filter(c => diasSemPedido(c) >= Number(f.semPedido));
+        if (f.semVisita) cls = cls.filter(c => diasSemAtendimento(c) >= Number(f.semVisita));
+        cls = ordenarParaRota(cls);
+        infoEl.textContent = cls.length + ' cliente(s) disponível(is) · ordenados por prioridade e tempo sem pedido';
+        listaEl.innerHTML = '';
+        cls.slice(0, 80).forEach(c => {
+          listaEl.appendChild(el('div', { class: 'card-visita' },
+            el('div', { onclick: () => fichaCliente(c.id) },
+              el('strong', null, (temAlerta(c) ? '⚠ ' : '') + c.nome),
+              el('div', { class: 'sub' }, [c.cidade, c.uf].filter(Boolean).join(' - ') +
+                ' · ' + (c.regiao || C.regiaoDoCliente(c) || 'sem região')),
+              el('div', { class: 'sub' }, 'Classe ' + (c.classe || 'A') +
+                ' · ' + diasSemPedido(c) + 'd sem pedido · ' + diasSemAtendimento(c) + 'd sem visita')),
+            el('button', {
+              class: 'btn-mini mt8', onclick: () => {
+                const ordem = clientesDaRota(rep.id, diaRota).length + 1;
+                DB.update('clientes', c.id, { rota_dia: diaRota, rota_ordem: ordem });
+                toast(c.nome + ' entrou na rota de ' + diaRota + '.');
+                render();
               }
-            }, el('strong', null, cid + (uf ? ' - ' + uf : '')),
-              el('span', { class: 'sub' }, cls.length + ' cliente(s) na cidade')));
-          });
-        if (!lista.children.length) lista.appendChild(el('p', { class: 'vazio' }, 'Nenhuma cidade encontrada.'));
+            }, '➕ Adicionar à rota')));
+        });
+        if (!cls.length) listaEl.appendChild(el('p', { class: 'vazio' }, 'Nenhum cliente com esses filtros.'));
+        else if (cls.length > 80) listaEl.appendChild(el('p', { class: 'sub' }, 'Mostrando os 80 primeiros — use os filtros para refinar.'));
       }
-      busca.oninput = render;
-      render();
-      setTimeout(() => busca.focus(), 50);
+      renderLista();
     }
+  }
 
-    function estouAqui() {
-      if (!navigator.geolocation) return toast('GPS não disponível neste aparelho.', 'erro');
-      toast('Obtendo posição…');
-      navigator.geolocation.getCurrentPosition((pos) => {
-        const existente = DB.all('pernoites').find(p => p.representante_id === rep.id && p.data === hoje);
-        const body = { representante_id: rep.id, data: hoje, lat: pos.coords.latitude, lng: pos.coords.longitude, local_desc: 'GPS ' + new Date().toLocaleTimeString('pt-BR') };
-        if (existente) DB.update('pernoites', existente.id, body); else DB.insert('pernoites', body);
-        toast('📍 Posição salva! A rota de HOJE (reotimize) e a de amanhã partem daqui.');
-      }, () => toast('Não foi possível obter o GPS.', 'erro'), { enableHighAccuracy: true, timeout: 15000 });
-    }
+  // ---- registrar visita: novo pedido · sem pedido (motivo) · não visitei ----
+  function dialogoVisita(c, rep) {
+    const dv = modal(el('div', { class: 'col gap8' },
+      el('p', { class: 'sub' }, c.nome),
+      el('button', { class: 'btn big', onclick: () => { dv.fechar(); window.NSPedido.novo(c); } }, '🧾 Novo pedido'),
+      el('button', { class: 'btn btn-sec big', onclick: () => { dv.fechar(); semPedido(c, rep); } }, '✅ Sem pedido'),
+      el('button', { class: 'btn btn-sec big', onclick: () => { dv.fechar(); naoVisitei(c); } }, '⏭ Não visitei')),
+      { titulo: '✔ Registrar visita' });
+  }
 
-    function visitaSemPedido(c) {
-      DB.insert('visitas', {
-        cliente_id: c.id, representante_id: rep.id, data_visita: hoje,
-        realizada: true, fez_pedido: false, valor_pedido: 0
-      });
-      espelharVisitaLocal(c);
-      toast('Visita registrada (sem pedido).');
-      nav('hoje');
-    }
+  const MOTIVOS_SEM_PEDIDO = [
+    'Responsável não estava',
+    'Cliente não quis fazer pedido',
+    'Sem necessidade de compra',
+    'Outro'
+  ];
 
-    function naoRealizada(c) {
-      const motivos = [['fechado', '🚪 Fechado'], ['ausente', '👤 Responsável ausente'], ['sem_tempo', '⏰ Sem tempo'], ['reagendado', '📅 Reagendado']];
-      const m = modal(el('div', { class: 'col gap8' },
-        motivos.map(([val, rot]) => el('button', {
-          class: 'btn btn-sec big', onclick: async () => {
-            DB.insert('visitas', { cliente_id: c.id, representante_id: rep.id, data_visita: hoje, realizada: false, fez_pedido: false, motivo_falta: val, valor_pedido: 0 });
-            DB.insert('pendencias', { cliente_id: c.id, representante_id: rep.id, motivo: val });
-            m.fechar();
-            toast(c.nome + ' entrou na fila de reencaixe. Recalculando a rota…');
-            const idx = listaCls.findIndex(x => x.id === c.id);
-            if (idx >= 0) listaCls.splice(idx, 1);
-            await otimizar(); // rota recalculada inteira, não apenas anexada
-          }
-        }, rot))), { titulo: 'Por que não visitou ' + c.nome + '?' });
-    }
+  function semPedido(c, rep) {
+    let motivo = MOTIVOS_SEM_PEDIDO[0];
+    const obs = el('textarea', { class: 'input mt8', rows: '3', placeholder: 'Observação (opcional)' });
+    const botoes = MOTIVOS_SEM_PEDIDO.map(mt => el('button', {
+      class: 'btn btn-sec big' + (mt === motivo ? ' ativo' : ''),
+      onclick: (e) => {
+        motivo = mt;
+        e.currentTarget.parentElement.querySelectorAll('.btn').forEach(b => b.classList.remove('ativo'));
+        e.currentTarget.classList.add('ativo');
+      }
+    }, mt));
+    const ms = modal(el('div', null,
+      el('p', { class: 'sub' }, 'Por que ' + c.nome + ' não fez pedido?'),
+      el('div', { class: 'col gap8 mt8' }, botoes),
+      obs,
+      el('button', {
+        class: 'btn big w100 mt12', onclick: () => {
+          DB.insert('visitas', {
+            cliente_id: c.id, representante_id: (c.representante_id || rep.id),
+            data_visita: hojeISO(), realizada: true, fez_pedido: false, valor_pedido: 0,
+            motivo_sem_pedido: motivo, observacao: obs.value.trim() || null
+          });
+          if (obs.value.trim())
+            DB.insert('cliente_notas', {
+              cliente_id: c.id, texto: motivo + ' — ' + obs.value.trim(),
+              autor: rep.nome, data: hojeISO()
+            });
+          espelharVisitaLocal(c);
+          ms.fechar();
+          toast('Visita registrada sem pedido (' + motivo + ').');
+          nav('hoje');
+        }
+      }, '💾 Salvar visita')), { titulo: '✅ Sem pedido' });
+  }
+
+  function naoVisitei(c) {
+    DB.update('clientes', c.id, { rota_dia: null, rota_ordem: null });
+    toast(c.nome + ' saiu da rota e voltou para a lista de clientes disponíveis.');
+    nav('hoje');
   }
 
   function espelharVisitaLocal(c) {
@@ -1020,7 +921,6 @@
     const s = sessao();
     view.appendChild(el('h2', null, 'Mais'));
     const item = (rot, fn) => el('button', { class: 'item-lista mt8', onclick: fn }, el('strong', null, rot));
-    view.appendChild(item('🗓 Meu Roteiro — dias, folgas e reencaixes', telaMeuRoteiro));
     view.appendChild(item('📊 Relatórios — venda do dia, metas e redes', telaRelatorios));
     view.appendChild(item('💰 Financeiro — comissões a receber e despesas', telaFinanceiro));
     view.appendChild(item('📍 Geocodificar clientes', telaGeocode));
@@ -1031,7 +931,6 @@
       view.appendChild(item('💍 Produtos e preços', telaAdminProdutos));
       view.appendChild(item('🧑‍💼 Vendedores', telaAdminVendedores));
       view.appendChild(item('⚙ Configurações', telaAdminConfig));
-      view.appendChild(item('🗺 Gerar roteiro por regiões', telaReplanejarMes));
     }
     view.appendChild(el('button', { class: 'btn-link mt16', onclick: sair }, 'Sair (' + s.eu.email + ')'));
     view.appendChild(el('p', { class: 'sub mt8' }, 'NEW STAR — App do Vendedor · offline-first · v1'));
@@ -1670,242 +1569,6 @@
       }, 'Salvar configurações')), { titulo: 'Configurações', full: true });
   }
 
-  // ---------- Gerar roteiro por REGIÕES (lógica do vendedor) ----------
-  // Blocos por região (Passo Fundo, Santa Rosa, Chapecó, Joaçaba, Erechim,
-  // Frederico Westphalen, São Miguel do Oeste), da mais urgente para a menos.
-  // O vencimento conta da ÚLTIMA VISITA (freq. A=45d, B=60d, C=90d).
-  function telaReplanejarMes() {
-    const s = sessao();
-    if (s.consolidado) return toast('Selecione um representante no topo.', 'erro');
-    const rep = s.rep;
-    const m = modal(el('div', null,
-      el('p', null, 'Monta o roteiro em BLOCOS POR REGIÃO, começando pela região com clientes mais ' +
-        'atrasados. Cada dia útil recebe ' + DB.config('visitas_dia_min', 6) + ' visitas da mesma região, ' +
-        'agrupadas por proximidade. O vencimento de cada cliente conta da ÚLTIMA VISITA.'),
-      el('p', { class: 'sub mt8' }, 'Regiões: ' + C.REGIOES.map(r => r.nome).join(' · ') +
-        '. Clientes longe de todas (outros estados) ficam FORA DE ROTA — continuam no sistema, sem agendamento.'),
-      el('p', { class: 'aviso mt8' }, 'Isso regrava o dia de visita de todos os clientes ativos do representante.'),
-      el('button', {
-        class: 'btn big w100 mt12', onclick: async () => {
-          const res = gerarRoteiroRep(rep.id);
-          m.fechar();
-          toast(`🗺 Roteiro gerado: ${res.agendados} clientes em ${res.dias} dias, região por região` +
-            (res.semDia ? ` (+${res.semDia} aguardam a próxima geração)` : '') + '.');
-        }
-      }, '🗺 Gerar roteiro por regiões')), { titulo: 'Roteiro por regiões' });
-
-  }
-
-  // gera/regrava o roteiro por regiões respeitando as preferências do vendedor
-  // (dias que trabalha e o "dia perto de casa" do autônomo)
-  function gerarRoteiroRep(repId, regiaoPrioritaria) {
-    const rep = DB.byId('representantes', repId) || {};
-    const cls = clientesDoRep(repId).map(c => Object.assign({}, c, {
-      regiao: c.regiao || C.regiaoDoCliente(c)
-    }));
-    const plano = C.planejarPorRegioes({
-      clientes: cls, hoje: hojeISO(),
-      cicloInicio: DB.config('ciclo_inicio', '2026-07-27'),
-      porDia: Number(DB.config('visitas_dia_min', 6)),
-      diasTrabalho: rep.dias_trabalho || [1, 2, 3, 4, 5],
-      diaPertoBase: rep.dia_perto_base || null,
-      baseCoord: rep.lat_base != null ? { lat: rep.lat_base, lng: rep.lng_base } : null,
-      regiaoPrioritaria: regiaoPrioritaria || null
-    });
-    const agendadosIds = new Set(plano.atribuicoes.map(a => a.id));
-    for (const a of plano.atribuicoes)
-      DB.update('clientes', a.id, { semana_padrao: a.semana, dia_semana_padrao: a.dia, regiao: a.regiao });
-    // quem não entrou nesta rodada fica sem dia fixo (entra na próxima geração/reencaixe)
-    for (const c of cls)
-      if (!agendadosIds.has(c.id) && c.semana_padrao != null)
-        DB.update('clientes', c.id, { semana_padrao: null, dia_semana_padrao: null, regiao: c.regiao || null });
-    return { agendados: plano.atribuicoes.length, dias: plano.dias, semDia: plano.semDia };
-  }
-
-  // ---------- Meu Roteiro: agenda autogerenciável do vendedor autônomo ----------
-  // O vendedor escolhe os dias que trabalha, o "dia perto de casa", libera dias
-  // (folga/estoque) e move clientes — o sistema sugere onde reencaixar.
-  function telaMeuRoteiro() {
-    const s = sessao();
-    if (s.consolidado) return toast('Escolha um vendedor no topo para ver o roteiro dele.', 'erro');
-    const rep = DB.byId('representantes', s.rep.id);
-    const wrap = el('div');
-    const m = modal(wrap, { titulo: '🗓 Meu Roteiro — ' + rep.nome, full: true });
-    const maxDia = Number(DB.config('visitas_dia_max', 9));
-    const alvoDia = Number(DB.config('visitas_dia_min', 6));
-    const cicloIni = DB.config('ciclo_inicio', '2026-07-27');
-    const NOMES = ['', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta'];
-    render();
-
-    function membrosDoDia(dataISO) {
-      const ciclo = C.cicloDoDia(dataISO, cicloIni);
-      return clientesDoRep(rep.id).filter(c =>
-        c.semana_padrao === ciclo.semana && C.mesmoDia(c.dia_semana_padrao, ciclo.diaSemana));
-    }
-    function proximosDias(n) {
-      const out = []; let off = 0;
-      while (out.length < n && off < 60) {
-        const dISO = addDias(hojeISO(), off); off++;
-        const dw = new Date(dISO + 'T12:00:00').getDay();
-        if (dw >= 1 && dw <= 5) out.push({ data: dISO, dw });
-      }
-      return out;
-    }
-    function regiaoDoDia(membros) {
-      const cont = {};
-      membros.forEach(c => { const r = c.regiao || C.regiaoDoCliente(c); if (r) cont[r] = (cont[r] || 0) + 1; });
-      const top = Object.entries(cont).sort((a, b) => b[1] - a[1])[0];
-      return top ? top[0] : null;
-    }
-    // melhores dias para reencaixar um cliente: mesma região primeiro, com vaga
-    function sugerirDias(cliente, excluirData) {
-      const minhaRegiao = cliente.regiao || C.regiaoDoCliente(cliente);
-      return proximosDias(24)
-        .filter(d => d.data !== excluirData && d.data > hojeISO())
-        .filter(d => (rep.dias_trabalho || [1, 2, 3, 4, 5]).includes(d.dw))
-        .map(d => {
-          const membros = membrosDoDia(d.data);
-          return { d, membros, regiao: regiaoDoDia(membros), vagas: maxDia - membros.length };
-        })
-        .filter(x => x.vagas > 0)
-        .sort((a, b) =>
-          ((b.regiao === minhaRegiao ? 1 : 0) - (a.regiao === minhaRegiao ? 1 : 0)) ||
-          a.d.data.localeCompare(b.d.data))
-        .slice(0, 10);
-    }
-    function moverPara(cliente, dataISO) {
-      const ciclo = C.cicloDoDia(dataISO, cicloIni);
-      DB.update('clientes', cliente.id, {
-        semana_padrao: ciclo.semana, dia_semana_padrao: C.DIAS_SEMANA[ciclo.diaSemana]
-      });
-    }
-    function abrirMover(cliente) {
-      const ops = sugerirDias(cliente, null);
-      const mm = modal(el('div', null,
-        el('p', { class: 'sub' }, 'Para quando mover ' + cliente.nome + '? (sugestões da mesma região primeiro)'),
-        el('div', { class: 'col gap8 mt8' }, ops.map(o => el('button', {
-          class: 'item-lista', onclick: () => {
-            moverPara(cliente, o.d.data); mm.fechar();
-            toast('Movido para ' + dataBR(o.d.data) + '.'); render();
-          }
-        }, el('strong', null, NOMES[o.d.dw] + ' · ' + dataBR(o.d.data)),
-          el('span', { class: 'sub' }, (o.regiao ? '📍 ' + o.regiao + ' · ' : '') + o.membros.length + ' visitas (' + o.vagas + ' vagas)'))))),
-        { titulo: 'Mover cliente' });
-    }
-    async function liberarDia(dataISO, membros) {
-      if (!(await confirmar('Liberar ' + dataBR(dataISO) + ' (folga/estoque)? Os ' + membros.length +
-        ' clientes do dia serão reencaixados nos melhores dias — de preferência na mesma região.'))) return;
-      let movidos = 0, semDia = 0;
-      for (const c of membros) {
-        const ops = sugerirDias(c, dataISO).filter(o => membrosDoDia(o.d.data).length < maxDia);
-        const alvoBom = ops.find(o => o.membros.length < alvoDia) || ops[0];
-        if (alvoBom) { moverPara(c, alvoBom.d.data); movidos++; }
-        else { DB.update('clientes', c.id, { semana_padrao: null, dia_semana_padrao: null }); semDia++; }
-      }
-      toast('🚫 Dia liberado: ' + movidos + ' reencaixado(s)' +
-        (semDia ? ', ' + semDia + ' aguardam a próxima geração de roteiro' : '') + '.');
-      render();
-    }
-
-    function render() {
-      wrap.innerHTML = '';
-      // ---- preferências do autônomo ----
-      const trab = new Set(rep.dias_trabalho || [1, 2, 3, 4, 5]);
-      wrap.appendChild(el('h3', null, 'Dias em que trabalho'));
-      wrap.appendChild(el('div', { class: 'dias-scroll mt4' }, [1, 2, 3, 4, 5].map(dw => el('button', {
-        class: 'chip' + (trab.has(dw) ? ' ativo' : ''),
-        onclick: () => {
-          if (trab.has(dw)) { if (trab.size <= 1) return toast('Deixe ao menos um dia de trabalho.', 'erro'); trab.delete(dw); }
-          else trab.add(dw);
-          rep.dias_trabalho = Array.from(trab).sort();
-          DB.update('representantes', rep.id, { dias_trabalho: rep.dias_trabalho });
-          render();
-        }
-      }, NOMES[dw]))));
-      const regiaoBase = rep.lat_base != null ? C.regiaoDoCliente({ lat: rep.lat_base, lng: rep.lng_base }, 1e9) : null;
-      wrap.appendChild(el('h3', { class: 'mt12' }, 'Dia perto de casa' + (regiaoBase ? ' (região ' + regiaoBase + ')' : '')));
-      wrap.appendChild(el('div', { class: 'dias-scroll mt4' },
-        [[null, 'Nenhum'], [1, 'Segunda'], [2, 'Terça'], [3, 'Quarta'], [4, 'Quinta'], [5, 'Sexta']].map(([dw, rot]) => el('button', {
-          class: 'chip' + ((rep.dia_perto_base || null) === dw ? ' ativo' : ''),
-          onclick: () => {
-            rep.dia_perto_base = dw;
-            DB.update('representantes', rep.id, { dia_perto_base: dw });
-            render();
-          }
-        }, rot))));
-      wrap.appendChild(el('p', { class: 'sub mt4' },
-        'No dia escolhido, o roteiro puxa clientes da região da sua base — bom para ficar perto de casa.'));
-      wrap.appendChild(el('button', {
-        class: 'btn w100 mt8', onclick: () => {
-          const res = gerarRoteiroRep(rep.id);
-          toast('🗺 Roteiro regerado: ' + res.agendados + ' clientes em ' + res.dias + ' dias.');
-          render();
-        }
-      }, '🗺 Regerar roteiro com minhas preferências'));
-
-      // ---- escolher a região para começar (recomendação × decisão da pessoa) ----
-      wrap.appendChild(el('h3', { class: 'mt16' }, '🎯 Por qual região quer começar?'));
-      wrap.appendChild(el('p', { class: 'sub' },
-        'O sistema recomenda a mais urgente (⭐), mas a escolha é sua: toque numa região e o roteiro remonta começando por ela.'));
-      const hoje = hojeISO();
-      const statsRegiao = C.REGIOES.map(r => {
-        const meus = clientesDoRep(rep.id).filter(c =>
-          (c.regiao || C.regiaoDoCliente(c)) === r.nome && c.lat != null);
-        let vencidos = 0, maiorAtraso = 0, aVencer = 0;
-        for (const c of meus) {
-          const base = c.ultima_visita_em || c.ultimo_pedido_em;
-          if (!base) { vencidos++; maiorAtraso = Math.max(maiorAtraso, 999); continue; }
-          const d = new Date(base + 'T12:00:00');
-          d.setDate(d.getDate() + (c.frequencia_dias || 45));
-          const dif = Math.round((new Date(hoje + 'T12:00:00') - d) / 86400000);
-          if (dif >= 0) { vencidos++; maiorAtraso = Math.max(maiorAtraso, dif); }
-          else if (dif >= -14) aVencer++;
-        }
-        return { nome: r.nome, total: meus.length, vencidos, aVencer, maiorAtraso };
-      }).filter(s => s.total > 0)
-        .sort((a, b) => b.vencidos - a.vencidos || b.maiorAtraso - a.maiorAtraso);
-      const listaReg = el('div', { class: 'col gap8 mt8' });
-      statsRegiao.forEach((sr, i) => listaReg.appendChild(el('button', {
-        class: 'item-lista', onclick: async () => {
-          if (!(await confirmar('Remontar o roteiro começando pela região ' + sr.nome + '?'))) return;
-          const res = gerarRoteiroRep(rep.id, sr.nome);
-          toast('🗺 Roteiro remontado começando por ' + sr.nome + ' (' + res.agendados + ' clientes em ' + res.dias + ' dias).');
-          render();
-        }
-      }, el('strong', null, (i === 0 ? '⭐ ' : '') + sr.nome + (i === 0 ? ' — recomendada' : '')),
-        el('span', { class: 'sub' }, sr.vencidos + ' vencido(s)' +
-          (sr.maiorAtraso ? ' (maior atraso: ' + sr.maiorAtraso + 'd)' : '') +
-          ' · ' + sr.aVencer + ' vencendo em 14d · ' + sr.total + ' clientes na região'))));
-      wrap.appendChild(listaReg);
-
-      // ---- agenda editável ----
-      wrap.appendChild(el('h3', { class: 'mt16' }, 'Agenda das próximas semanas'));
-      wrap.appendChild(el('p', { class: 'sub' }, 'Toque num dia para abrir. Dá para liberar o dia (folga/estoque) e mover clientes — o sistema sugere onde reencaixar.'));
-      for (const d of proximosDias(20)) {
-        const membros = membrosDoDia(d.data);
-        const reg = regiaoDoDia(membros);
-        const folga = !(rep.dias_trabalho || [1, 2, 3, 4, 5]).includes(d.dw);
-        const det = el('details', { class: 'card-visita mt8' });
-        det.appendChild(el('summary', null,
-          el('strong', null, NOMES[d.dw] + ' · ' + dataBR(d.data)),
-          el('span', { class: 'sub' }, folga ? ' 🚫 dia sem trabalho' :
-            (membros.length ? ' · ' + membros.length + ' visitas' + (reg ? ' · 📍 ' + reg : '') : ' · livre'))));
-        if (membros.length) {
-          const listaEl = el('div', { class: 'col gap8 mt8' });
-          membros.forEach(c => listaEl.appendChild(el('div', { class: 'row space' },
-            el('div', null, el('strong', null, c.nome),
-              el('div', { class: 'sub' }, [c.cidade, c.uf].filter(Boolean).join(' - '))),
-            el('button', { class: 'btn-mini', onclick: () => abrirMover(c) }, '↔ Mover'))));
-          det.appendChild(listaEl);
-          det.appendChild(el('button', {
-            class: 'btn-link mt8', style: 'color:#ef7076',
-            onclick: () => liberarDia(d.data, membros)
-          }, '🚫 Liberar este dia (folga/estoque)'));
-        }
-        wrap.appendChild(det);
-      }
-    }
-  }
 
   // ================= APARÊNCIA (temas de cor) =================
   const TEMAS = [

@@ -13,25 +13,20 @@ VISÃO GERAL
 O New Star é o aplicativo da equipe de vendas da New Star (placas de brincos e semijoias em consignação para farmácias). Ele funciona no celular, mesmo sem internet — tudo que se faz sem sinal fica guardado e é enviado sozinho quando a conexão volta (o selo no topo mostra: verde "sincronizado", amarelo "pendente", "offline" sem sinal).
 
 ABAS (barra embaixo da tela)
-• 📅 HOJE — a rota do dia. • 🏪 CLIENTES — a lista de clientes. • 🧾 PEDIDOS — os talões feitos. • 📊 PAINEL — os números do mês. • ☰ MAIS — financeiro, ajustes e administração. • 🛟 AJUDA — este suporte.
+• 📅 HOJE — a rota manual por dia da semana. • 🏪 CLIENTES — a lista de clientes. • 🧾 PEDIDOS — os talões feitos. • 📊 PAINEL — os números do mês. • ☰ MAIS — financeiro, ajustes e administração. • 🛟 AJUDA — este suporte.
 O botão redondo dourado no canto de baixo à direita abre um NOVO PEDIDO de qualquer tela.
 
-ABA HOJE (rota do dia)
-• No alto há botões de dias: Hoje, Amanhã e os próximos dias — toque num deles para ver a rota daquele dia.
-• A lista mostra os clientes programados para o dia, na ordem de visita, com barra de progresso (quantos já visitou).
-• BOTÃO "OTIMIZAR ROTA": calcula a MELHOR ORDEM de visita entre os clientes do dia, para rodar menos quilômetros. Mostra o total de km, o tempo estimado e o custo (km × custo por km do vendedor). Também tenta encaixar na rota clientes pendentes (que ficaram para trás) e atrasados, se o desvio for pequeno. Com a chave do Google Maps configurada ele usa distâncias reais de estrada; sem ela, usa uma estimativa.
-• BOTÃO "ESTOU AQUI": grava a posição do GPS no fim do dia; a rota de amanhã parte desse ponto (pernoite), em vez da base.
-• "✎ TROCAR PARTIDA": define de que cidade a rota do dia visto vai partir, SEM precisar de GPS — serve para simular ("amanhã durmo em Joaçaba"): abra o dia no seletor, toque em trocar partida, escolha a cidade na lista e otimize a rota. Para desfazer, toque em "Usar a base".
-• VISITAS FORA DA ROTA: se atender um cliente que não estava na rota do dia (pelo pedido ou pelo botão "✔ Registrar visita hoje" na ficha), ele conta no total do dia — a barra mostra, por exemplo, "3 de 6 da rota + 4 fora da rota = 7 atendidos".
-• Em cada cliente do dia há só 2 botões: 🗺 GPS (abre o Google Maps com o ENDEREÇO do cliente) e "✔ REGISTRAR VISITA". Tocar no cartão do cliente abre a ficha completa. O botão Registrar visita pergunta: o cliente foi atendido? — "Sim, fez pedido" (abre o talão), "Sim, mas sem pedido" ou "Não foi atendido" (escolhe o motivo: fechado, ausente, sem tempo ou reagendado — entra na fila de reencaixe).
-• CLIENTE JÁ VISITADO SAI DA LISTA do dia e vai para o resumo "✅ Já atendidos hoje" (toque para abrir).
-• "➕ REGISTRAR VISITA FORA DA ROTA": para atender alguém que não estava no dia — busca o cliente e registra a visita (conta no total do dia).
-• ⚠ ao lado do nome = cliente com pendência aberta ou observação interna anotada — vale a pena abrir a ficha antes de atender. O mesmo alerta aparece na escolha do cliente no talão.
-• Sugestão de pernoite: aparece quando o último cliente fica a mais de 150 km da base e dormir fora economiza mais de 60 km.
-• CLIENTE QUE FICOU PARA TRÁS: ao marcar "Não realizada", o cliente entra na FILA DE REENCAIXE e o sistema tenta encaixá-lo sozinho nas rotas dos próximos dias, quando o desvio for pequeno (aparece com 🔁 na lista). O dia NUNCA passa do limite de visitas — se o dia seguinte já está cheio, o pendente espera um dia com vaga. Quem está estourando o prazo tem prioridade.
-• CLASSE DO CLIENTE (A, B ou C): define o ritmo de visita — A = a cada 45 dias, B = a cada 60 dias, C = a cada 90 dias. TODOS os clientes começam como A (45 dias); se numa visita ficar claro que não precisa passar a cada 45 dias, é só tocar em B (ou C) na ficha — no próximo roteiro ele já entra com o ritmo novo. O prazo conta da DATA DA ÚLTIMA VISITA (não do último pedido): se aparecer "1d atrasado" num cliente A, já se sabe que passou dos 45 dias de visita. Os dias de rota trabalham com 6 visitas FIXAS e folga até 9 para reencaixes.
-• ROTEIRO POR REGIÕES: o roteiro anda em BLOCOS por região — Passo Fundo, Santa Rosa, Chapecó, Joaçaba, Erechim, Frederico Westphalen e São Miguel do Oeste — começando pela região com clientes mais atrasados e fechando a região antes de ir para a próxima (assim ninguém é esquecido). Cada cliente pertence à região mais próxima dele no mapa. Clientes muito longe de todas as regiões (outros estados, litoral) ficam como FORA DE ROTA: continuam no sistema para pedidos e consultas, mas não entram no agendamento automático. O gestor gera/regenera o roteiro em Mais → Administração → "🗺 Gerar roteiro por regiões" (bom rodar a cada virada de roteiro ou depois de reclassificar clientes).
-• ATENDIMENTO ANTECIPADO: se visitar um cliente antes do dia programado dele (ex.: era da sexta e atendeu na segunda porque ele ligou), o registro vale normalmente (visita, pedido, comissão) e ele SAI SOZINHO da lista do dia original — só volta no próximo ciclo.
+ABA ROTA (rota por dia da semana)
+• ROTA MANUAL: quem monta a rota é o VENDEDOR. No alto ficam os dias da semana (Segunda a Sexta) — toque num dia para ver a rota daquele dia.
+• CRIAR A ROTA: toque no botão grande "➕ CRIAR ROTA DE <DIA>". Abre a lista de todos os clientes disponíveis, já ordenados por PRIORIDADE (classe A, B, C) e por quem está há mais tempo SEM PEDIDO. Dá para filtrar por cidade, região, prioridade, dias sem pedido e dias sem atendimento, e buscar por nome/cidade/CNPJ. Em cada cliente toque em "➕ Adicionar à rota". Quando terminar, toque em "✓ CONCLUIR" — os clientes escolhidos já aparecem na rota daquele dia, que fica salva.
+• CLIENTE FICA VINCULADO A UM DIA SÓ: assim que entra numa rota, o cliente SAI da lista de disponíveis e não pode ser escolhido para outro dia — evita o mesmo cliente em duas rotas.
+• NA ROTA, cada cliente tem 2 botões: "✔ REGISTRAR VISITA" e "✖ REMOVER DA ROTA" (remover devolve o cliente para a lista de disponíveis). Tocar no nome do cliente abre a ficha completa.
+• REGISTRAR VISITA abre 3 opções:
+   1) 🧾 NOVO PEDIDO — abre o talão e lança a venda.
+   2) ✅ SEM PEDIDO — visitou mas não vendeu: escolha o motivo (responsável não estava, cliente não quis fazer pedido, sem necessidade de compra, outro) e escreva uma observação se quiser. A visita fica registrada e a observação vai para o histórico interno do cliente.
+   3) ⏭ NÃO VISITEI — não conseguiu passar no cliente: NÃO registra visita, o cliente sai da rota do dia e volta para a lista de disponíveis, podendo entrar numa rota futura.
+• ⚠ ao lado do nome = cliente com pendência aberta ou observação interna anotada — vale abrir a ficha antes de atender.
+• O gestor, no modo "Todos (consolidado)", vê as rotas de todos os vendedores (somente leitura); para montar rota, escolha o vendedor no seletor do topo.
 
 ABA CLIENTES (farol de cores)
 • 🔴 vermelho = visita ATRASADA (mostra há quantos dias). 🟡 amarelo = vence em poucos dias. 🟢 verde = em dia. ⚪ cinza = ainda sem visita registrada no sistema.
@@ -83,7 +78,7 @@ MAIS → FINANCEIRO
 MAIS → OUTRAS FUNÇÕES
 • GEOCODIFICAR CLIENTES: converte os endereços em posição exata no mapa (precisa da chave do Google Maps em Configurações). Status por cliente: preciso, aproximado, pendente ou falhou.
 • APARÊNCIA: muda a cor do aplicativo (Ouro, Esmeralda, Safira, Rubi, Ametista, Prata) — vale só para o aparelho.
-• ADMINISTRAÇÃO (somente o gestor vê): CLIENTES (cadastrar, editar, excluir, importar CSV, exportar), PRODUTOS (códigos, preços das 2 tabelas, unidades por placa P/G), VENDEDORES (criar, % de comissão, custo por km, resetar senha), CONFIGURAÇÕES (chave do Google Maps, textos do PDF, condições de pagamento, limites de visitas/dia, regra de pernoite, início do ciclo) e REDISTRIBUIR MÊS. O botão REDISTRIBUIR MÊS refaz o calendário inteiro das 7 semanas do zero: agrupa os clientes por proximidade geográfica e monta os dias com 6 visitas fixas. Use-o DEPOIS de uma mudança grande (ex.: reclassificar muitos clientes em A/B/C/D) — no dia a dia não precisa; o 'Otimizar rota' da tela Hoje já cuida da ordem e dos reencaixes.
+• ADMINISTRAÇÃO (somente o gestor vê): CLIENTES (cadastrar, editar, excluir, importar CSV, exportar), PRODUTOS (códigos, preços das 2 tabelas, unidades por placa P/G), VENDEDORES (criar, % de comissão, telefone que sai no talão, resetar senha) e CONFIGURAÇÕES (chave do Google Maps, textos do PDF, condições de pagamento, início do ciclo). As rotas são montadas manualmente pelo vendedor na aba Hoje — não existe mais redistribuição automática.
 • O gestor tem um seletor no topo para ver os dados de cada vendedor ou de todos juntos.
 
 LOGIN E SENHA
@@ -161,7 +156,7 @@ ${MANUAL}`;
   }
 
   const SUGESTOES = [
-    'O que faz o botão Otimizar rota?',
+    'Como monto a rota de um dia?',
     'Como faço um pedido do início ao fim?',
     'O que significam as cores verde, amarela e vermelha?',
     'Quando eu recebo a comissão?',

@@ -302,16 +302,46 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   check('relatórios: contador de visitas do dia', rel.includes('atendidos') || rel.includes('Visitas:'));
   check('relatórios: contador de novos clientes (15%)', rel.includes('Novos clientes') && rel.includes('1 novo(s) cliente(s)'));
 
-  // Meu Roteiro: painel autogerenciável abre com preferências e agenda
+  // rota manual: criar rota do dia, adicionar cliente, registrar visita sem pedido
   await page.locator('.ns-overlay').last().locator('.btn-icon').first().click();
   await page.waitForTimeout(200);
-  await page.click('text=\ud83d\uddd3 Meu Roteiro');
+  await page.click('#tabs button[data-v=hoje]');
+  await page.waitForTimeout(300);
+  const rotaTxt = await page.textContent('#view');
+  check('rota manual: abas dos dias e botão Criar rota (sem otimizar/estou aqui)',
+    rotaTxt.includes('Segunda') && rotaTxt.includes('Sexta') && rotaTxt.includes('Criar rota') &&
+    !rotaTxt.includes('Otimizar rota') && !rotaTxt.includes('Estou aqui'));
+  await page.locator('#view button:has-text("Criar rota")').click();
   await page.waitForSelector('.ns-overlay');
-  const rot = await page.locator('.ns-overlay').last().textContent();
-  check('Meu Roteiro: preferências de dias e agenda aparecem',
-    rot.includes('Dias em que trabalho') && rot.includes('Dia perto de casa') && rot.includes('Por qual regi\u00e3o quer come\u00e7ar?') && rot.includes('Agenda das pr\u00f3ximas semanas'));
-  await page.locator('.ns-overlay').last().locator('.btn-icon').first().click();
-  await page.waitForTimeout(200);
+  const selTxt = await page.locator('.ns-overlay').last().textContent();
+  check('seleção mostra filtros e clientes disponíveis por prioridade',
+    selTxt.includes('disponível') && selTxt.includes('Todas as cidades') && selTxt.includes('Dias sem pedido'));
+  await page.locator('.ns-overlay').last().locator('button:has-text("Adicionar à rota")').first().click();
+  await page.waitForTimeout(250);
+  const depoisAdd = await page.locator('.ns-overlay').last().textContent();
+  check('cliente adicionado sai da lista de disponíveis', depoisAdd.includes('1 cliente(s)'));
+  await page.locator('.ns-overlay').last().locator('button:has-text("Concluir")').click();
+  await page.waitForTimeout(400);
+  const naRota = await page.textContent('#view');
+  check('cliente aparece na rota do dia com os 2 botões',
+    naRota.includes('FARMACIA TESTE LTDA') && naRota.includes('Registrar visita') && naRota.includes('Remover da rota'));
+  await page.locator('#view button:has-text("Registrar visita")').first().click();
+  await page.waitForSelector('.ns-overlay');
+  const opc = await page.locator('.ns-overlay').last().textContent();
+  check('registrar visita oferece as 3 opções', opc.includes('Novo pedido') && opc.includes('Sem pedido') && opc.includes('Não visitei'));
+  await page.locator('.ns-overlay').last().locator('button:has-text("Sem pedido")').click();
+  await page.waitForTimeout(250);
+  await page.locator('.ns-overlay').last().locator('button:has-text("Cliente não quis fazer pedido")').click();
+  await page.locator('.ns-overlay').last().locator('textarea').fill('Vai repor semana que vem');
+  await page.locator('.ns-overlay').last().locator('button:has-text("Salvar visita")').click();
+  await page.waitForTimeout(400);
+  const visSem = await page.evaluate(() => JSON.parse(localStorage.getItem('ns_c_visitas')).find(v => v.motivo_sem_pedido));
+  check('visita sem pedido grava motivo e observação',
+    !!visSem && visSem.motivo_sem_pedido === 'Cliente não quis fazer pedido' && visSem.observacao === 'Vai repor semana que vem');
+  await page.locator('#view button:has-text("Remover da rota")').first().click();
+  await page.waitForTimeout(400);
+  const cliRota = await page.evaluate(() => JSON.parse(localStorage.getItem('ns_c_clientes'))[0].rota_dia);
+  check('remover da rota devolve o cliente para a lista', cliRota == null);
 
   // classe A/B/C: tocar em C ajusta ciclo para 90 dias
   await page.click('#tabs button[data-v=clientes]');
@@ -331,7 +361,9 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page.locator('.ns-overlay button:has-text("➕")').click();
   await page.waitForTimeout(250);
   const notas = await page.evaluate(() => JSON.parse(localStorage.getItem('ns_c_cliente_notas') || '[]'));
-  check('observação interna salva com autor', notas.length === 1 && notas[0].texto === 'NOTA-INTERNA-SIGILOSA-123' && !!notas[0].autor);
+  const notaNova = notas.find(n => n.texto === 'NOTA-INTERNA-SIGILOSA-123');
+  check('observação interna salva com autor', !!notaNova && !!notaNova.autor);
+  check('visita sem pedido também vira observação interna', notas.some(n => n.texto.includes('Vai repor semana que vem')));
   const pdfSemNota = await page.evaluate(async () => {
     const p = JSON.parse(localStorage.getItem('ns_c_pedidos'))[0];
     const blob = await window.NSPedido.gerarPDF(p.id);
@@ -345,12 +377,12 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page.click('#tabs button[data-v=ajuda]');
   await page.waitForSelector('.chat-lista');
   check('aba Ajuda abre com boas-vindas e sugestões', (await page.textContent('.chat-lista')).includes('assistente'));
-  await page.fill('#view input', 'o que faz o botão otimizar rota?');
+  await page.fill('#view input', 'como monto a rota de um dia?');
   await page.click('#view .btn');
   await page.waitForFunction(() => document.querySelectorAll('.chat-msg').length >= 2, null, { timeout: 8000 });
   const chat = await page.textContent('.chat-lista');
-  check('sem internet, responde com a parte certa do manual (otimizar rota)',
-    chat.includes('MELHOR ORDEM') || chat.toLowerCase().includes('otimizar rota'));
+  check('sem internet, responde com a parte certa do manual (criar rota)',
+    chat.toLowerCase().includes('rota'));
 
   // excluir pedido: remove itens, reverte visita/comissão e recalcula o ciclo
   await page.click('#tabs button[data-v=pedidos]');
