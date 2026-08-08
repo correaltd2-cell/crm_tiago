@@ -8,18 +8,20 @@
   // ================= MARCA =================
   // Marca "Estrada da Estrela": a rota do vendedor termina na estrela
   const LOGO_SVG =
-    '<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
-    '<defs><linearGradient id="nsgrad" x1="0" y1="0" x2="1" y2="1">' +
-    '<stop offset="0" stop-color="var(--ouro-claro)"/><stop offset=".55" stop-color="var(--ouro)"/>' +
-    '<stop offset="1" stop-color="var(--ouro-escuro)"/></linearGradient>' +
-    '<linearGradient id="nsgrad2" x1="0" y1="1" x2="1" y2="0">' +
-    '<stop offset="0" stop-color="var(--ouro-escuro)"/><stop offset=".55" stop-color="var(--ouro)"/>' +
-    '<stop offset="1" stop-color="var(--ouro-claro)"/></linearGradient></defs>' +
-    '<path d="M7.5 58.8 C26.3 53.8 31.3 43.8 33.5 31.3 L41.5 31.3 C37.5 50 30 57.5 14.8 62 Z" fill="url(#nsgrad2)"/>' +
-    '<path d="M13.5 58.8 C29 52.5 33.5 43.8 37 31.5" fill="none" stroke="rgba(10,14,26,.55)" stroke-width="1.6" stroke-linecap="round" stroke-dasharray=".2 5.2"/>' +
-    '<path d="M37.5 5 C39 16.3 43.8 21 54.8 22.5 C43.8 24 39 28.8 37.5 40 C36 28.8 31.3 24 20.3 22.5 C31.3 21 36 16.3 37.5 5 Z" fill="url(#nsgrad)"/>' +
-    '<path d="M37.5 5 C38.6 13.5 41.8 18.3 49 21 C42.8 21.5 38.8 20.5 37.5 22.5 C36.3 20.5 32.3 21.5 26 21 C33.3 18.3 36.4 13.5 37.5 5 Z" fill="rgba(255,255,255,.32)"/>' +
-    '<path d="M53.8 7.5 C54.3 11 55.8 12.5 59.3 13 C55.8 13.5 54.3 15 53.8 18.5 C53.3 15 51.8 13.5 48.3 13 C51.8 12.5 53.3 11 53.8 7.5 Z" fill="url(#nsgrad)" opacity=".85"/>' +
+    '<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+    '<defs><linearGradient id="nscir" x1="0" y1="0" x2="0" y2="1">' +
+    '<stop offset="0" stop-color="#5aa9e6"/><stop offset=".55" stop-color="#2b7bd4"/><stop offset="1" stop-color="#1150a8"/></linearGradient>' +
+    '<linearGradient id="nsouro" x1="0" y1="0" x2="1" y2="1">' +
+    '<stop offset="0" stop-color="#ffd062"/><stop offset=".55" stop-color="#f8b13c"/><stop offset="1" stop-color="#e79a25"/></linearGradient></defs>' +
+    '<circle cx="256" cy="256" r="238" fill="url(#nscir)"/>' +
+    '<path d="M226 142 L262.4 241.8 L368.7 245.6 L285 311.2 L314.2 413.4 L226 354 L137.8 413.4 L167 311.2 L83.3 245.6 L189.6 241.8 Z" fill="url(#nsouro)"/>' +
+    '<path d="M336 176 C392 232 404 300 330 336 C388 322 412 258 372 200 Z" fill="url(#nsouro)"/>' +
+    '<g transform="rotate(45 330 160)">' +
+    '<path d="M330 92 C352 118 358 146 352 176 L308 176 C302 146 308 118 330 92 Z" fill="url(#nsouro)"/>' +
+    '<path d="M308 154 L286 196 L310 186 Z" fill="url(#nsouro)"/>' +
+    '<path d="M352 154 L374 196 L350 186 Z" fill="url(#nsouro)"/>' +
+    '<path d="M318 178 L342 178 L336 200 L324 200 Z" fill="url(#nsouro)"/>' +
+    '<circle cx="330" cy="136" r="13" fill="#1560bd"/></g>' +
     '</svg>';
   function logoMarca(soIcone) {
     const { el } = window.NSUI;
@@ -388,7 +390,7 @@
               '📝 ' + (n.length > 90 ? n.slice(0, 90) + '…' : n)) : null; })()),
           v ? el('span', { class: 'badge ok' }, v.fez_pedido ? '✅ pedido' : '✅ visitado') : null),
         el('div', { class: 'row gap8 mt8' },
-          el('button', { class: 'btn-mini', onclick: () => dialogoVisita(c, rep) }, '✔ Registrar visita'),
+          el('button', { class: 'btn-mini verde', onclick: () => dialogoVisita(c, rep) }, '✔ Registrar visita'),
           el('button', { class: 'btn-mini vermelho', onclick: () => removerDaRota(c) }, '✖ Remover da rota'))));
     });
   }
