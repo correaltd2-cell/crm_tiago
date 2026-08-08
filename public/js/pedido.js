@@ -78,6 +78,10 @@
     // ---- Passo 2: tabela de preço (o prazo fica para a conferência) ----
     function passoTabela() {
       const cli = DB.byId('clientes', ped.cliente_id);
+      // o cadastro do cliente manda: se ele é só Simples ou só Lucro, só essa aparece
+      const permitidas = C.tabelasDoCliente(cli);
+      const so1 = permitidas.length === 1;
+      if (so1) ped.tabela = permitidas[0];
       const btn = (tab, rot, desc) => el('button', {
         class: 'card-escolha' + (ped.tabela === tab ? ' ativo' : ''),
         onclick: () => { ped.tabela = tab; passoItens(); }
@@ -85,9 +89,13 @@
       corpo(el('div', null,
         cabecalhoCliente(cli),
         el('h3', { class: 'mt12' }, 'Tabela de preço do pedido'),
+        so1 ? el('p', { class: 'sub mt4' },
+          `Este cliente é ${C.NOME_TABELA[permitidas[0]]} — definido no cadastro.`) : null,
         el('div', { class: 'col gap8 mt8' },
-          btn('simples', 'Tabela Simples', 'Preços da tabela Simples para todos os itens'),
-          btn('lucro', 'Tabela Lucro Presumido', 'Preços Lucro Presumido para todos os itens')),
+          permitidas.includes('simples')
+            ? btn('simples', 'Tabela Simples', 'Preços da tabela Simples para todos os itens') : null,
+          permitidas.includes('lucro')
+            ? btn('lucro', 'Tabela Lucro Presumido', 'Preços Lucro Presumido para todos os itens') : null),
         el('button', { class: 'btn-link mt8', onclick: () => { ped.cliente_id = null; passoCliente(); } }, '← trocar cliente')));
     }
 

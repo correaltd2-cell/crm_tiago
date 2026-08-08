@@ -216,5 +216,17 @@ eq('A antes de B, C e D por último', [{classe:'C'},{classe:'D'},{classe:'A'},{}
   .sort((a,b) => C.classeRank(a) - C.classeRank(b)).map(c => c.classe || 'B').join(''), 'ABBCD');
 eq('sem classe = B', C.classeRank({}), 1);
 
+console.log('\nTabela de preço permitida por cliente:');
+eq('sem o campo = ambas (padrão)', C.tabelaPermitida({}), 'ambas');
+eq('cliente novo (undefined) = ambas', C.tabelaPermitida(undefined), 'ambas');
+eq('valor inválido cai para ambas', C.tabelaPermitida({ tabela_permitida: 'qualquer' }), 'ambas');
+eq('travado em lucro', C.tabelaPermitida({ tabela_permitida: 'lucro' }), 'lucro');
+eq('travado em simples', C.tabelaPermitida({ tabela_permitida: 'simples' }), 'simples');
+eq('ambas oferece as duas tabelas', C.tabelasDoCliente({}).join(','), 'simples,lucro');
+eq('Clamed só Lucro Presumido oferece uma', C.tabelasDoCliente({ rede: 'Clamed', tabela_permitida: 'lucro' }).join(','), 'lucro');
+eq('só Simples oferece uma', C.tabelasDoCliente({ tabela_permitida: 'simples' }).join(','), 'simples');
+eq('nomes legíveis das tabelas', C.NOME_TABELA.lucro + '/' + C.NOME_TABELA.simples, 'Lucro Presumido/Tabela Simples');
+eq('3 opções no cadastro (ambas, simples, lucro)', C.TABELAS_PERMITIDAS.map(t => t[0]).join(','), 'ambas,simples,lucro');
+
 console.log(`\n${ok} ok, ${fail} falhas`);
 process.exit(fail ? 1 : 0);

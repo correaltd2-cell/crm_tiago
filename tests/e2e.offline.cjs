@@ -608,6 +608,89 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   const dash3 = await page3.textContent('#view');
   check('dashboard: 294 clientes ativos (314 − 20 inativos da lista)', dash3.includes('Clientes ativos294'));
 
+  // ---- tabela de preço travada no cadastro do cliente ----
+  const page4 = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  await page4.route('**/firestore.googleapis.com/**', (r) => r.abort());
+  await page4.addInitScript((s) => {
+    const cli = JSON.parse(JSON.stringify(s.ns_c_clientes));
+    cli[0].tabela_permitida = 'lucro';           // cliente tipo Clamed: só Lucro Presumido
+    cli.push(Object.assign({}, cli[0], {
+      id: '44444444-4444-4444-8444-444444444444', nome: 'FARMACIA SO SIMPLES LTDA',
+      cnpj_cpf: '99.888.777/0001-66', tabela_permitida: 'simples'
+    }));
+    for (const [k, v] of Object.entries(s)) localStorage.setItem(k, JSON.stringify(v));
+    localStorage.setItem('ns_c_clientes', JSON.stringify(cli));
+    Object.defineProperty(navigator, 'onLine', { get: () => false });
+  }, seed);
+  await page4.goto('http://localhost:8899/');
+  await page4.waitForSelector('.login-box input[type=email]');
+  await page4.fill('input[type=email]', 'denilson@newstar.com.br');
+  await page4.fill('input[type=password]', '123456');
+  await page4.click('text=Entrar');
+  await page4.waitForSelector('#tabs', { state: 'visible' });
+
+  await page4.click('#fab');
+  await page4.waitForSelector('.ns-modal');
+  await page4.fill('.ns-modal input', 'FARMACIA TESTE');
+  await page4.click('.ns-modal .item-lista');
+  await page4.waitForSelector('text=Tabela de preço do pedido');
+  const escolhasLucro = page4.locator('.ns-modal .card-escolha');
+  check('cliente só Lucro Presumido mostra uma única tabela', (await escolhasLucro.count()) === 1);
+  check('e a tabela mostrada é a Lucro Presumido',
+    (await escolhasLucro.first().textContent()).includes('Lucro Presumido'));
+  check('avisa que a tabela veio do cadastro',
+    (await page4.textContent('.ns-modal')).includes('definido no cadastro'));
+  // segue o pedido normalmente com a tabela travada (preço 14,50 = lucro)
+  await escolhasLucro.first().click();
+  await page4.click('text=+ Adicionar produto');
+  const mLucro = page4.locator('.ns-overlay').last().locator('.ns-modal');
+  await mLucro.waitFor();
+  check('preço aplicado é o da tabela travada (14,50)', (await mLucro.textContent()).includes('14,50'));
+  await mLucro.locator('.item-lista').click();
+  await page4.waitForTimeout(120);
+  check('cálculo roda com a tabela travada (48 × 14,50 = 696,00)',
+    (await mLucro.locator('.calc-live').textContent()).replace(/ /g, ' ').includes('696,00'));
+  // o outro cliente é só Simples: preço 12,60 (recarrega para começar um pedido limpo)
+  await page4.reload();
+  await page4.waitForSelector('#tabs', { state: 'visible' });
+  await page4.click('#fab');
+  await page4.waitForSelector('.ns-modal');
+  await page4.fill('.ns-modal input', 'SO SIMPLES');
+  await page4.click('.ns-modal .item-lista');
+  await page4.waitForSelector('text=Tabela de preço do pedido');
+  const escolhasSimples = page4.locator('.ns-modal .card-escolha');
+  check('cliente só Simples mostra uma única tabela', (await escolhasSimples.count()) === 1);
+  check('e a tabela mostrada é a Simples',
+    (await escolhasSimples.first().textContent()).includes('Simples'));
+  await escolhasSimples.first().click();
+  await page4.click('text=+ Adicionar produto');
+  const mSimples = page4.locator('.ns-overlay').last().locator('.ns-modal');
+  await mSimples.waitFor();
+  check('cliente só Simples usa o preço Simples (12,60)', (await mSimples.textContent()).includes('12,60'));
+  await page4.close();
+
+  // sem o campo (base antiga) o vendedor continua escolhendo as duas
+  const page5 = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  await page5.route('**/firestore.googleapis.com/**', (r) => r.abort());
+  await page5.addInitScript((s) => {
+    for (const [k, v] of Object.entries(s)) localStorage.setItem(k, JSON.stringify(v));
+    Object.defineProperty(navigator, 'onLine', { get: () => false });
+  }, seed);
+  await page5.goto('http://localhost:8899/');
+  await page5.waitForSelector('.login-box input[type=email]');
+  await page5.fill('input[type=email]', 'denilson@newstar.com.br');
+  await page5.fill('input[type=password]', '123456');
+  await page5.click('text=Entrar');
+  await page5.waitForSelector('#tabs', { state: 'visible' });
+  await page5.click('#fab');
+  await page5.waitForSelector('.ns-modal');
+  await page5.fill('.ns-modal input', 'farm');
+  await page5.click('.ns-modal .item-lista');
+  await page5.waitForSelector('text=Tabela de preço do pedido');
+  check('cliente sem restrição (padrão) continua com as duas tabelas',
+    (await page5.locator('.ns-modal .card-escolha').count()) === 2);
+  await page5.close();
+
   await browser.close();
   server.close();
   console.log(`\nE2E: ${ok} ok, ${fail} falhas`);

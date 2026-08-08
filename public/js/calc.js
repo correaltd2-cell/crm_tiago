@@ -417,7 +417,28 @@
     }).join(';')).join('\r\n');
   }
 
+  // ── tabela de preço permitida por cliente ────────────────────────────────
+  // 'ambas' (padrão) deixa o vendedor escolher; 'simples' ou 'lucro' travam numa só.
+  const TABELAS_PERMITIDAS = [
+    ['ambas', 'Ambas — o vendedor escolhe (padrão)'],
+    ['simples', 'Somente Tabela Simples'],
+    ['lucro', 'Somente Lucro Presumido']
+  ];
+  const NOME_TABELA = { simples: 'Tabela Simples', lucro: 'Lucro Presumido' };
+
+  function tabelaPermitida(cliente) {
+    const v = cliente && cliente.tabela_permitida;
+    return (v === 'simples' || v === 'lucro') ? v : 'ambas';
+  }
+
+  // lista de tabelas que o vendedor pode usar neste cliente
+  function tabelasDoCliente(cliente) {
+    const v = tabelaPermitida(cliente);
+    return v === 'ambas' ? ['simples', 'lucro'] : [v];
+  }
+
   const api = {
+    TABELAS_PERMITIDAS, NOME_TABELA, tabelaPermitida, tabelasDoCliente,
     fmtCNPJ,
     round2, fmtMoney, calcItem, calcTotais, calcComissao, cicloDoDia,
     DIAS_SEMANA, normDia, mesmoDia, clienteJaComprou, classeRank,

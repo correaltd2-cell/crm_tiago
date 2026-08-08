@@ -717,7 +717,9 @@
       el('div', { class: 'sub mt4' },
         'Contato: ' + (c.contato || '—') + ' · ' + (c.telefone || c.celular || '—') +
         (c.rede ? ' · Rede ' + c.rede + (c.recebimento_dias ? ' (comissão +' + c.recebimento_dias + 'd)' : '') : '') +
-        ' · Prazo: ' + (c.condicao_pagamento_padrao || 'a definir no 1º pedido')),
+        ' · Prazo: ' + (c.condicao_pagamento_padrao || 'a definir no 1º pedido') +
+        ' · Tabela: ' + (C.tabelaPermitida(c) === 'ambas'
+          ? 'Simples ou Lucro Presumido' : 'somente ' + C.NOME_TABELA[C.tabelaPermitida(c)])),
       el('div', { class: 'row gap8 mt8' },
         el('button', { class: 'btn-mini', onclick: () => abrirGPS(c) }, '🗺 GPS (' + c.geocoding_status + ')'),
         el('button', { class: 'btn-mini', onclick: () => window.NSPedido.novo(c) }, '🧾 Novo pedido'),
@@ -1294,7 +1296,8 @@
 
   // ---------- Admin: Clientes ----------
   const CAMPOS_CLIENTE = ['nome', 'razao_social', 'cnpj_cpf', 'inscricao_estadual', 'contato', 'email', 'telefone', 'celular',
-    'endereco', 'bairro', 'cidade', 'uf', 'cep', 'rede', 'semana_padrao', 'dia_semana_padrao', 'frequencia_dias'];
+    'endereco', 'bairro', 'cidade', 'uf', 'cep', 'rede', 'tabela_permitida',
+    'semana_padrao', 'dia_semana_padrao', 'frequencia_dias'];
 
   function telaAdminClientes() {
     const wrap = el('div');
@@ -1368,6 +1371,8 @@
                 if (idx >= 0 && linha[idx] != null && String(linha[idx]).trim() !== '') {
                   let v = String(linha[idx]).trim();
                   if (['semana_padrao', 'frequencia_dias'].includes(campo)) v = parseInt(v, 10) || null;
+                  // aceita "simples"/"lucro"/"presumido"; qualquer outra coisa = ambas
+                  if (campo === 'tabela_permitida') v = C.tabelaPermitida({ tabela_permitida: /presumido|lucro/i.test(v) ? 'lucro' : v.toLowerCase() });
                   row[campo] = v;
                 }
               });
@@ -1399,12 +1404,19 @@
     const classeSel = el('select', { class: 'input' },
       [['A', 'A — prioridade máxima (35d)'], ['B', 'B — normal (60d)'], ['C', 'C — baixa (90d)'], ['D', 'D — mínima (120d; reencaixa por último)']]
         .map(([v, r]) => el('option', { value: v, selected: (c.classe || 'B') === v ? '' : null }, r)));
+    // qual tabela de preço o vendedor pode escolher neste cliente (evita erro no pedido)
+    const tabSel = el('select', { class: 'input' },
+      C.TABELAS_PERMITIDAS.map(([v, r]) =>
+        el('option', { value: v, selected: C.tabelaPermitida(c) === v ? '' : null }, r)));
     const mm = modal(el('div', { class: 'col gap8' },
       inp('nome', 'Nome *'), inp('razao_social', 'Razão social'), inp('cnpj_cpf', 'CNPJ/CPF'),
       inp('inscricao_estadual', 'Inscrição Estadual'),
       inp('contato', 'Contato'), inp('email', 'E-mail', 'email'), inp('telefone', 'Telefone'), inp('celular', 'Celular'),
       inp('endereco', 'Endereço'), inp('bairro', 'Bairro'), inp('cidade', 'Cidade *'), inp('uf', 'UF *'), inp('cep', 'CEP'),
       inp('rede', 'Rede (ex.: Clamed)'), inp('recebimento_dias', 'Prazo comissão (dias — Clamed = 45)', 'number'),
+      el('label', { class: 'campo' },
+        el('span', { class: 'sub' }, 'Tabela de preço permitida neste cliente'), tabSel,
+        el('span', { class: 'sub' }, 'Deixando só uma, o vendedor não escolhe errado na hora do pedido.')),
       inp('condicao_pagamento_padrao', 'Prazo de pagamento deste cliente (ex.: 30 dias)'),
       inp('semana_padrao', 'Semana do ciclo (1-7)', 'number'),
       el('label', { class: 'campo' }, el('span', { class: 'sub' }, 'Dia da semana'), diaSel),
@@ -1416,7 +1428,11 @@
         class: 'btn big w100', onclick: () => {
           if (!campos.nome.value.trim()) return toast('Nome é obrigatório.', 'erro');
           if (!campos.cidade.value.trim() || !campos.uf.value.trim()) return toast('Cidade e UF são obrigatórios.', 'erro');
-          const body = { representante_id: repSel.value, status: statusSel.value, dia_semana_padrao: diaSel.value || null, classe: classeSel.value };
+          const body = {
+            representante_id: repSel.value, status: statusSel.value,
+            dia_semana_padrao: diaSel.value || null, classe: classeSel.value,
+            tabela_permitida: tabSel.value
+          };
           for (const [k, elInp] of Object.entries(campos)) {
             let v = elInp.value.trim();
             if (['semana_padrao', 'frequencia_dias', 'recebimento_dias'].includes(k))
