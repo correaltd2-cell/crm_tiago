@@ -691,6 +691,69 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
     (await page5.locator('.ns-modal .card-escolha').count()) === 2);
   await page5.close();
 
+  // ---- modo "Safari velho": sem gap no flexbox (iPad com iOS 12) ----
+  // Força a classe .sem-gap e confere que o layout continua espaçado e o pedido funciona.
+  const page6 = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  await page6.route('**/firestore.googleapis.com/**', (r) => r.abort());
+  const errosVelho = [];
+  page6.on('pageerror', (e) => errosVelho.push('pageerror: ' + e.message));
+  await page6.addInitScript((s) => {
+    for (const [k, v] of Object.entries(s)) localStorage.setItem(k, JSON.stringify(v));
+    Object.defineProperty(navigator, 'onLine', { get: () => false });
+    document.addEventListener('DOMContentLoaded', () => {
+      document.documentElement.classList.add('sem-gap');
+    });
+  }, seed);
+  await page6.goto('http://localhost:8899/');
+  await page6.waitForSelector('.login-box input[type=email]');
+  await page6.evaluate(() => document.documentElement.classList.add('sem-gap'));
+  await page6.fill('input[type=email]', 'denilson@newstar.com.br');
+  await page6.fill('input[type=password]', '123456');
+  await page6.click('text=Entrar');
+  await page6.waitForSelector('#tabs', { state: 'visible' });
+  check('sem-gap: app abre e loga normalmente', await page6.isVisible('#topbar'));
+
+  await page6.click('#fab');
+  await page6.waitForSelector('.ns-modal');
+  await page6.fill('.ns-modal input', 'farm');
+  await page6.click('.ns-modal .item-lista');
+  await page6.click('text=Tabela Lucro Presumido');
+  await page6.click('text=+ Adicionar produto');
+  const mVelho = page6.locator('.ns-overlay').last().locator('.ns-modal');
+  await mVelho.waitFor();
+  await mVelho.locator('.item-lista').click();
+  await page6.waitForTimeout(150);
+  check('sem-gap: cálculo do item funciona igual',
+    (await mVelho.locator('.calc-live').textContent()).replace(/ /g, ' ').includes('696,00'));
+
+  // o espaçamento tem de vir das margens, não do gap
+  const espacos = await page6.evaluate(() => {
+    const linhas = [...document.querySelectorAll('.calc-live > .row')];
+    const bts = [...document.querySelectorAll('.stepper .btn-step')];
+    return {
+      linhas: linhas.length,
+      margemLinha: linhas.length > 1 ? parseFloat(getComputedStyle(linhas[1]).marginTop) : 0,
+      margemBotao: bts.length > 1 ? parseFloat(getComputedStyle(bts[bts.length - 1]).marginLeft) : 0
+    };
+  });
+  check('sem-gap: linhas do cálculo ficam separadas por margem (9px)', espacos.margemLinha === 9);
+  check('sem-gap: botões +/− não ficam colados (margem lateral)', espacos.margemBotao > 0);
+  check('sem-gap: nenhum erro de JavaScript', errosVelho.length === 0, errosVelho.join(' | '));
+  await page6.close();
+
+  // ---- rede de segurança: script quebrado não pode deixar a tela em branco ----
+  const page7 = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  await page7.route('**/firestore.googleapis.com/**', (r) => r.abort());
+  await page7.route('**/js/calc.js', (r) =>
+    r.fulfill({ status: 200, contentType: 'text/javascript', body: 'const quebrado = ;' }));
+  await page7.goto('http://localhost:8899/');
+  await page7.waitForSelector('#ns-falha', { timeout: 5000 }).catch(() => {});
+  const falha = await page7.textContent('#ns-falha').catch(() => '');
+  check('script quebrado mostra a caixa de erro (não fica tela branca)', !!falha);
+  check('a caixa mostra o erro e o navegador, para tirar print',
+    falha.includes('SyntaxError') && falha.includes('Mozilla/'));
+  await page7.close();
+
   await browser.close();
   server.close();
   console.log(`\nE2E: ${ok} ok, ${fail} falhas`);
