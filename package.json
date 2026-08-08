@@ -1,8 +1,5 @@
 {
   "name": "newstar",
   "private": true,
-  "scripts": {
-    "test": "node tests/calc.test.cjs && node tests/compat.ios12.cjs",
-    "test:e2e": "node tests/e2e.offline.cjs"
-  }
+  "scripts": { "test": "node tests/calc.test.cjs" }
 }

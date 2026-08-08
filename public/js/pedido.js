@@ -225,8 +225,8 @@
             onclick: () => { item.tamanho = t; formQtde(); }
           }, rot);
           const tamBtns = [
-            tamBtn('P', `P (${p.unid_placa_p == null ? '—' : p.unid_placa_p} un)`, p.unid_placa_p == null),
-            tamBtn('G', `G (${p.unid_placa_g == null ? '—' : p.unid_placa_g} un)`, p.unid_placa_g == null),
+            tamBtn('P', `P (${p.unid_placa_p ?? '—'} un)`, p.unid_placa_p == null),
+            tamBtn('G', `G (${p.unid_placa_g ?? '—'} un)`, p.unid_placa_g == null),
             tamBtn('AV', 'Avulso (un)', false)
           ];
 

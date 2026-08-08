@@ -1618,8 +1618,7 @@
     const obsTxt = el('textarea', { class: 'input', rows: '5' }, DB.config('pdf_observacoes', ''));
     const mm = modal(el('div', { class: 'col gap8' },
       CHAVES.map(([k, rot, tipo]) => {
-        const vAtual = DB.config(k, '');
-        inputs[k] = el('input', { class: 'input', type: tipo, step: 'any', value: String(vAtual == null ? '' : vAtual) });
+        inputs[k] = el('input', { class: 'input', type: tipo, step: 'any', value: String(DB.config(k, '') ?? '') });
         return el('label', { class: 'campo' }, el('span', { class: 'sub' }, rot), inputs[k]);
       }),
       el('label', { class: 'campo' }, el('span', { class: 'sub' }, 'Condições de pagamento (uma por linha)'), condTxt),

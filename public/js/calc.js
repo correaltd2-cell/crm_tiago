@@ -50,9 +50,7 @@
   // Regra de recebimento: venda do mês M é recebida no mês M+1 (dia 1);
   // exceção: cliente com prazo próprio (rede Clamed = 45 dias corridos da venda).
   function calcComissao({ valor, clienteNovo, pctNovo, pctReposicao, dataPedido, recebimentoDias }) {
-    const pct = clienteNovo
-      ? (pctNovo == null ? 15 : pctNovo)
-      : (pctReposicao == null ? 10 : pctReposicao);
+    const pct = clienteNovo ? (pctNovo ?? 15) : (pctReposicao ?? 10);
     const valorComissao = round2(valor * pct / 100);
     const d = new Date(dataPedido + 'T12:00:00');
     if (recebimentoDias > 0) d.setDate(d.getDate() + recebimentoDias);
@@ -83,8 +81,7 @@
   // Classe do cliente: A = prioridade máxima, B = normal (padrão),
   // C = baixa, D = mínima. No reencaixe entram nesta ordem: A, B, C, D.
   function classeRank(cliente) {
-    const r = { A: 0, B: 1, C: 2, D: 3 }[(cliente && cliente.classe) || 'B'];
-    return r == null ? 1 : r;
+    return { A: 0, B: 1, C: 2, D: 3 }[(cliente && cliente.classe) || 'B'] ?? 1;
   }
 
   // cicloInicio = segunda-feira da semana 1 (ISO yyyy-mm-dd)
