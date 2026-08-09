@@ -433,8 +433,15 @@
   // (impressões cortadas no meio). Imagem é o formato NATIVO deles: uma tira
   // contínua de 384px de largura (58mm ≈ 384 pontos térmicos) que o próprio
   // app fatia e imprime inteira.
-  async function gerarCupomImagem({ pedido, itens, cliente, rep, produtos, observacoes }) {
-    const W = 384, M = 14, IN = W - 2 * M, CX = W / 2;
+  // Cupom 58mm como IMAGEM. A letra é grande de propósito: a fonte nativa dessas
+  // impressoras tem 24 dots de altura em 384 de largura, e o cupom precisa sair no
+  // mesmo porte — no Android o app da impressora encolhe a imagem inteira para
+  // caber, então texto pequeno vira letra de formiga. `escala` (Configurações)
+  // deixa aumentar mais ainda sem mexer no código.
+  async function gerarCupomImagem({ pedido, itens, cliente, rep, produtos, observacoes, escala }) {
+    const W = 384, M = 12, IN = W - 2 * M, CX = W / 2;
+    const k = Math.min(1.6, Math.max(0.8, Number(escala) || 1));   // multiplicador da letra
+    const F = (px) => Math.round(px * k);
     const dataBR = (iso) => iso ? iso.split('-').reverse().join('/') : '';
     const prodDe = (id) => (produtos.find(p => p.id === id) || {});
     const nomeTabela = pedido.tabela === 'lucro' ? 'Lucro Presumido' : 'Tabela Simples';
@@ -466,8 +473,8 @@
     }
 
     function render(pintar) {
-      let y = 18;
-      if (pintar) ctx.textBaseline = 'top'; // texto desenhado a partir do topo (sem invadir a linha acima)
+      let y = 16;
+      if (pintar) ctx.textBaseline = 'top'; // texto desenhado a partir do topo
       const t = (s, px, o) => {
         o = o || {};
         if (pintar) {
@@ -476,65 +483,76 @@
           ctx.textAlign = o.al || 'left';
           ctx.fillText(s, o.al === 'center' ? CX : o.al === 'right' ? W - M : M, y);
         }
-        y += o.h != null ? o.h : px + 6;
+        y += o.h != null ? o.h : px + Math.round(4 * k);
+      };
+      // rótulo à esquerda, valor à direita — usa a largura toda sem quebrar linha
+      const par = (esq, dir, px, b) => {
+        if (pintar) {
+          ctx.font = fonte(px, b); ctx.fillStyle = '#000';
+          ctx.textAlign = 'left'; ctx.fillText(esq, M, y);
+          ctx.textAlign = 'right'; ctx.fillText(dir, W - M, y);
+        }
+        y += px + Math.round(4 * k);
       };
       const multi = (s, px, b, o) => { for (const l of quebra(s, px, b, IN)) t(l, px, Object.assign({ b }, o)); };
       const hr = (grossa) => {
-        y += 2;
+        y += Math.round(3 * k);
         if (pintar) { ctx.fillStyle = '#000'; ctx.fillRect(M, y, IN, grossa ? 3 : 1.5); }
-        y += 16;
+        y += Math.round(13 * k);
       };
 
-      t('NEW STAR', 30, { b: true, al: 'center' });
-      t('APP DO VENDEDOR', 12, { al: 'center' });
-      t(negativo ? 'RECOLHIMENTO — CRÉDITO DO CLIENTE' : 'TALÃO DE PEDIDO', 14, { al: 'center' });
+      t('NEW STAR', F(36), { b: true, al: 'center' });
+      t('APP DO VENDEDOR', F(14), { al: 'center' });
+      t(negativo ? 'RECOLHIMENTO — CRÉDITO' : 'TALÃO DE PEDIDO', F(18), { b: true, al: 'center' });
       hr(true);
-      t('Pedido nº ' + (pedido.numero || 'PENDENTE'), 20, { b: true });
-      t('Data: ' + dataBR(pedido.data_pedido), 15);
-      t('Vendedor: ' + (rep.nome || ''), 15);
-      if (fone) t('Contato do vendedor: ' + fone, 15);
-      t('Tabela: ' + nomeTabela, 15);
-      multi('Cond. pgto: ' + (pedido.condicao_pagamento || '—'), 15, false);
+      t('PEDIDO Nº ' + (pedido.numero || 'PENDENTE'), F(26), { b: true });
+      par('Data', dataBR(pedido.data_pedido), F(19));
+      par('Vendedor', rep.nome || '—', F(19));
+      if (fone) par('Contato', fone, F(19));
+      par('Tabela', pedido.tabela === 'lucro' ? 'Lucro Pres.' : 'Simples', F(19));
+      par('Prazo', pedido.condicao_pagamento || '—', F(19));
       hr();
-      multi(cliente.nome || '', 17, true);
-      if (cliente.cnpj_cpf) t('CNPJ/CPF: ' + C.fmtCNPJ(cliente.cnpj_cpf), 14);
+      multi(cliente.nome || '', F(22), true);
+      if (cliente.cnpj_cpf) t(C.fmtCNPJ(cliente.cnpj_cpf), F(18));
       const cid = [cliente.cidade, cliente.uf].filter(Boolean).join(' - ');
-      if (cid) t(cid, 14);
+      if (cid) t(cid, F(18));
       hr();
       for (const it of itens) {
+        multi(prodDe(it.produto_id).codigo ? prodDe(it.produto_id).codigo + ' ' +
+          (prodDe(it.produto_id).nome || '') : (prodDe(it.produto_id).nome || ''), F(20), true);
         const p = prodDe(it.produto_id);
-        multi((p.codigo ? p.codigo + ' ' : '') + (p.nome || '') +
-          (p.variacao ? ' (' + p.variacao + ')' : ''), 15, true);
+        if (p.variacao) t(p.variacao, F(17));
         t(it.tamanho === 'AV'
-          ? 'Avulso · ' + it.unid_colocadas + ' un'
-          : 'Placa ' + it.tamanho + ' ×' + it.placas + ' = ' + it.unid_colocadas + ' un', 14);
-        t('Qtd. devolvida: ' + it.dev_display + ' · Qtd. quebrada: ' + it.dev_quebrada, 14);
-        t('Qtd. vendida: ' + it.unid_vendidas + ' · Valor unit.: ' + C.fmtMoney(Number(it.preco_unit)), 14);
-        t('TOTAL ' + C.fmtMoney(Number(it.valor_total)), 18, { b: true, al: 'right', h: 28 });
+          ? 'Avulso ' + it.unid_colocadas + ' un'
+          : 'Placa ' + it.tamanho + ' x' + it.placas + ' = ' + it.unid_colocadas + ' un', F(19));
+        t('Devolv. ' + it.dev_display + '   Quebr. ' + it.dev_quebrada, F(19));
+        t('Vendidas ' + it.unid_vendidas + '  x ' + C.fmtMoney(Number(it.preco_unit)), F(19));
+        par('TOTAL', C.fmtMoney(Number(it.valor_total)), F(21), true);
+        y += Math.round(7 * k);
       }
       hr();
-      t('Colocadas: ' + pedido.total_unid_colocadas + ' · Devolvidas: ' + pedido.total_unid_dev_display, 14);
-      t('Quebradas: ' + pedido.total_unid_dev_quebrada + ' · Vendidas: ' + pedido.total_unid_vendidas, 14, { h: 24 });
-      if (pintar) {
-        ctx.font = fonte(20, true); ctx.fillStyle = '#000';
-        ctx.textAlign = 'left'; ctx.fillText(negativo ? 'CRÉDITO' : 'TOTAL', M, y);
-        ctx.textAlign = 'right'; ctx.fillText(C.fmtMoney(Number(pedido.total_valor)), W - M, y);
-      }
-      y += 30;
-      if (observacoes) { hr(); multi(observacoes, 12, false); }
+      par('Colocadas', String(pedido.total_unid_colocadas), F(19));
+      par('Devolvidas', String(pedido.total_unid_dev_display), F(19));
+      par('Quebradas', String(pedido.total_unid_dev_quebrada), F(19));
+      par('Vendidas', String(pedido.total_unid_vendidas), F(19));
+      y += Math.round(6 * k);
+      par(negativo ? 'CRÉDITO' : 'TOTAL', C.fmtMoney(Number(pedido.total_valor)), F(28), true);
+      y += Math.round(8 * k);
+      if (observacoes) { hr(); multi(observacoes, F(13), false); }
       hr();
       if (imgAss) {
-        const aw = 240, ah = Math.min(110, aw * imgAss.height / imgAss.width);
+        const aw = 250, ah = Math.min(115, aw * imgAss.height / imgAss.width);
         if (pintar) ctx.drawImage(imgAss, CX - aw / 2, y, aw, ah);
-        y += ah + 10;
-      } else y += 46;
-      if (pintar) { ctx.fillStyle = '#000'; ctx.fillRect(CX - 120, y, 240, 1.5); }
-      y += 18;
+        y += ah + 8;
+      } else y += 48;
+      if (pintar) { ctx.fillStyle = '#000'; ctx.fillRect(CX - 125, y, 250, 1.5); }
+      y += Math.round(14 * k);
       multi((pedido.assinante_nome ? pedido.assinante_nome + ' — ' : '') + (cliente.nome || ''),
-        14, false, { al: 'center' });
-      t('Assinatura do cliente' + (pedido.assinado_em ? ' — ' +
-        new Date(pedido.assinado_em).toLocaleString('pt-BR') : ''), 12, { al: 'center' });
-      y += 14;
+        F(16), false, { al: 'center' });
+      t('Assinatura do cliente', F(15), { al: 'center' });
+      if (pedido.assinado_em)
+        t(new Date(pedido.assinado_em).toLocaleString('pt-BR'), F(13), { al: 'center' });
+      y += 16;
       return y;
     }
 

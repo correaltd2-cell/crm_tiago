@@ -1604,6 +1604,7 @@
       ['gemini_key', 'Chave Gemini — IA do suporte (aistudio.google.com/apikey)', 'text'],
       ['ia_modelo', 'Modelo da IA do suporte', 'text'],
       ['ciclo_inicio', 'Início do ciclo (segunda da semana 1, aaaa-mm-dd)', 'text'],
+      ['cupom_escala', 'Tamanho da letra do cupom 58mm (1 = normal · 1,2 = maior · 1,4 = bem grande)', 'number'],
       ['visitas_dia_min', 'Visitas FIXAS por dia (alvo da redistribuição)', 'number'],
       ['visitas_dia_max', 'Teto do dia (fixas + reencaixes)', 'number'],
       ['freq_classe_a', 'Classe A — visitar a cada (dias)', 'number'],

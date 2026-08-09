@@ -241,6 +241,31 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
     cupomInfo.type === 'image/png' && cupomInfo.w === 384);
   check('cupom 58mm: tira com conteúdo e assinatura desenhados',
     cupomInfo.h > 500 && cupomInfo.tam > 5000);
+  // a letra do cupom é grande (fonte da impressora) e regulável em Configurações —
+  // no Android o app encolhe a imagem inteira, e letra pequena vira letra de formiga
+  const cupomEscalas = await page.evaluate(async (pid) => {
+    const alturaCom = async (k) => {
+      const p = window.NSDB.byId('pedidos', pid);
+      const itens = window.NSDB.all('pedido_itens').filter(i => i.pedido_id === pid);
+      const blob = await window.NSPDF.gerarCupomImagem({
+        pedido: p, itens,
+        cliente: window.NSDB.byId('clientes', p.cliente_id) || {},
+        rep: window.NSDB.byId('representantes', p.representante_id) || {},
+        produtos: window.NSDB.all('produtos'), observacoes: '', escala: k
+      });
+      const bmp = await createImageBitmap(blob);
+      return { w: bmp.width, h: bmp.height };
+    };
+    return { k1: await alturaCom(1), k14: await alturaCom(1.4), k9: await alturaCom(9) };
+  }, dados.pedido.id);
+  check('cupom: letra maior deixa a tira mais alta (escala funciona)',
+    cupomEscalas.k14.h > cupomEscalas.k1.h * 1.15);
+  check('cupom: largura continua 384px em qualquer escala',
+    cupomEscalas.k1.w === 384 && cupomEscalas.k14.w === 384 && cupomEscalas.k9.w === 384);
+  check('cupom: escala absurda é limitada (não estoura o papel)',
+    cupomEscalas.k9.h < cupomEscalas.k14.h * 1.4);
+  check('cupom padrão sai com a letra grande (>= escala 1)',
+    cupomInfo.h >= cupomEscalas.k1.h);
   // cupom grande (20 itens) divide em várias páginas curtas — páginas altas
   // demais faziam a impressora térmica cortar a impressão no meio
   const cupomGrande = await page.evaluate(async () => {

@@ -579,7 +579,9 @@
     const cliente = DB.byId('clientes', p.cliente_id) || {};
     const rep = DB.byId('representantes', p.representante_id) || {};
     const observacoes = DB.config('pdf_observacoes', '');
-    return window.NSPDF.gerarCupomImagem({ pedido: p, itens, cliente, rep, produtos: DB.all('produtos'), observacoes });
+    // escala da letra do cupom (Configurações) — Android às vezes encolhe a imagem
+    const escala = Number(DB.config('cupom_escala', 1.2)) || 1.2;
+    return window.NSPDF.gerarCupomImagem({ pedido: p, itens, cliente, rep, produtos: DB.all('produtos'), observacoes, escala });
   }
 
   // impressão sem vazar memória: um iframe único reaproveitado e URLs
