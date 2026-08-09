@@ -4,7 +4,7 @@
  * sem conexão ou sem chave, responde com o manual embutido. */
 (function () {
   'use strict';
-  const { $, el, escH, toast } = window.NSUI;
+  const { $, el, escH, toast, ico } = window.NSUI;
   const DB = window.NSDB;
 
   // ---------- manual completo do sistema (base de conhecimento) ----------
@@ -13,42 +13,42 @@ VISÃO GERAL
 O New Star é o aplicativo da equipe de vendas da New Star (placas de brincos e semijoias em consignação para farmácias). Ele funciona no celular, mesmo sem internet — tudo que se faz sem sinal fica guardado e é enviado sozinho quando a conexão volta (o selo no topo mostra: verde "sincronizado", amarelo "pendente", "offline" sem sinal).
 
 ABAS (barra embaixo da tela)
-• 📅 HOJE — a rota manual por dia da semana. • 🏪 CLIENTES — a lista de clientes. • 🧾 PEDIDOS — os talões feitos. • 📊 PAINEL — os números do mês. • ☰ MAIS — financeiro, ajustes e administração. • 🛟 AJUDA — este suporte.
+• HOJE — a rota manual por dia da semana. • CLIENTES — a lista de clientes. • PEDIDOS — os talões feitos. • PAINEL — os números do mês. • MAIS — financeiro, ajustes e administração. • AJUDA — este suporte.
 O botão redondo dourado no canto de baixo à direita abre um NOVO PEDIDO de qualquer tela.
 
 ABA ROTA (rota por dia da semana)
 • ROTA MANUAL: quem monta a rota é o VENDEDOR. No alto ficam os dias da semana (Segunda a Sexta) — toque num dia para ver a rota daquele dia.
-• CRIAR A ROTA: toque no botão grande "➕ CRIAR ROTA DE <DIA>". Abre a lista de todos os clientes disponíveis, já ordenados por PRIORIDADE (classe A, B, C) e por quem está há mais tempo SEM PEDIDO. Dá para filtrar por cidade, região, prioridade, dias sem pedido e dias sem atendimento, e buscar por nome/cidade/CNPJ. Em cada cliente toque em "➕ Adicionar à rota". Quando terminar, toque em "✓ CONCLUIR" — os clientes escolhidos já aparecem na rota daquele dia, que fica salva.
+• CRIAR A ROTA: toque no botão grande "CRIAR ROTA DE <DIA>". Abre a lista de todos os clientes disponíveis, já ordenados por PRIORIDADE (classe A, B, C) e por quem está há mais tempo SEM PEDIDO. Dá para filtrar por cidade, região, prioridade, dias sem pedido e dias sem atendimento, e buscar por nome/cidade/CNPJ. Em cada cliente toque em "Adicionar à rota". Quando terminar, toque em "CONCLUIR" — os clientes escolhidos já aparecem na rota daquele dia, que fica salva.
 • CLIENTE FICA VINCULADO A UM DIA SÓ: assim que entra numa rota, o cliente SAI da lista de disponíveis e não pode ser escolhido para outro dia — evita o mesmo cliente em duas rotas.
-• NA ROTA, cada cliente tem 2 botões: "✔ REGISTRAR VISITA" e "✖ REMOVER DA ROTA" (remover devolve o cliente para a lista de disponíveis). Tocar no nome do cliente abre a ficha completa.
+• NA ROTA, cada cliente tem 2 botões: "REGISTRAR VISITA" e "REMOVER DA ROTA" (remover devolve o cliente para a lista de disponíveis). Tocar no nome do cliente abre a ficha completa.
 • REGISTRAR VISITA abre 3 opções:
-   1) 🧾 NOVO PEDIDO — abre o talão e lança a venda.
-   2) ✅ SEM PEDIDO — visitou mas não vendeu: escolha o motivo (responsável não estava, cliente não quis fazer pedido, sem necessidade de compra, outro) e escreva uma observação se quiser. A visita fica registrada e a observação vai para o histórico interno do cliente.
-   3) ⏭ NÃO VISITEI — não conseguiu passar no cliente: NÃO registra visita, o cliente sai da rota do dia e volta para a lista de disponíveis, podendo entrar numa rota futura.
-• CORES NO CARTÃO DO CLIENTE (na rota e na hora de escolher): 🔴 vermelho = visita atrasada · 🟡 amarelo = vence logo · 🟢 verde = em dia · ⚪ cinza = sem visita registrada. O triângulo amarelo com "?" avisa que o cliente TEM OBSERVAÇÃO anotada — toque no cartão para abrir a ficha completa (produtos que trabalha, último pedido, dados e observações).
-• RESETAR ROTA: o botão "🗑 Resetar rota de <dia>" zera a rota daquele dia e devolve todos os clientes para a lista de disponíveis, para montar de novo.
+ 1) NOVO PEDIDO — abre o talão e lança a venda.
+ 2) SEM PEDIDO — visitou mas não vendeu: escolha o motivo (responsável não estava, cliente não quis fazer pedido, sem necessidade de compra, outro) e escreva uma observação se quiser. A visita fica registrada e a observação vai para o histórico interno do cliente.
+ 3) NÃO VISITEI — não conseguiu passar no cliente: NÃO registra visita, o cliente sai da rota do dia e volta para a lista de disponíveis, podendo entrar numa rota futura.
+• CORES NO CARTÃO DO CLIENTE (na rota e na hora de escolher): vermelho = visita atrasada · amarelo = vence logo · verde = em dia · cinza = sem visita registrada. O triângulo amarelo com "?" avisa que o cliente TEM OBSERVAÇÃO anotada — toque no cartão para abrir a ficha completa (produtos que trabalha, último pedido, dados e observações).
+• RESETAR ROTA: o botão "Resetar rota de <dia>" zera a rota daquele dia e devolve todos os clientes para a lista de disponíveis, para montar de novo.
 • SEMANA CERTA: as abas mostram a data de cada dia. Se você organizar no sábado ou domingo, o sistema já aponta para a SEMANA SEGUINTE — dá para deixar a semana toda montada no fim de semana.
 • O gestor, no modo "Todos (consolidado)", vê as rotas de todos os vendedores (somente leitura); para montar rota, escolha o vendedor no seletor do topo.
 
 ABA CLIENTES (farol de cores)
-• 🔴 vermelho = visita ATRASADA (mostra há quantos dias). 🟡 amarelo = vence em poucos dias. 🟢 verde = em dia. ⚪ cinza = ainda sem visita registrada no sistema.
+• vermelho = visita ATRASADA (mostra há quantos dias). amarelo = vence em poucos dias. verde = em dia. cinza = ainda sem visita registrada no sistema.
 • Os botões no alto filtram por cor e mostram a contagem. A lista vem na ordem de urgência (mais atrasados primeiro).
 • A busca aceita nome, cidade ou CNPJ (pode digitar só um pedaço).
 • OBSERVAÇÕES SÃO INTERNAS: tudo que for escrito em observação (do pedido ou do cliente) fica SÓ no sistema — nunca sai no cupom, no PDF ou em qualquer papel entregue ao cliente.
 • OBSERVAÇÕES INTERNAS: na ficha do cliente dá para anotar lembretes ("falar com a Dona Maria", "gosta de prazo maior", "loja fecha ao meio-dia"). Essas anotações são SÓ da equipe — nunca saem no talão nem no PDF — e a mais recente aparece no cartão do cliente na rota do dia, para ler antes de atender.
-• TABELA DE PREÇO DO CLIENTE: no cadastro (✏ Editar) tem o campo "Tabela de preço permitida neste cliente". O padrão é AMBAS (o vendedor escolhe Simples ou Lucro Presumido na hora do pedido). Se o cliente só trabalha com uma (ex.: a rede CLAMED é Lucro Presumido; muitas farmácias independentes são só Simples), escolha "Somente Tabela Simples" ou "Somente Lucro Presumido" — aí no pedido só aparece a tabela certa e o vendedor não erra. A tabela do cliente também aparece na ficha dele.
-• Tocar no cliente abre a FICHA: dados, telefone, ciclo de visitas (a cada quantos dias visitar, com sugestão automática de encurtar ou alongar), linhas de produto que ele trabalha (tocar marca/desmarca), dica de upsell e o histórico de visitas e pedidos. Na ficha dá para excluir uma visita registrada errada (🗑) — se ela tiver pedido, exclua o pedido primeiro.
+• TABELA DE PREÇO DO CLIENTE: no cadastro (Editar) tem o campo "Tabela de preço permitida neste cliente". O padrão é AMBAS (o vendedor escolhe Simples ou Lucro Presumido na hora do pedido). Se o cliente só trabalha com uma (ex.: a rede CLAMED é Lucro Presumido; muitas farmácias independentes são só Simples), escolha "Somente Tabela Simples" ou "Somente Lucro Presumido" — aí no pedido só aparece a tabela certa e o vendedor não erra. A tabela do cliente também aparece na ficha dele.
+• Tocar no cliente abre a FICHA: dados, telefone, ciclo de visitas (a cada quantos dias visitar, com sugestão automática de encurtar ou alongar), linhas de produto que ele trabalha (tocar marca/desmarca), dica de upsell e o histórico de visitas e pedidos. Na ficha dá para excluir uma visita registrada errada — se ela tiver pedido, exclua o pedido primeiro.
 
 FAZER UM PEDIDO (talão digital)
-1. Toque no botão dourado redondo (ou 🧾 Pedido no cliente do dia).
+1. Toque no botão dourado redondo (ou Pedido no cliente do dia).
 2. Escolha o cliente (busque por nome, cidade ou CNPJ).
-3. Escolha a TABELA DE PREÇO: Simples ou Lucro Presumido (define os preços do pedido inteiro). SE O CLIENTE TIVER TABELA FIXA NO CADASTRO, só aparece a tabela dele — não tem como errar (ex.: a rede Clamed é Lucro Presumido). Isso é definido no cadastro do cliente, no campo "Tabela de preço permitida neste cliente" (o padrão é deixar as duas). Na conferência dá para trocar a DATA DO PEDIDO (esqueceu de lançar ontem? troca a data e ele entra na meta e comissão do dia certo). A CONDIÇÃO DE PAGAMENTO (prazo) é preenchida NO FINAL, na tela de conferência — é obrigatória para assinar, em texto livre ("7 dias", "30 dias", "35 dias", "30/60", o que negociar). CADA CLIENTE TEM SEU PRAZO: o prazo usado fica gravado como o prazo daquele cliente e já vem preenchido nas próximas vendas. Na conferência também dá para marcar "🪧 Deixei display/mostruário" e anotar o MATERIAL DEIXADO no cliente — isso fica na ficha e no relatório de displays.
+3. Escolha a TABELA DE PREÇO: Simples ou Lucro Presumido (define os preços do pedido inteiro). SE O CLIENTE TIVER TABELA FIXA NO CADASTRO, só aparece a tabela dele — não tem como errar (ex.: a rede Clamed é Lucro Presumido). Isso é definido no cadastro do cliente, no campo "Tabela de preço permitida neste cliente" (o padrão é deixar as duas). Na conferência dá para trocar a DATA DO PEDIDO (esqueceu de lançar ontem? troca a data e ele entra na meta e comissão do dia certo). A CONDIÇÃO DE PAGAMENTO (prazo) é preenchida NO FINAL, na tela de conferência — é obrigatória para assinar, em texto livre ("7 dias", "30 dias", "35 dias", "30/60", o que negociar). CADA CLIENTE TEM SEU PRAZO: o prazo usado fica gravado como o prazo daquele cliente e já vem preenchido nas próximas vendas. Na conferência também dá para marcar "Deixei display/mostruário" e anotar o MATERIAL DEIXADO no cliente — isso fica na ficha e no relatório de displays.
 3b. RECOLHER PEÇAS ANTIGAS (CRÉDITO): dentro do próprio pedido, se for só recolher peças de uma placa antiga sem deixar nada novo, lance o produto com 0 PLACAS e informe as unidades recolhidas na devolução — o item fica NEGATIVO e desconta do total do pedido. Se o pedido inteiro ficar negativo, o valor vira CRÉDITO do cliente: o recibo sai como "Recolhimento — Crédito do Cliente" e no Financeiro entra como comissão negativa (abate do total do mês). Dá para misturar no mesmo talão: produtos vendidos normais + produtos só recolhidos.
 4. Adicione os produtos: escolha o produto e como vender — placa P, placa G ou AVULSO. Placa: informe quantas placas deixou (cada produto tem sua quantidade de unidades por placa). AVULSO: para quando o cliente não quer a placa inteira e leva só algumas peças — toque no botão "Avulso (un)" e informe a quantidade de unidades. Depois as devoluções em duas colunas: DISPLAY (peças devolvidas boas) e QUEBRADA (peças com defeito). O sistema calcula sozinho: colocadas = placas × unidades da placa (ou as unidades avulsas); VENDIDAS = colocadas − display − quebradas; valor = vendidas × preço da tabela.
-5. Confira o resumo, escreva o NOME DE QUEM ASSINA (obrigatório) e toque em "✍ ASSINAR EM TELA CHEIA": o quadro de assinatura ocupa a tela inteira, o cliente assina com o dedo com bastante espaço e toca em "Confirmar assinatura" — aí o app volta para a tela do pedido. O nome sai impresso no talão junto da assinatura.
-6. Pronto: dá para VISUALIZAR O PDF do talão, COMPARTILHAR (WhatsApp/e-mail), IMPRIMIR (impressora do celular) e gerar o CUPOM 58MM para a mini impressora térmica: toque em "🧾 Cupom 58mm (imagem)", escolha COMPARTILHAR e selecione o app da impressora. A assinatura fica gravada para sempre no pedido.
+5. Confira o resumo, escreva o NOME DE QUEM ASSINA (obrigatório) e toque em "ASSINAR EM TELA CHEIA": o quadro de assinatura ocupa a tela inteira, o cliente assina com o dedo com bastante espaço e toca em "Confirmar assinatura" — aí o app volta para a tela do pedido. O nome sai impresso no talão junto da assinatura.
+6. Pronto: dá para VISUALIZAR O PDF do talão, COMPARTILHAR (WhatsApp/e-mail), IMPRIMIR (impressora do celular) e gerar o CUPOM 58MM para a mini impressora térmica: toque em "Cupom 58mm (imagem)", escolha COMPARTILHAR e selecione o app da impressora. A assinatura fica gravada para sempre no pedido.
 • Concluir o pedido já registra a visita do dia com o valor vendido e calcula a comissão sozinho.
-• ERROU ALGO NO PEDIDO? Não precisa excluir e refazer: aba Pedidos → abra o pedido → "✏ EDITAR PEDIDO". Dá para corrigir quantidades, devoluções, adicionar/remover produtos, trocar a tabela e o PRAZO. A assinatura já colhida é mantida e o total e a comissão são recalculados sozinhos (mantendo a % original de cliente novo ou reposição).
+• ERROU ALGO NO PEDIDO? Não precisa excluir e refazer: aba Pedidos → abra o pedido → "EDITAR PEDIDO". Dá para corrigir quantidades, devoluções, adicionar/remover produtos, trocar a tabela e o PRAZO. A assinatura já colhida é mantida e o total e a comissão são recalculados sozinhos (mantendo a % original de cliente novo ou reposição).
 • Para excluir um pedido errado de vez: aba Pedidos → abra o pedido → "Excluir pedido" (desfaz também a visita e a comissão).
 
 COMISSÕES (regras)
@@ -59,14 +59,14 @@ COMISSÕES (regras)
 ABA PAINEL (números do mês)
 Faturamento (vendido), comissão gerada, A RECEBER no mês, despesas, líquido, km rodado, custo real por km, visitas hoje/mês, conversão de visitas em pedidos, clientes ativos, atrasados e vencendo, ranking das linhas mais vendidas e alertas de ciclo (tocar abre a ficha).
 
-MAIS → MEU ROTEIRO (🗓) — para o vendedor autônomo organizar a própria agenda
+MAIS → MEU ROTEIRO — para o vendedor autônomo organizar a própria agenda
 • DIAS EM QUE TRABALHO: desmarque os dias que não atende (ex.: segunda para organizar estoque). O roteiro só agenda nos dias marcados.
 • DIA PERTO DE CASA: escolha um dia (ex.: sexta) para o roteiro puxar clientes da região da sua base — assim sexta-feira fica perto de casa.
-• AGENDA DAS PRÓXIMAS SEMANAS: toque num dia para ver os clientes. "↔ MOVER" muda um cliente de dia (o sistema sugere os melhores dias, de preferência na mesma região e com vaga). "🚫 LIBERAR ESTE DIA" esvazia o dia (folga, estoque, imprevisto) e reencaixa os clientes sozinho nos melhores dias — quem não couber fica aguardando e o sistema avisa.
-• ESCOLHER A REGIÃO DA SEMANA (🎯): a lista mostra cada região com a situação dela — quantos clientes vencidos, o maior atraso e quantos vencem nos próximos 14 dias. A mais urgente vem com ⭐ (recomendada), mas QUEM ESCOLHE É O VENDEDOR: se não dá para ir a Joaçaba nesta semana, toque em outra região e o roteiro remonta começando por ela (o resto continua por urgência).
-• Depois de mudar as preferências, toque em "🗺 Regerar roteiro com minhas preferências". O sistema continua sendo o guia: ele sempre mostra quem precisa de visita e sugere quando e onde repor — mas quem manda na agenda é o vendedor.
+• AGENDA DAS PRÓXIMAS SEMANAS: toque num dia para ver os clientes. "↔ MOVER" muda um cliente de dia (o sistema sugere os melhores dias, de preferência na mesma região e com vaga). "LIBERAR ESTE DIA" esvazia o dia (folga, estoque, imprevisto) e reencaixa os clientes sozinho nos melhores dias — quem não couber fica aguardando e o sistema avisa.
+• ESCOLHER A REGIÃO DA SEMANA: a lista mostra cada região com a situação dela — quantos clientes vencidos, o maior atraso e quantos vencem nos próximos 14 dias. A mais urgente vem com (recomendada), mas QUEM ESCOLHE É O VENDEDOR: se não dá para ir a Joaçaba nesta semana, toque em outra região e o roteiro remonta começando por ela (o resto continua por urgência).
+• Depois de mudar as preferências, toque em "Regerar roteiro com minhas preferências". O sistema continua sendo o guia: ele sempre mostra quem precisa de visita e sugere quando e onde repor — mas quem manda na agenda é o vendedor.
 
-MAIS → RELATÓRIOS (📊)
+MAIS → RELATÓRIOS
 • VENDA DO DIA: valor vendido hoje, quantos pedidos e as visitas do dia (na rota + fora da rota = total atendidos).
 • METAS DO DIA, DO MÊS E DO ANO: o gestor cadastra a META DO MÊS (ex.: R$ 200.000) e a META DO ANO. O sistema divide pelos DIAS ÚTEIS (segunda a sexta) e mostra a meta do dia, a % da meta já batida e a PROJEÇÃO: "nesse ritmo o mês fecha em R$ X (Y% da meta)". Dá para definir uma meta do dia própria, se quiser um valor diferente da divisão automática.
 • META DE NOVOS CLIENTES: o gestor também cadastra quantos CLIENTES NOVOS quer no mês (venda com comissão de 15% = primeira compra, que é a mais interessante para o vendedor). O painel mostra quantos já entraram, a % da meta e a projeção no ritmo atual.
@@ -145,7 +145,7 @@ ${MANUAL}`;
   function respostaManual(pergunta) {
     const norm = (t) => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     const palavras = norm(pergunta).split(/\W+/).filter(w => w.length > 3);
-    const secoes = MANUAL.split(/\n(?=[A-ZÁÉÍÓÚÂÊÔÃÕÇ🗺📅🏪🧾📊☰🛟]{2,})/).filter(s => s.trim().length > 40);
+    const secoes = MANUAL.split(/\n(?=[A-ZÁÉÍÓÚÂÊÔÃÕÇ]{2,})/).filter(s => s.trim().length > 40);
     let melhor = null, melhorPts = 0;
     for (const s of secoes) {
       const ns = norm(s);
@@ -172,11 +172,11 @@ ${MANUAL}`;
   function view(root) {
     const chatEl = el('div', { class: 'chat-lista', id: 'chatLista' });
     const input = el('input', { class: 'input big grow', placeholder: 'Escreva sua dúvida aqui…' });
-    const btn = el('button', { class: 'btn', onclick: enviar }, '➤');
+    const btn = el('button', { class: 'btn', onclick: enviar, 'aria-label': 'Enviar' }, ico('setaDir'));
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') enviar(); });
 
     root.appendChild(el('div', { class: 'row space' },
-      el('h2', null, '🛟 Ajuda'),
+      el('h2', { class: 'row gap8' }, ico('ajuda'), 'Ajuda'),
       el('button', {
         class: 'btn-link', onclick: () => { localStorage.removeItem(LS_CHAT); window.NSApp.nav('ajuda'); }
       }, 'limpar conversa')));

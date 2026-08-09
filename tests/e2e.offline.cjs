@@ -142,25 +142,25 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page.locator('.card-item').nth(1).locator('.btn-icon').click();
   await page.waitForTimeout(150);
 
-  await page.click('text=Conferir →');
+  await page.click('button:has-text("Conferir")');
   const conf = await page.textContent('.ns-modal');
   check('conferência mostra tabela e total', conf.includes('Lucro Presumido') && conf.replace(/ /g, ' ').includes('594,50'));
 
   // prazo obrigatório — agora no FINAL (conferência), não no início
-  await page.click('text=Assinar \u2192');
+  await page.click('button:has-text("Assinar")');
   await page.waitForTimeout(250);
   check('não deixa assinar sem o prazo (condição de pagamento)', !(await page.isVisible('.assinatura-cv')));
   await page.fill('.ns-modal input[placeholder*="Prazo"]', '30 dias');
 
   // assinatura no canvas
-  await page.click('text=Assinar →');
+  await page.click('button:has-text("Assinar")');
   // sem o nome de quem assina, não abre a tela cheia nem conclui
   await page.fill('.ns-modal input[placeholder*="Nome de quem assina"]', '');
-  await page.click('text=✓ Confirmar e concluir');
+  await page.click('button:has-text("Confirmar e concluir")');
   await page.waitForTimeout(250);
   check('não conclui sem o nome de quem assina', !(await page.isVisible('.sucesso-banner')));
   await page.fill('.ns-modal input[placeholder*="Nome de quem assina"]', 'João da Silva');
-  await page.click('text=✍ Assinar em tela cheia');
+  await page.click('button:has-text("Assinar em tela cheia")');
   await page.waitForSelector('.assina-full canvas');
   check('assinatura abre em TELA CHEIA', await page.isVisible('.assina-full'));
   const cv = page.locator('.assina-full canvas');
@@ -172,7 +172,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page.click('.assina-full button:has-text("Confirmar assinatura")');
   await page.waitForTimeout(300);
   check('após confirmar, volta para a tela do pedido', !(await page.isVisible('.assina-full')));
-  await page.click('text=✓ Confirmar e concluir');
+  await page.click('button:has-text("Confirmar e concluir")');
   await page.waitForSelector('.sucesso-banner');
   check('pedido concluído com assinatura', await page.isVisible('.sucesso-banner'));
 
@@ -300,7 +300,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   // relatórios: venda do dia, visitas e agrupamento por rede
   await page.click('#tabs button[data-v=mais]');
   await page.waitForTimeout(200);
-  await page.click('text=\ud83d\udcca Relatórios');
+  await page.click('.item-menu:has-text("Relatórios")');
   await page.waitForSelector('.ns-overlay');
   const rel = (await page.locator('.ns-overlay').last().textContent()).replace(/\u00a0/g, ' ');
   check('relatórios: venda de hoje 594,50', rel.includes('594,50'));
@@ -387,7 +387,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page.locator('#view .item-lista').first().click();
   await page.waitForSelector('.ns-overlay');
   await page.locator('.ns-overlay input[placeholder*="Anotar algo"]').fill('NOTA-INTERNA-SIGILOSA-123');
-  await page.locator('.ns-overlay button:has-text("➕")').click();
+  await page.locator('.ns-overlay button[aria-label="Adicionar observação"]').click();
   await page.waitForTimeout(250);
   const notas = await page.evaluate(() => JSON.parse(localStorage.getItem('ns_c_cliente_notas') || '[]'));
   const notaNova = notas.find(n => n.texto === 'NOTA-INTERNA-SIGILOSA-123');
@@ -417,7 +417,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page.click('#tabs button[data-v=pedidos]');
   await page.waitForTimeout(200);
   await page.locator('#view .item-lista').first().click();
-  await page.locator('.ns-overlay').last().locator('text=🗑 Excluir pedido').click();
+  await page.locator('.ns-overlay').last().locator('button:has-text("Excluir pedido")').click();
   await page.locator('.ns-overlay').last().locator('button:has-text("Confirmar")').click();
   await page.waitForTimeout(400);
   const posDel = await page.evaluate(() => ({
@@ -448,13 +448,13 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   check('aviso de cr\u00e9dito aparece no c\u00e1lculo', liveRet.includes('Recolhendo 4 un'));
   await modalRet.locator('button:has-text("Adicionar")').click();
   await page.waitForTimeout(150);
-  await page.click('text=Conferir \u2192');
+  await page.click('button:has-text("Conferir")');
   const confRet = (await page.textContent('.ns-modal')).replace(/\u00a0/g, ' ');
   check('confer\u00eancia mostra pedido negativo com aviso de cr\u00e9dito', confRet.includes('-R$ 58,00') && confRet.includes('CR\u00c9DITO'));
   await page.fill('.ns-modal input[placeholder*="Prazo"]', '30 dias');
-  await page.click('text=Assinar →');
+  await page.click('button:has-text("Assinar")');
   await page.fill('.ns-modal input[placeholder*="Nome de quem assina"]', 'Maria Souza');
-  await page.click('text=✍ Assinar em tela cheia');
+  await page.click('button:has-text("Assinar em tela cheia")');
   await page.waitForSelector('.assina-full canvas');
   const cvR = page.locator('.assina-full canvas');
   const bbR = await cvR.boundingBox();
@@ -464,7 +464,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page.mouse.up();
   await page.click('.assina-full button:has-text("Confirmar assinatura")');
   await page.waitForTimeout(300);
-  await page.click('text=✓ Confirmar e concluir');
+  await page.click('button:has-text("Confirmar e concluir")');
   await page.waitForSelector('.sucesso-banner');
   const ret = await page.evaluate(() => ({
     pedido: JSON.parse(localStorage.getItem('ns_c_pedidos'))[0],
@@ -487,7 +487,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page.click('#tabs button[data-v=pedidos]');
   await page.waitForTimeout(200);
   await page.locator('#view .item-lista').first().click();
-  await page.locator('.ns-overlay').last().locator('text=\u270f Editar pedido').click();
+  await page.locator('.ns-overlay').last().locator('button:has-text("Editar pedido")').click();
   await page.waitForTimeout(300);
   await page.locator('.ns-overlay').last().locator('.card-item button:has-text("editar")').first().click();
   await page.waitForTimeout(200);
@@ -495,7 +495,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await itemEd.locator('.stepper').nth(1).locator('button', { hasText: '+' }).click(); // dev 4 \u2192 5
   await itemEd.locator('button:has-text("Salvar")').click();
   await page.waitForTimeout(150);
-  await page.click('text=Conferir \u2192');
+  await page.click('button:has-text("Conferir")');
   await page.fill('.ns-modal input[placeholder*="Prazo"]', '45 dias');
   await page.click('text=Salvar altera\u00e7\u00f5es');
   await page.waitForTimeout(400);

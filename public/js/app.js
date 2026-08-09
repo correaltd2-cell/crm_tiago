@@ -2,7 +2,8 @@
  * despesas e área administrativa do gestor. */
 (function () {
   'use strict';
-  const { $, $$, el, escH, toast, modal, confirmar, dataBR, hojeISO, mesISO, baixar } = window.NSUI;
+  const { $, $$, el, escH, toast, modal, confirmar, dataBR, hojeISO, mesISO, baixar,
+    ico, icoHTML, rot, farol } = window.NSUI;
   const C = window.NSCalc, DB = window.NSDB, R = window.NSRota;
 
   // ================= MARCA =================
@@ -65,11 +66,11 @@
           toast('Carregando dados iniciais no Firestore…');
           try {
             await DB.seedInicial(window.NS_SEED);
-            toast('✅ ' + DB.all('clientes').length + ' clientes, catálogo e usuários carregados. Faça o primeiro login.');
+            toast(DB.all('clientes').length + ' clientes, catálogo e usuários carregados. Faça o primeiro login.');
             telaLogin();
           } catch (err) { toast('Falha na instalação: ' + err.message, 'erro'); e.currentTarget.disabled = false; }
         }
-      }, '⚙ Primeira instalação (carregar ' + window.NS_SEED.clientes.length + ' clientes + catálogo)') : null);
+      }, rot('caixa', 'Primeira instalação (carregar ' + window.NS_SEED.clientes.length + ' clientes + catálogo)')) : null);
     $('#view').innerHTML = ''; $('#view').appendChild(box);
     $('#topbar').style.display = 'none'; $('#tabs').style.display = 'none'; $('#fab').style.display = 'none';
 
@@ -154,7 +155,7 @@
         verRepId = sel.value; localStorage.setItem('ns_ver_rep', verRepId); nav(viewAtual);
       }
     },
-      el('option', { value: 'todos', selected: verRepId === 'todos' ? '' : null }, '👥 Todos (consolidado)'),
+      el('option', { value: 'todos', selected: verRepId === 'todos' ? '' : null }, 'Todos (consolidado)'),
       DB.all('representantes').filter(r => r.papel === 'vendedor' && r.ativo !== false)
         .map(r => el('option', { value: r.id, selected: verRepId === r.id ? '' : null }, r.nome)));
     return sel;
@@ -163,22 +164,23 @@
   function atualizarSyncChip(st) {
     const chip = $('#syncChip');
     if (!chip) return;
-    if (!st.configured) { chip.textContent = '⚙ configurar'; chip.className = 'sync-chip erro'; }
-    else if (!st.online) { chip.textContent = '📴 offline' + (st.pendentes ? ' · ' + st.pendentes : ''); chip.className = 'sync-chip off'; }
-    else if (st.syncing) { chip.textContent = '🔄 sincronizando…'; chip.className = 'sync-chip'; }
-    else if (st.pendentes) { chip.textContent = '⏳ ' + st.pendentes + ' pendente(s)'; chip.className = 'sync-chip off'; }
-    else { chip.textContent = '✅ sincronizado'; chip.className = 'sync-chip ok'; }
+    if (!st.configured) { chip.textContent = 'configurar'; chip.className = 'sync-chip erro'; }
+    else if (!st.online) { chip.textContent = 'offline' + (st.pendentes ? ' · ' + st.pendentes : ''); chip.className = 'sync-chip off'; }
+    else if (st.syncing) { chip.textContent = 'sincronizando…'; chip.className = 'sync-chip'; }
+    else if (st.pendentes) { chip.textContent = st.pendentes + ' pendente(s)'; chip.className = 'sync-chip off'; }
+    else { chip.textContent = 'sincronizado'; chip.className = 'sync-chip ok'; }
   }
   DB.onStatus(atualizarSyncChip);
 
   function mostrarSync() {
     const st = DB.status();
     modal(el('div', null,
-      el('p', null, st.online ? '🟢 Online' : '🔴 Offline — tudo continua funcionando; as alterações entram na fila.'),
+      el('p', { class: 'row gap8' }, farol(st.online ? 'verde' : 'vermelho'),
+        st.online ? 'Online' : 'Offline — tudo continua funcionando; as alterações entram na fila.'),
       el('p', { class: 'sub mt4' }, 'Escrituras pendentes: ' + st.pendentes),
       st.lastSync ? el('p', { class: 'sub' }, 'Última sincronização: ' + new Date(st.lastSync).toLocaleString('pt-BR')) : null,
       st.erros.length ? el('div', { class: 'mt8' },
-        el('strong', null, '⚠ ' + st.erros.length + ' erro(s) de sincronização'),
+        el('strong', null, ico('alerta', 'ic-erro'), st.erros.length + ' erro(s) de sincronização'),
         el('div', { class: 'sub', style: 'max-height:120px;overflow:auto' },
           st.erros.map(e => el('div', null, e.erro))),
         el('button', { class: 'btn-link', onclick: () => { DB.clearErros(); } }, 'limpar erros')) : null,
@@ -284,7 +286,7 @@
   function temAlerta(c) {
     return DB.all('pendencias').some(p => p.cliente_id === c.id && !p.resolvida_em) || !!ultimaNota(c.id);
   }
-  // 🔴 atrasado · 🟡 vencendo · 🟢 em dia · ⚪ sem registro (mesmo farol da aba Clientes)
+  // farol: vermelho atrasado · amarelo vencendo · verde em dia · cinza sem registro
   function statusDoCliente(c) {
     return statusCliente(c, hojeISO(), Number(DB.config('alerta_vencendo_dias', 7)));
   }
@@ -304,7 +306,7 @@
     for (const rep of reps) {
       const lista = clientesDaRota(rep.id, diaRota);
       const feitos = lista.filter(c => visitaDeHoje(c.id)).length;
-      view.appendChild(el('h3', { class: 'mt16' }, '🧑‍💼 ' + rep.nome +
+      view.appendChild(el('h3', { class: 'mt16' }, ico('usuario', 'ic-sm'), rep.nome +
         (lista.length ? ` — ${feitos}/${lista.length} visitados` : '')));
       if (!lista.length) { view.appendChild(el('p', { class: 'vazio' }, 'Sem rota criada para ' + diaRota + '.')); continue; }
       const box = el('div', { class: 'col gap8 mt8' });
@@ -316,7 +318,7 @@
           el('div', null,
             el('strong', null, el('span', { class: 'st-tag ' + statusDoCliente(c).k }), marcaAlerta(c), `${i + 1}. ${c.nome}`),
             el('div', { class: 'sub' }, [c.cidade, c.uf].filter(Boolean).join(' - '))),
-          visitaDeHoje(c.id) ? el('span', { class: 'badge ok' }, '✅') : null))));
+          visitaDeHoje(c.id) ? el('span', { class: 'badge ok' }, ico('check', 'ic-sm')) : null))));
       view.appendChild(box);
     }
     view.appendChild(el('p', { class: 'sub mt12' },
@@ -326,7 +328,7 @@
   // ---- abas dos dias da semana ----
   function abaDias(aoTrocar) {
     return el('div', null,
-      el('div', { class: 'sub' }, '🗓 ' + rotuloSemana()),
+      el('div', { class: 'sub row gap8' }, ico('agenda', 'ic-sm'), rotuloSemana()),
       el('div', { class: 'dias-scroll mt4' }, DIAS_ROTA.map(d => el('button', {
         class: 'chip' + (d === diaRota ? ' ativo' : ''),
         onclick: () => { diaRota = d; aoTrocar(); }
@@ -356,7 +358,7 @@
 
     view.appendChild(el('button', {
       class: 'btn big w100 mt12', onclick: () => telaCriarRota(rep)
-    }, (lista.length ? '✏ Editar rota de ' : '➕ Criar rota de ') + diaRota));
+    }, lista.length ? rot('lapis', 'Editar rota de ' + diaRota) : rot('mais', 'Criar rota de ' + diaRota)));
     if (lista.length)
       view.appendChild(el('button', {
         class: 'btn btn-sec w100 mt8', onclick: async () => {
@@ -366,7 +368,7 @@
           toast('Rota de ' + diaRota + ' zerada.');
           nav('hoje');
         }
-      }, '🗑 Resetar rota de ' + diaRota));
+      }, rot('lixeira', 'Resetar rota de ' + diaRota)));
 
     const listaEl = el('div', { class: 'col gap8 mt12' });
     view.appendChild(listaEl);
@@ -382,16 +384,16 @@
         el('div', { class: 'row space', onclick: () => fichaCliente(c.id) },
           el('div', null,
             el('strong', null, el('span', { class: 'st-tag ' + st.k }), marcaAlerta(c), `${i + 1}. ${c.nome}`),
-            el('div', { class: 'sub' }, st.dot + ' ' + st.rot),
+            el('div', { class: 'sub' }, farol(st.k), st.rot),
             el('div', { class: 'sub' }, [c.endereco, c.cidade, c.uf].filter(Boolean).join(' · ')),
             el('div', { class: 'sub' }, 'Classe ' + (c.classe || 'A') +
               ' · ' + txtDias(diasSemPedido(c), 'pedido') + ' · ' + txtDias(diasSemAtendimento(c), 'visita')),
             (() => { const n = ultimaNota(c.id); return n ? el('div', { class: 'nota-previa' },
-              '📝 ' + (n.length > 90 ? n.slice(0, 90) + '…' : n)) : null; })()),
-          v ? el('span', { class: 'badge ok' }, v.fez_pedido ? '✅ pedido' : '✅ visitado') : null),
+              n.length > 90 ? n.slice(0, 90) + '…' : n) : null; })()),
+          v ? el('span', { class: 'badge ok' }, ico('check', 'ic-sm'), v.fez_pedido ? 'pedido' : 'visitado') : null),
         el('div', { class: 'row gap8 mt8' },
-          el('button', { class: 'btn-mini verde', onclick: () => dialogoVisita(c, rep) }, '✔ Registrar visita'),
-          el('button', { class: 'btn-mini vermelho', onclick: () => removerDaRota(c) }, '✖ Remover da rota'))));
+          el('button', { class: 'btn-mini verde', onclick: () => dialogoVisita(c, rep) }, rot('check', 'Registrar visita')),
+          el('button', { class: 'btn-mini vermelho', onclick: () => removerDaRota(c) }, rot('fechar', 'Remover da rota')))));
     });
   }
 
@@ -404,7 +406,7 @@
   // ---- tela de seleção de clientes (filtros + adicionar) ----
   function telaCriarRota(rep) {
     const wrap = el('div');
-    const m = modal(wrap, { titulo: '➕ Rota de ' + diaRota, full: true });
+    const m = modal(wrap, { titulo: 'Rota de ' + diaRota, full: true });
     const f = { busca: '', cidade: '', regiao: '', classe: '', semPedido: '', semVisita: '' };
     render();
 
@@ -431,20 +433,20 @@
       };
       wrap.appendChild(inBusca);
       wrap.appendChild(el('div', { class: 'row gap8 mt8' },
-        sel('cidade', '🏙 Todas as cidades', cidades),
-        sel('regiao', '📍 Todas as regiões', regioes)));
+        sel('cidade', 'Todas as cidades', cidades),
+        sel('regiao', 'Todas as regiões', regioes)));
       wrap.appendChild(el('div', { class: 'row gap8 mt8' },
-        sel('classe', '⭐ Todas as prioridades', [{ v: 'A', t: 'Classe A' }, { v: 'B', t: 'Classe B' }, { v: 'C', t: 'Classe C' }]),
-        sel('semPedido', '📦 Dias sem pedido', [{ v: '30', t: '30+ dias' }, { v: '45', t: '45+ dias' }, { v: '60', t: '60+ dias' }, { v: '90', t: '90+ dias' }, { v: '180', t: '180+ dias' }])));
+        sel('classe', 'Todas as prioridades', [{ v: 'A', t: 'Classe A' }, { v: 'B', t: 'Classe B' }, { v: 'C', t: 'Classe C' }]),
+        sel('semPedido', 'Dias sem pedido', [{ v: '30', t: '30+ dias' }, { v: '45', t: '45+ dias' }, { v: '60', t: '60+ dias' }, { v: '90', t: '90+ dias' }, { v: '180', t: '180+ dias' }])));
       wrap.appendChild(el('div', { class: 'row gap8 mt8' },
-        sel('semVisita', '🚗 Dias sem atendimento', [{ v: '30', t: '30+ dias' }, { v: '45', t: '45+ dias' }, { v: '60', t: '60+ dias' }, { v: '90', t: '90+ dias' }])));
+        sel('semVisita', 'Dias sem atendimento', [{ v: '30', t: '30+ dias' }, { v: '45', t: '45+ dias' }, { v: '60', t: '60+ dias' }, { v: '90', t: '90+ dias' }])));
 
       const infoEl = el('div', { class: 'sub mt8' });
       const listaEl = el('div', { class: 'col gap8 mt8' });
       wrap.appendChild(infoEl); wrap.appendChild(listaEl);
       wrap.appendChild(el('button', {
         class: 'btn big w100 mt16', onclick: () => { m.fechar(); nav('hoje'); }
-      }, '✓ Concluir'));
+      }, rot('check', 'Concluir')));
 
       function renderLista() {
         const q = f.busca.trim().toLowerCase();
@@ -466,7 +468,7 @@
           listaEl.appendChild(el('div', { class: 'card-visita st-' + st.k },
             el('div', { onclick: () => fichaCliente(c.id) },
               el('strong', null, el('span', { class: 'st-tag ' + st.k }), marcaAlerta(c), c.nome),
-              el('div', { class: 'sub' }, st.dot + ' ' + st.rot),
+              el('div', { class: 'sub' }, farol(st.k), st.rot),
               el('div', { class: 'sub' }, [c.cidade, c.uf].filter(Boolean).join(' - ') +
                 ' · ' + (c.regiao || C.regiaoDoCliente(c) || 'sem região')),
               el('div', { class: 'sub' }, 'Classe ' + (c.classe || 'A') +
@@ -478,7 +480,7 @@
                 toast(c.nome + ' entrou na rota de ' + diaRota + '.');
                 render();
               }
-            }, '➕ Adicionar à rota')));
+            }, rot('mais', 'Adicionar à rota'))));
         });
         if (!cls.length) listaEl.appendChild(el('p', { class: 'vazio' }, 'Nenhum cliente com esses filtros.'));
         else if (cls.length > 80) listaEl.appendChild(el('p', { class: 'sub' }, 'Mostrando os 80 primeiros — use os filtros para refinar.'));
@@ -491,10 +493,10 @@
   function dialogoVisita(c, rep) {
     const dv = modal(el('div', { class: 'col gap8' },
       el('p', { class: 'sub' }, c.nome),
-      el('button', { class: 'btn big', onclick: () => { dv.fechar(); window.NSPedido.novo(c); } }, '🧾 Novo pedido'),
-      el('button', { class: 'btn btn-sec big', onclick: () => { dv.fechar(); semPedido(c, rep); } }, '✅ Sem pedido'),
-      el('button', { class: 'btn btn-sec big', onclick: () => { dv.fechar(); naoVisitei(c); } }, '⏭ Não visitei')),
-      { titulo: '✔ Registrar visita' });
+      el('button', { class: 'btn big', onclick: () => { dv.fechar(); window.NSPedido.novo(c); } }, rot('recibo', 'Novo pedido')),
+      el('button', { class: 'btn btn-sec big', onclick: () => { dv.fechar(); semPedido(c, rep); } }, rot('checkCirculo', 'Sem pedido')),
+      el('button', { class: 'btn btn-sec big', onclick: () => { dv.fechar(); naoVisitei(c); } }, rot('pular', 'Não visitei'))),
+      { titulo: 'Registrar visita' });
   }
 
   const MOTIVOS_SEM_PEDIDO = [
@@ -536,7 +538,7 @@
           toast('Visita registrada sem pedido (' + motivo + ').');
           nav('hoje');
         }
-      }, '💾 Salvar visita')), { titulo: '✅ Sem pedido' });
+      }, rot('salvar', 'Salvar visita'))), { titulo: 'Sem pedido' });
   }
 
   function naoVisitei(c) {
@@ -602,16 +604,16 @@
   }
 
   // ================= VIEW: CLIENTES (farol de prazo) =================
-  // 🟢 dentro do prazo · 🟡 vence em até X dias · 🔴 visita atrasada · ⚪ sem visita registrada
+  // verde dentro do prazo · amarelo vence em até X dias · vermelho atrasada · cinza sem registro
   let filtroClientes = 'todos';
 
   function statusCliente(c, hoje, avisoDias) {
     if (!c.proxima_visita_prevista)
-      return { k: 'cinza', dot: '⚪', rot: 'sem visita registrada', ordem: 3, sub: 9e9 };
+      return { k: 'cinza', rot: 'sem visita registrada', ordem: 3, sub: 9e9 };
     const dif = Math.round((new Date(c.proxima_visita_prevista) - new Date(hoje)) / 86400000);
-    if (dif < 0) return { k: 'vermelho', dot: '🔴', rot: (-dif) + 'd atrasado', ordem: 0, sub: dif };
-    if (dif <= avisoDias) return { k: 'amarelo', dot: '🟡', rot: 'vence em ' + dif + 'd', ordem: 1, sub: dif };
-    return { k: 'verde', dot: '🟢', rot: 'em dia · próxima ' + dataBR(c.proxima_visita_prevista), ordem: 2, sub: dif };
+    if (dif < 0) return { k: 'vermelho', rot: (-dif) + 'd atrasado', ordem: 0, sub: dif };
+    if (dif <= avisoDias) return { k: 'amarelo', rot: 'vence em ' + dif + 'd', ordem: 1, sub: dif };
+    return { k: 'verde', rot: 'em dia · próxima ' + dataBR(c.proxima_visita_prevista), ordem: 2, sub: dif };
   }
 
   function vClientes(view) {
@@ -640,13 +642,13 @@
       todos.forEach(({ st }) => cont[st.k]++);
 
       chipsEl.innerHTML = '';
-      [['todos', 'Todos ' + cont.todos], ['vermelho', '🔴 Atrasados ' + cont.vermelho],
-       ['amarelo', '🟡 Vencendo ' + cont.amarelo], ['verde', '🟢 Em dia ' + cont.verde],
-       ['cinza', '⚪ Sem registro ' + cont.cinza]].forEach(([k, rot]) => {
+      [['todos', null, 'Todos ' + cont.todos], ['vermelho', 'vermelho', 'Atrasados ' + cont.vermelho],
+       ['amarelo', 'amarelo', 'Vencendo ' + cont.amarelo], ['verde', 'verde', 'Em dia ' + cont.verde],
+       ['cinza', 'cinza', 'Sem registro ' + cont.cinza]].forEach(([k, cor, rotulo]) => {
         chipsEl.appendChild(el('button', {
           class: 'chip' + (filtroClientes === k ? ' ativo' : ''),
           onclick: () => { filtroClientes = k; render(); }
-        }, rot));
+        }, cor ? farol(cor) : null, rotulo));
       });
 
       // urgência primeiro: atrasados (mais atrasado no topo) → vencendo → em dia → sem registro
@@ -660,7 +662,7 @@
       for (const { c, st } of vis) {
         lista.appendChild(el('button', { class: 'item-lista st-' + st.k, onclick: () => fichaCliente(c.id) },
           el('div', { class: 'row space w100' },
-            el('div', { class: 'row gap8' }, el('span', { class: 'st-dot' }, st.dot), el('strong', null, c.nome)),
+            el('div', { class: 'row gap8' }, farol(st.k), el('strong', null, c.nome)),
             el('span', { class: 'badge ' + (st.k === 'vermelho' ? 'erro' : st.k === 'amarelo' ? 'aviso' : st.k === 'verde' ? 'ok' : '') },
               st.k === 'verde' ? 'em dia' : st.k === 'cinza' ? 'sem registro' : st.rot)),
           el('span', { class: 'sub' }, 'Classe ' + (c.classe || 'B') + ' · ' +
@@ -721,9 +723,9 @@
         ' · Tabela: ' + (C.tabelaPermitida(c) === 'ambas'
           ? 'Simples ou Lucro Presumido' : 'somente ' + C.NOME_TABELA[C.tabelaPermitida(c)])),
       el('div', { class: 'row gap8 mt8' },
-        el('button', { class: 'btn-mini', onclick: () => abrirGPS(c) }, '🗺 GPS (' + c.geocoding_status + ')'),
-        el('button', { class: 'btn-mini', onclick: () => window.NSPedido.novo(c) }, '🧾 Novo pedido'),
-        el('button', { class: 'btn-mini', onclick: () => editarCliente(c.id) }, '✏ Editar')),
+        el('button', { class: 'btn-mini', onclick: () => abrirGPS(c) }, rot('mapa', 'GPS (' + c.geocoding_status + ')')),
+        el('button', { class: 'btn-mini', onclick: () => window.NSPedido.novo(c) }, rot('recibo', 'Novo pedido')),
+        el('button', { class: 'btn-mini', onclick: () => editarCliente(c.id) }, rot('lapis', 'Editar'))),
       // material deixado no cliente (display/mostruário) — vira relatório
       el('div', { class: 'row gap8 mt8' },
         el('button', {
@@ -733,10 +735,10 @@
             DB.update('clientes', c.id, { display_no_cliente: novo });
             c.display_no_cliente = novo;
             e.currentTarget.classList.toggle('classe-ativa', novo);
-            e.currentTarget.textContent = novo ? '🪧 Display no cliente: SIM' : '🪧 Display no cliente: não';
+            e.currentTarget.replaceChildren(ico('display'), novo ? 'Display no cliente: SIM' : 'Display no cliente: não');
             toast(novo ? 'Marcado: este cliente está com display.' : 'Desmarcado: display recolhido.');
           }
-        }, c.display_no_cliente ? '🪧 Display no cliente: SIM' : '🪧 Display no cliente: não'),
+        }, ico('display'), c.display_no_cliente ? 'Display no cliente: SIM' : 'Display no cliente: não'),
         (!DB.all('visitas').some(v => v.cliente_id === c.id && v.data_visita === hojeISO() && v.realizada))
           ? el('button', {
             class: 'btn-mini', onclick: (e) => {
@@ -746,10 +748,10 @@
               });
               recalcularCicloCliente(c.id);
               e.currentTarget.remove();
-              toast('✔ Visita de hoje registrada (conta como fora da rota se não era o dia dele).');
+              toast('Visita de hoje registrada (conta como fora da rota se não era o dia dele).');
             }
-          }, '✔ Registrar visita hoje') : null),
-      c.material_no_cliente ? el('div', { class: 'sub mt4' }, '📦 Material anotado: ' + c.material_no_cliente) : null,
+          }, rot('check', 'Registrar visita hoje')) : null),
+      c.material_no_cliente ? el('div', { class: 'sub mt4 row gap8' }, ico('caixa', 'ic-sm'), 'Material anotado: ' + c.material_no_cliente) : null,
       el('div', { class: 'row gap8 mt8' },
         el('span', { class: 'sub' }, 'Classe:'),
         ...['A', 'B', 'C'].map(cl => el('button', {
@@ -761,12 +763,12 @@
             toast(`Classe ${cl}: visita a cada ${freq} dias desde a última visita.`);
           }
         }, cl + ' · ' + freqDaClasse(cl) + 'd')),
-        el('span', { class: 'badge' }, '📍 ' + (c.regiao || C.regiaoDoCliente(c) || 'sem região'))),
+        el('span', { class: 'badge' }, ico('pin', 'ic-sm'), c.regiao || C.regiaoDoCliente(c) || 'sem região')),
 
       el('h4', { class: 'mt12' }, 'Ciclo de visitas'),
       el('div', { class: 'sub' },
         `A cada ${c.frequencia_dias || 49} dias · última: ${dataBR(c.ultima_visita_em)} · próxima: ${dataBR(c.proxima_visita_prevista)}` +
-        (dif != null ? (dif < 0 ? ` · ⚠ ${-dif}d atrasado` : ` · vence em ${dif}d`) : '')),
+        (dif != null ? (dif < 0 ? ` · ${-dif}d atrasado` : ` · vence em ${dif}d`) : '')),
       el('label', { class: 'row gap8 mt4 sub' },
         el('input', {
           type: 'checkbox', checked: c.frequencia_auto !== false ? '' : null,
@@ -774,7 +776,7 @@
         }), 'Ajuste automático de frequência'),
 
       sug ? el('div', { class: 'sugestao mt8' },
-        el('span', null, `💡 ${sug.motivo} — ${sug.tipo} ciclo para ${sug.para} dias?`),
+        el('span', { class: 'row gap8' }, ico('lampada', 'ic-sm'), `${sug.motivo} — ${sug.tipo} ciclo para ${sug.para} dias?`),
         el('button', {
           class: 'btn-mini', onclick: (e) => {
             DB.update('clientes', c.id, { frequencia_dias: sug.para });
@@ -786,9 +788,9 @@
       el('h4', { class: 'mt12' }, 'Linhas que trabalha (toque para marcar)'),
       chips,
       upsell.length ? el('div', { class: 'sugestao mt8' },
-        el('span', null, '🎯 Upsell: ainda não trabalha ' + upsell.join(', '))) : null,
+        el('span', { class: 'row gap8' }, ico('alvo', 'ic-sm'), 'Upsell: ainda não trabalha ' + upsell.join(', '))) : null,
 
-      el('h4', { class: 'mt12' }, '📝 Observações internas'),
+      el('h4', { class: 'mt12' }, 'Observações internas'),
       el('p', { class: 'sub' }, 'Só a equipe vê — nunca sai no talão nem no PDF.'),
       (() => {
         const caixa = el('div', { class: 'col gap4 mt4' });
@@ -799,20 +801,20 @@
             caixa.appendChild(el('div', { class: 'hist-linha' },
               el('span', null, dataBR((n.criado_em || '').slice(0, 10)) + (n.autor ? ' · ' + n.autor : '') + ' — ' + n.texto),
               el('button', {
-                class: 'btn-icon', onclick: async () => {
+                class: 'btn-icon', 'aria-label': 'Excluir observação', onclick: async () => {
                   if (await confirmar('Excluir esta observação?')) { DB.remove('cliente_notas', n.id); desenhar(); }
                 }
-              }, '🗑')));
+              }, ico('lixeira'))));
           }
           if (c.observacoes) caixa.appendChild(el('div', { class: 'hist-linha apagado' },
-            el('span', null, '📄 ' + c.observacoes)));
+            el('span', null, c.observacoes)));
           if (!caixa.children.length) caixa.appendChild(el('p', { class: 'vazio' }, 'Nenhuma observação ainda.'));
         };
         desenhar();
         return el('div', null, caixa,
           el('div', { class: 'row gap8 mt8' }, inp,
             el('button', {
-              class: 'btn', onclick: () => {
+              class: 'btn', 'aria-label': 'Adicionar observação', onclick: () => {
                 const t = inp.value.trim();
                 if (!t) return;
                 DB.insert('cliente_notas', {
@@ -820,7 +822,7 @@
                 });
                 inp.value = ''; desenhar(); toast('Observação salva.');
               }
-            }, '➕')));
+            }, ico('mais'))));
       })(),
 
       el('h4', { class: 'mt12' }, 'Histórico'),
@@ -829,12 +831,12 @@
           const ped = v.pedido_id ? DB.byId('pedidos', v.pedido_id) : null;
           return el('div', { class: 'hist-linha' + (v.realizada ? '' : ' apagado') },
             el('span', null, dataBR(v.data_visita) + ' · ' + (v.realizada
-              ? (v.fez_pedido ? '🧾 pedido ' + C.fmtMoney(Number(v.valor_pedido)) +
+              ? (v.fez_pedido ? 'pedido ' + C.fmtMoney(Number(v.valor_pedido)) +
                 (v.comissao_pct ? ` (${v.comissao_pct}%)` : '') +
                 (ped && (Number(ped.total_unid_dev_display) + Number(ped.total_unid_dev_quebrada)) > 0
                   ? ` · dev ${ped.total_unid_dev_display}+${ped.total_unid_dev_quebrada}q` : '')
                 : 'visita sem pedido')
-              : '✖ não realizada (' + (v.motivo_falta || '') + ')')),
+              : 'não realizada (' + (v.motivo_falta || '') + ')')),
             el('div', { class: 'row gap4' },
               ped ? el('button', { class: 'btn-link', onclick: () => window.NSPedido.abrir(ped.id) }, 'ver') : null,
               el('button', {
@@ -847,7 +849,7 @@
                   document.querySelector('.ns-overlay') && document.querySelector('.ns-overlay').remove();
                   fichaCliente(id);
                 }
-              }, '🗑')));
+              }, ico('lixeira'))));
         }),
         !visitas.length ? el('p', { class: 'vazio' }, 'Sem visitas registradas.') : null)
     ), { titulo: c.nome });
@@ -882,10 +884,10 @@
         const cli = DB.byId('clientes', p.cliente_id) || {};
         lista.appendChild(el('button', { class: 'item-lista', onclick: () => window.NSPedido.abrir(p.id) },
           el('div', { class: 'row space w100' },
-            el('strong', null, 'Nº ' + (p.numero || '⏳') + ' · ' + (cli.nome || '—')),
+            el('strong', null, 'Nº ' + (p.numero || '—') + ' · ' + (cli.nome || '—')),
             el('strong', null, C.fmtMoney(Number(p.total_valor)))),
           el('span', { class: 'sub' }, dataBR(p.data_pedido) + ' · ' + p.status +
-            (p.assinatura ? ' · ✍ ' + (p.assinante_nome || 'assinado') : '') +
+            (p.assinatura ? ' · assinado por ' + (p.assinante_nome || '—') : '') +
             ` · ${p.total_unid_vendidas} un vendidas`)));
       }
       if (!peds.length) lista.appendChild(el('p', { class: 'vazio' }, 'Nenhum pedido.'));
@@ -918,8 +920,8 @@
     const alertas = alertasCiclo(repId);
     const custoRealKm = kmLanc > 0 ? totDesp / kmLanc : null;
 
-    const kpi = (rot, val, cls) => el('div', { class: 'kpi ' + (cls || '') },
-      el('span', { class: 'kpi-rot' }, rot), el('strong', { class: 'kpi-val' }, val));
+    const kpi = (rotulo, val, cls) => el('div', { class: 'kpi ' + (cls || '') },
+      el('span', { class: 'kpi-rot' }, rotulo), el('strong', { class: 'kpi-val' }, val));
 
     view.appendChild(el('h2', null, 'Dashboard · ' + mes.split('-').reverse().join('/')));
     view.appendChild(el('div', { class: 'kpis mt8' },
@@ -960,12 +962,12 @@
     const alertasEl = el('div', { class: 'col gap4 mt8' });
     alertas.atrasados.slice(0, 20).forEach(a => alertasEl.appendChild(
       el('button', { class: 'item-lista compacto', onclick: () => fichaCliente(a.c.id) },
-        el('span', null, '🔴 ' + a.c.nome), el('span', { class: 'sub' }, a.dias + 'd atrasado'))));
+        el('span', { class: 'row gap8' }, farol('vermelho'), a.c.nome), el('span', { class: 'sub' }, a.dias + 'd atrasado'))));
     alertas.vencendo.slice(0, 20).forEach(a => alertasEl.appendChild(
       el('button', { class: 'item-lista compacto', onclick: () => fichaCliente(a.c.id) },
-        el('span', null, '🟡 ' + a.c.nome), el('span', { class: 'sub' }, 'vence em ' + a.dias + 'd'))));
+        el('span', { class: 'row gap8' }, farol('amarelo'), a.c.nome), el('span', { class: 'sub' }, 'vence em ' + a.dias + 'd'))));
     if (!alertas.atrasados.length && !alertas.vencendo.length)
-      alertasEl.appendChild(el('p', { class: 'vazio' }, 'Nenhum alerta. 👌'));
+      alertasEl.appendChild(el('p', { class: 'vazio' }, 'Nenhum alerta.'));
     view.appendChild(alertasEl);
   }
 
@@ -973,17 +975,20 @@
   function vMais(view) {
     const s = sessao();
     view.appendChild(el('h2', null, 'Mais'));
-    const item = (rot, fn) => el('button', { class: 'item-lista mt8', onclick: fn }, el('strong', null, rot));
-    view.appendChild(item('📊 Relatórios — venda do dia, metas e redes', telaRelatorios));
-    view.appendChild(item('💰 Financeiro — comissões a receber e despesas', telaFinanceiro));
-    view.appendChild(item('📍 Geocodificar clientes', telaGeocode));
-    view.appendChild(item('🎨 Aparência (cores do app)', telaAparencia));
-    view.appendChild(item('👥 Clientes (cadastrar, editar, excluir, importar/exportar)', telaAdminClientes));
+    const item = (icone, titulo, desc, fn) => el('button', { class: 'item-menu mt8', onclick: fn },
+      ico(icone, 'ic-lg'),
+      el('span', { class: 'col' }, el('strong', null, titulo), desc ? el('span', { class: 'sub' }, desc) : null),
+      ico('setaDir', 'ic-sm'));
+    view.appendChild(item('grafico', 'Relatórios', 'Venda do dia, metas e redes', telaRelatorios));
+    view.appendChild(item('dinheiro', 'Financeiro', 'Comissões a receber e despesas', telaFinanceiro));
+    view.appendChild(item('pin', 'Geocodificar clientes', 'Localizar endereços no mapa', telaGeocode));
+    view.appendChild(item('paleta', 'Aparência', 'Cores do app', telaAparencia));
+    view.appendChild(item('pessoas', 'Clientes', 'Cadastrar, editar, excluir, importar/exportar', telaAdminClientes));
     if (s.papel === 'gestor') {
       view.appendChild(el('h3', { class: 'mt16' }, 'Administração'));
-      view.appendChild(item('💍 Produtos e preços', telaAdminProdutos));
-      view.appendChild(item('🧑‍💼 Vendedores', telaAdminVendedores));
-      view.appendChild(item('⚙ Configurações', telaAdminConfig));
+      view.appendChild(item('joia', 'Produtos e preços', 'Catálogo e tabelas', telaAdminProdutos));
+      view.appendChild(item('usuario', 'Vendedores', 'Equipe e comissões', telaAdminVendedores));
+      view.appendChild(item('ajustes', 'Configurações', 'Chaves, ciclo e textos', telaAdminConfig));
     }
     view.appendChild(el('button', { class: 'btn-link mt16', onclick: sair }, 'Sair (' + s.eu.email + ')'));
     view.appendChild(el('p', { class: 'sub mt8' }, 'NEW STAR — App do Vendedor · offline-first · v1'));
@@ -995,7 +1000,7 @@
     const repId = s.consolidado ? null : s.rep.id;
     const doRep = (r) => !repId || r.representante_id === repId;
     const wrap = el('div');
-    const m = modal(wrap, { titulo: '📊 Relatórios' + (s.consolidado ? ' — todos os vendedores' : ' — ' + s.rep.nome), full: true });
+    const m = modal(wrap, { titulo: 'Relatórios' + (s.consolidado ? ' — todos os vendedores' : ' — ' + s.rep.nome), full: true });
     render();
 
     function render() {
@@ -1027,7 +1032,7 @@
           Number(v.comissao_pct) === 15 && Number(v.comissao_valor) > 0)
         .map(v => v.cliente_id)).size;
 
-      wrap.appendChild(el('h3', null, '📅 Hoje — ' + dataBR(hoje)));
+      wrap.appendChild(el('h3', null, 'Hoje — ' + dataBR(hoje)));
       wrap.appendChild(el('div', { class: 'total-bar mt4' },
         el('span', null, pedsHoje.length + ' pedido(s) hoje'),
         el('strong', null, C.fmtMoney(vendHoje))));
@@ -1046,7 +1051,7 @@
       const pedsAno = peds.filter(p => (p.data_pedido || '').slice(0, 4) === hoje.slice(0, 4));
       const vendAno = pedsAno.reduce((t, p) => t + Number(p.total_valor || 0), 0);
 
-      wrap.appendChild(el('h3', { class: 'mt16' }, '🎯 Meta do mês — ' + rotuloMes(mes)));
+      wrap.appendChild(el('h3', { class: 'mt16' }, 'Meta do mês — ' + rotuloMes(mes)));
       if (metaMes > 0) {
         wrap.appendChild(el('div', { class: 'progresso mt4' },
           el('div', { class: 'progresso-info' },
@@ -1055,12 +1060,12 @@
         wrap.appendChild(el('div', { class: 'sub mt4' },
           `${mt.uteisDecorridos} de ${mt.uteisTotal} dias úteis · ritmo de ${C.fmtMoney(mt.ritmoDia)}/dia útil`));
         wrap.appendChild(el('div', { class: (mt.projecaoPct >= 100 ? 'sugestao' : 'aviso') + ' mt8' },
-          `📈 Nesse ritmo o mês fecha em ${C.fmtMoney(mt.projecao)} — ${mt.projecaoPct}% da meta.`));
+          `Nesse ritmo o mês fecha em ${C.fmtMoney(mt.projecao)} — ${mt.projecaoPct}% da meta.`));
       } else {
         wrap.appendChild(el('p', { class: 'sub mt4' }, 'Nenhuma meta cadastrada para o mês.'));
       }
       // meta do ano
-      wrap.appendChild(el('h3', { class: 'mt16' }, '🏆 Meta do ano — ' + hoje.slice(0, 4)));
+      wrap.appendChild(el('h3', { class: 'mt16' }, 'Meta do ano — ' + hoje.slice(0, 4)));
       if (metaAno > 0) {
         const pctAno = C.round2(vendAno / metaAno * 100);
         // ritmo pelos meses decorridos (mês atual conta proporcional aos dias úteis)
@@ -1071,14 +1076,14 @@
             `${C.fmtMoney(vendAno)} de ${C.fmtMoney(metaAno)} · ${pctAno}% da meta do ano`),
           el('div', { class: 'progresso-barra' }, el('div', { class: 'progresso-fill', style: 'width:' + Math.min(100, pctAno) + '%' }))));
         wrap.appendChild(el('div', { class: (projAno >= metaAno ? 'sugestao' : 'aviso') + ' mt8' },
-          `📈 Nesse ritmo o ano fecha em ${C.fmtMoney(projAno)} — ${metaAno > 0 ? C.round2(projAno / metaAno * 100) : 0}% da meta.`));
+          `Nesse ritmo o ano fecha em ${C.fmtMoney(projAno)} — ${metaAno > 0 ? C.round2(projAno / metaAno * 100) : 0}% da meta.`));
       } else {
         wrap.appendChild(el('p', { class: 'sub mt4' },
           C.fmtMoney(vendAno) + ' vendidos no ano. Nenhuma meta anual cadastrada.'));
       }
 
       // meta de novos clientes (vendas a 15% — interessante para o vendedor)
-      wrap.appendChild(el('h3', { class: 'mt16' }, '🆕 Novos clientes no mês (comissão 15%)'));
+      wrap.appendChild(el('h3', { class: 'mt16' }, 'Novos clientes no mês (comissão 15%)'));
       if (metaNovos > 0) {
         const pctNv = Math.round(novosMes / metaNovos * 100);
         const projNv = Math.round(novosMes / mt.uteisDecorridos * mt.uteisTotal);
@@ -1086,7 +1091,7 @@
           el('div', { class: 'progresso-info' }, `${novosMes} de ${metaNovos} novos clientes · ${pctNv}%`),
           el('div', { class: 'progresso-barra' }, el('div', { class: 'progresso-fill', style: 'width:' + Math.min(100, pctNv) + '%' }))));
         wrap.appendChild(el('div', { class: (projNv >= metaNovos ? 'sugestao' : 'aviso') + ' mt8' },
-          `📈 Nesse ritmo o mês fecha com ~${projNv} novo(s) cliente(s).`));
+          `Nesse ritmo o mês fecha com ~${projNv} novo(s) cliente(s).`));
       } else {
         wrap.appendChild(el('p', { class: 'sub mt4' },
           novosMes + ' novo(s) cliente(s) este mês. Nenhuma meta de novos clientes cadastrada.'));
@@ -1105,11 +1110,11 @@
               DB.upsertConfig('meta_novos_clientes', Number(inMetaNovos.value) || 0);
               toast('Metas salvas!'); render();
             }
-          }, '💾 Salvar metas')));
+          }, rot('salvar', 'Salvar metas'))));
       }
 
       // por rede (mês)
-      wrap.appendChild(el('h3', { class: 'mt16' }, '🏪 Por rede — ' + rotuloMes(mes)));
+      wrap.appendChild(el('h3', { class: 'mt16' }, 'Por rede — ' + rotuloMes(mes)));
       const clientesAtivos = DB.all('clientes').filter(doRep).filter(c => c.status !== 'inativo');
       const porRede = {};
       for (const c of clientesAtivos)
@@ -1129,14 +1134,14 @@
 
       // display / material deixado
       const comDisplay = clientesAtivos.filter(c => c.display_no_cliente);
-      wrap.appendChild(el('h3', { class: 'mt16' }, '🪧 Display/material nos clientes (' + comDisplay.length + ')'));
+      wrap.appendChild(el('h3', { class: 'mt16' }, 'Display/material nos clientes (' + comDisplay.length + ')'));
       if (comDisplay.length) {
         const listaEl = el('div', { class: 'col gap8 mt8' });
         comDisplay.slice(0, 30).forEach(c => listaEl.appendChild(el('button', {
           class: 'item-lista', onclick: () => fichaCliente(c.id)
         }, el('strong', null, c.nome),
           el('span', { class: 'sub' }, [c.cidade, c.uf].filter(Boolean).join(' - ') +
-            (c.material_no_cliente ? ' · 📦 ' + c.material_no_cliente : '')))));
+            (c.material_no_cliente ? ' · ' + c.material_no_cliente : '')))));
         wrap.appendChild(listaEl);
         if (comDisplay.length > 30) wrap.appendChild(el('p', { class: 'sub mt4' }, '… e mais ' + (comDisplay.length - 30) + '.'));
       } else {
@@ -1159,9 +1164,9 @@
   }
 
   const CATS_FIN = {
-    combustivel: '⛽ Combustível', pedagio: '🛣 Pedágio', hospedagem: '🛏 Hospedagem',
-    alimentacao: '🍽 Alimentação', manutencao: '🔧 Manutenção',
-    cartao_credito: '💳 Cartão de crédito', outro: '📦 Outro'
+    combustivel: 'Combustível', pedagio: 'Pedágio', hospedagem: 'Hospedagem',
+    alimentacao: 'Alimentação', manutencao: 'Manutenção',
+    cartao_credito: 'Cartão de crédito', outro: 'Outro'
   };
 
   function telaFinanceiro() {
@@ -1194,9 +1199,9 @@
 
       // navegação de mês
       wrap.appendChild(el('div', { class: 'row space' },
-        el('button', { class: 'btn-mini', onclick: () => { mesFinOffset--; render(); } }, '←'),
+        el('button', { class: 'btn-mini', onclick: () => { mesFinOffset--; render(); }, 'aria-label': 'Mês anterior' }, ico('setaEsq')),
         el('h3', null, rotuloMes(mes) + (mesFinOffset === 0 ? ' · atual' : '')),
-        el('button', { class: 'btn-mini', onclick: () => { mesFinOffset++; render(); } }, '→')));
+        el('button', { class: 'btn-mini', onclick: () => { mesFinOffset++; render(); }, 'aria-label': 'Próximo mês' }, ico('setaDir'))));
 
       wrap.appendChild(el('div', { class: 'kpis mt8' },
         el('div', { class: 'kpi destaque' },
@@ -1230,7 +1235,7 @@
           return el('div', { class: 'hist-linha' },
             el('span', null, dataBR(v.comissao_recebimento_em) + ' · ' + (cli.nome || '—') +
               ' · venda ' + dataBR(v.data_visita) + ' (' + C.fmtMoney(Number(v.valor_pedido)) + ' × ' + v.comissao_pct + '%)' +
-              (clamed ? ' · 🏷 ' + (cli.rede || 'prazo especial') : '')),
+              (clamed ? ' · ' + (cli.rede || 'prazo especial') : '')),
             el('strong', null, C.fmtMoney(Number(v.comissao_valor))));
         }) : el('p', { class: 'vazio' }, 'Nenhuma comissão prevista para este mês.')));
 
@@ -1244,7 +1249,7 @@
             (d.km_rodado ? ' · ' + d.km_rodado + ' km' : '') + (d.descricao ? ' · ' + d.descricao : '')),
           el('div', { class: 'row gap8' },
             el('strong', null, C.fmtMoney(Number(d.valor))),
-            el('button', { class: 'btn-icon', onclick: async () => { if (await confirmar('Excluir lançamento?')) { DB.remove('despesas', d.id); render(); } } }, '🗑'))))
+            el('button', { class: 'btn-icon', onclick: async () => { if (await confirmar('Excluir lançamento?')) { DB.remove('despesas', d.id); render(); } } }, ico('lixeira')))))
           : el('p', { class: 'vazio' }, 'Sem despesas lançadas neste mês.')));
     }
 
@@ -1291,7 +1296,7 @@
           toast(n + ' cliente(s) geocodificado(s).');
           m.fechar();
         }
-      }, '🌍 Geocodificar pendentes')), { titulo: 'Geocodificação em massa' });
+      }, rot('globo', 'Geocodificar pendentes'))), { titulo: 'Geocodificação em massa' });
   }
 
   // ---------- Admin: Clientes ----------
@@ -1309,8 +1314,8 @@
       const listaEl = el('div', { class: 'col gap4 mt8' });
       wrap.appendChild(el('div', { class: 'row gap8' },
         el('button', { class: 'btn grow', onclick: () => editarCliente(null, render) }, '+ Novo'),
-        el('button', { class: 'btn btn-sec grow', onclick: importarCSV }, '⬆ Importar CSV'),
-        el('button', { class: 'btn btn-sec grow', onclick: exportarCSV }, '⬇ Exportar')));
+        el('button', { class: 'btn btn-sec grow', onclick: importarCSV }, rot('subir', 'Importar CSV')),
+        el('button', { class: 'btn btn-sec grow', onclick: exportarCSV }, rot('descer', 'Exportar'))));
       wrap.appendChild(el('div', { class: 'mt8' }, busca));
       wrap.appendChild(listaEl);
       function lista() {
@@ -1319,7 +1324,7 @@
         DB.all('clientes').filter(c => !q || (c.nome || '').toLowerCase().includes(q) || (c.cidade || '').toLowerCase().includes(q))
           .sort((a, b) => (a.nome || '').localeCompare(b.nome || '')).slice(0, 100)
           .forEach(c => listaEl.appendChild(el('div', { class: 'hist-linha' },
-            el('span', null, (c.status === 'inativo' ? '🚫 ' : '') + c.nome + ' · ' + (c.cidade || '') +
+            el('span', null, c.status === 'inativo' ? ico('bloquear', 'ic-sm') : null, c.nome + ' · ' + (c.cidade || '') +
               ' · S' + (c.semana_padrao || '?') + 'D' + (c.dia_semana_padrao || '?')),
             el('button', { class: 'btn-link', onclick: () => editarCliente(c.id, render) }, 'editar'))));
       }
@@ -1389,9 +1394,9 @@
   function editarCliente(id, aoSalvar) {
     const c = id ? DB.byId('clientes', id) : {};
     const campos = {};
-    const inp = (campo, rot, tipo) => {
-      campos[campo] = el('input', { class: 'input', type: tipo || 'text', value: c[campo] != null ? c[campo] : '', placeholder: rot });
-      return el('label', { class: 'campo' }, el('span', { class: 'sub' }, rot), campos[campo]);
+    const inp = (campo, rotulo, tipo) => {
+      campos[campo] = el('input', { class: 'input', type: tipo || 'text', value: c[campo] != null ? c[campo] : '', placeholder: rotulo });
+      return el('label', { class: 'campo' }, el('span', { class: 'sub' }, rotulo), campos[campo]);
     };
     const repSel = el('select', { class: 'input' },
       DB.all('representantes').filter(r => r.papel === 'vendedor')
@@ -1463,7 +1468,7 @@
           mm.fechar(); toast('Cliente excluído.');
           if (aoSalvar) aoSalvar();
         }
-      }, '🗑 Excluir cliente') : null), { titulo: id ? 'Editar cliente' : 'Novo cliente', full: true });
+      }, rot('lixeira', 'Excluir cliente')) : null), { titulo: id ? 'Editar cliente' : 'Novo cliente', full: true });
   }
 
   // ---------- Admin: Produtos ----------
@@ -1477,19 +1482,19 @@
       wrap.appendChild(el('div', { class: 'col gap4 mt8' },
         DB.all('produtos').sort((a, b) => (a.codigo || '').localeCompare(b.codigo || ''))
           .map(p => el('div', { class: 'hist-linha' },
-            el('span', null, (p.ativo === false ? '🚫 ' : '') + (p.codigo || '') + ' · ' + p.nome +
+            el('span', null, p.ativo === false ? ico('bloquear', 'ic-sm') : null, (p.codigo || '') + ' · ' + p.nome +
               (p.variacao ? ' (' + p.variacao + ')' : '') +
               ` · P=${p.unid_placa_p} G=${p.unid_placa_g} · ` +
-              (p.preco_simples != null ? C.fmtMoney(Number(p.preco_simples)) : '⚠ sem preço') + ' / ' +
-              (p.preco_lucro != null ? C.fmtMoney(Number(p.preco_lucro)) : '⚠ sem preço')),
+              (p.preco_simples != null ? C.fmtMoney(Number(p.preco_simples)) : 'sem preço') + ' / ' +
+              (p.preco_lucro != null ? C.fmtMoney(Number(p.preco_lucro)) : 'sem preço')),
             el('button', { class: 'btn-link', onclick: () => editar(p) }, 'editar')))));
     }
     function editar(p) {
       p = p || {};
       const f = {};
-      const inp = (k, rot, tipo, step) => {
-        f[k] = el('input', { class: 'input', type: tipo || 'text', step: step || null, value: p[k] != null ? p[k] : '', placeholder: rot });
-        return el('label', { class: 'campo' }, el('span', { class: 'sub' }, rot), f[k]);
+      const inp = (k, rotulo, tipo, step) => {
+        f[k] = el('input', { class: 'input', type: tipo || 'text', step: step || null, value: p[k] != null ? p[k] : '', placeholder: rotulo });
+        return el('label', { class: 'campo' }, el('span', { class: 'sub' }, rotulo), f[k]);
       };
       const ativo = el('input', { type: 'checkbox', checked: p.ativo !== false ? '' : null });
       const mm = modal(el('div', { class: 'col gap8' },
@@ -1523,7 +1528,7 @@
             DB.remove('produtos', p.id);
             mm.fechar(); toast('Produto excluído.'); render();
           }
-        }, '🗑 Excluir produto') : null), { titulo: p.id ? 'Editar produto' : 'Novo produto', full: true });
+        }, rot('lixeira', 'Excluir produto')) : null), { titulo: p.id ? 'Editar produto' : 'Novo produto', full: true });
     }
   }
 
@@ -1537,16 +1542,16 @@
       wrap.appendChild(el('button', { class: 'btn w100', onclick: () => editar(null) }, '+ Novo vendedor'));
       wrap.appendChild(el('div', { class: 'col gap4 mt8' },
         DB.all('representantes').map(r => el('div', { class: 'hist-linha' },
-          el('span', null, (r.ativo === false ? '🚫 ' : '') + r.nome + ' (' + r.papel + ') · ' + r.email +
+          el('span', null, r.ativo === false ? ico('bloquear', 'ic-sm') : null, r.nome + ' (' + r.papel + ') · ' + r.email +
             ` · ${r.comissao_pct_novo}%/${r.comissao_pct}% · ${C.fmtMoney(Number(r.custo_km || 0))}/km`),
           el('button', { class: 'btn-link', onclick: () => editar(r) }, 'editar')))));
     }
     function editar(r) {
       r = r || {};
       const f = {};
-      const inp = (k, rot, tipo, step) => {
-        f[k] = el('input', { class: 'input', type: tipo || 'text', step: step || null, value: r[k] != null ? r[k] : '', placeholder: rot });
-        return el('label', { class: 'campo' }, el('span', { class: 'sub' }, rot), f[k]);
+      const inp = (k, rotulo, tipo, step) => {
+        f[k] = el('input', { class: 'input', type: tipo || 'text', step: step || null, value: r[k] != null ? r[k] : '', placeholder: rotulo });
+        return el('label', { class: 'campo' }, el('span', { class: 'sub' }, rotulo), f[k]);
       };
       const papel = el('select', { class: 'input' },
         el('option', { value: 'vendedor', selected: r.papel !== 'gestor' ? '' : null }, 'Vendedor'),
@@ -1569,7 +1574,7 @@
                 toast('Senha resetada.');
               }
             }
-          }, '🔑 Resetar senha') : null,
+          }, rot('chave', 'Resetar senha')) : null,
           el('button', {
             class: 'btn grow', onclick: () => {
               if (!f.nome.value.trim() || !f.email.value.trim()) return toast('Nome e e-mail obrigatórios.', 'erro');
@@ -1617,9 +1622,9 @@
       (DB.config('condicoes_pagamento', []) || []).join('\n'));
     const obsTxt = el('textarea', { class: 'input', rows: '5' }, DB.config('pdf_observacoes', ''));
     const mm = modal(el('div', { class: 'col gap8' },
-      CHAVES.map(([k, rot, tipo]) => {
+      CHAVES.map(([k, rotulo, tipo]) => {
         inputs[k] = el('input', { class: 'input', type: tipo, step: 'any', value: String(DB.config(k, '') ?? '') });
-        return el('label', { class: 'campo' }, el('span', { class: 'sub' }, rot), inputs[k]);
+        return el('label', { class: 'campo' }, el('span', { class: 'sub' }, rotulo), inputs[k]);
       }),
       el('label', { class: 'campo' }, el('span', { class: 'sub' }, 'Condições de pagamento (uma por linha)'), condTxt),
       el('label', { class: 'campo' }, el('span', { class: 'sub' }, 'Observações padrão do PDF/talão'), obsTxt),
@@ -1653,18 +1658,18 @@
     const grid = el('div', { class: 'tema-grid' });
     const m = modal(el('div', null,
       el('p', { class: 'sub mb12' }, 'Escolha a cor de destaque do aplicativo (vale para este aparelho).'),
-      grid), { titulo: '🎨 Aparência' });
-    TEMAS.forEach(([k, rot, cor]) => {
+      grid), { titulo: 'Aparência' });
+    TEMAS.forEach(([k, rotulo, cor]) => {
       grid.appendChild(el('button', {
         class: 'tema-opt' + ((localStorage.getItem('ns_tema') || 'ouro') === k ? ' ativo' : ''),
         onclick: (e) => {
           aplicarTema(k);
           grid.querySelectorAll('.tema-opt').forEach(b => b.classList.remove('ativo'));
           e.currentTarget.classList.add('ativo');
-          toast('Tema ' + rot + ' aplicado ✨');
+          toast('Tema ' + rotulo + ' aplicado.');
           montarTopbar();
         }
-      }, el('span', { class: 'tema-bola', style: 'background:radial-gradient(circle at 32% 26%,#fff, ' + cor + ' 55%, #000c 140%)' }), rot));
+      }, el('span', { class: 'tema-bola', style: 'background:radial-gradient(circle at 32% 26%,#fff, ' + cor + ' 55%, #000c 140%)' }), rotulo));
     });
   }
 
@@ -1689,7 +1694,7 @@
       navigator.serviceWorker.register('sw.js').then(r => { try { r.update(); } catch (e) {} }).catch(() => {});
     }
     if (!DB.configured()) {
-      $('#view').innerHTML = '<div class="login-box"><h1>⚙ Configuração</h1>' +
+      $('#view').innerHTML = '<div class="login-box"><h1>Configuração</h1>' +
         '<p class="sub">Preencha FIREBASE_PROJECT_ID e FIREBASE_API_KEY no bloco NS_CONFIG do index.html (projeto Firebase com Firestore ativado). Depois use "Primeira instalação" na tela de login para carregar os 255 clientes, o catálogo e os usuários.</p></div>';
       $('#topbar').style.display = 'none'; $('#tabs').style.display = 'none'; $('#fab').style.display = 'none';
       return;

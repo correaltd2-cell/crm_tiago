@@ -3,7 +3,7 @@
  * Conferência → Assinatura → Concluído → PDF/Compartilhar/Imprimir */
 (function () {
   'use strict';
-  const { $, el, escH, toast, modal, confirmar, dataBR, hojeISO } = window.NSUI;
+  const { $, el, escH, toast, modal, confirmar, dataBR, hojeISO, ico, icoHTML, rot } = window.NSUI;
   const C = window.NSCalc, DB = window.NSDB;
 
   const precoDe = (p, tabela) => tabela === 'lucro' ? p.preco_lucro : p.preco_simples;
@@ -11,7 +11,7 @@
 
   function sessao() { return window.NSApp.sessao(); }
 
-  // ⚠ = cliente com pendência aberta ou observação interna anotada
+  // triângulo de alerta = cliente com pendência aberta ou observação interna anotada
   function temAlertaCliente(clienteId) {
     return DB.all('pendencias').some(p => p.cliente_id === clienteId && !p.resolvida_em) ||
       DB.all('cliente_notas').some(n => n.cliente_id === clienteId);
@@ -37,7 +37,7 @@
       itens: [], obs: '', assinatura: null
     };
     const m = modal(el('div'), {
-      titulo: editando ? '✏ Editar Pedido nº ' + (pedidoExistente.numero || '') : 'Novo Pedido',
+      titulo: editando ? 'Editar Pedido nº ' + (pedidoExistente.numero || '') : 'Novo Pedido',
       full: true, bloqueado: true
     });
     if (editando) passoItens(); else passoCliente();
@@ -64,7 +64,7 @@
           lista.appendChild(el('button', {
             class: 'item-lista', onclick: () => { ped.cliente_id = c.id; passoTabela(); }
           },
-            el('strong', null, (temAlertaCliente(c.id) ? '⚠ ' : '') + c.nome),
+            el('strong', null, temAlertaCliente(c.id) ? ico('alerta', 'ic-aviso') : null, c.nome),
             el('span', { class: 'sub' }, [c.cidade, c.uf].filter(Boolean).join(' - ') +
               (c.cnpj_cpf ? ' · ' + C.fmtCNPJ(c.cnpj_cpf) : '') + (c.rede ? ' · ' + c.rede : ''))));
         }
@@ -96,7 +96,7 @@
             ? btn('simples', 'Tabela Simples', 'Preços da tabela Simples para todos os itens') : null,
           permitidas.includes('lucro')
             ? btn('lucro', 'Tabela Lucro Presumido', 'Preços Lucro Presumido para todos os itens') : null),
-        el('button', { class: 'btn-link mt8', onclick: () => { ped.cliente_id = null; passoCliente(); } }, '← trocar cliente')));
+        el('button', { class: 'btn-link mt8', onclick: () => { ped.cliente_id = null; passoCliente(); } }, rot('setaEsq', 'trocar cliente'))));
     }
 
     // ---- Passo 3: itens ----
@@ -112,7 +112,7 @@
           listEl.appendChild(el('div', { class: 'card-item' },
             el('div', { class: 'row space' },
               el('strong', null, (p.codigo ? p.codigo + ' · ' : '') + nomeProd(p)),
-              el('button', { class: 'btn-icon', onclick: () => { ped.itens.splice(idx, 1); render(); } }, '🗑')),
+              el('button', { class: 'btn-icon', onclick: () => { ped.itens.splice(idx, 1); render(); }, 'aria-label': 'Remover produto' }, ico('lixeira'))),
             el('div', { class: 'sub' },
               (it.tamanho === 'AV'
                 ? `Avulso · ${it.unid_colocadas} un`
@@ -120,7 +120,7 @@
               ` · dev.display ${it.dev_display} · quebrada ${it.dev_quebrada}`),
             el('div', { class: 'row space mt4' },
               el('span', null, it.unid_vendidas < 0
-                ? `↩ ${-it.unid_vendidas} recolhidas × ${C.fmtMoney(it.preco_unit)}`
+                ? `${-it.unid_vendidas} recolhidas × ${C.fmtMoney(it.preco_unit)}`
                 : `${it.unid_vendidas} vendidas × ${C.fmtMoney(it.preco_unit)}`),
               el('strong', null, C.fmtMoney(it.valor_total))),
             el('button', { class: 'btn-link', onclick: () => formItem(it, idx) }, 'editar')));
@@ -132,11 +132,11 @@
           el('span', null, `${tot.vendidas} un vendidas`),
           el('strong', null, C.fmtMoney(tot.valor))));
         wrap.appendChild(el('div', { class: 'row gap8 mt12' },
-          el('button', { class: 'btn btn-sec grow', onclick: passoTabela }, '← Voltar'),
+          el('button', { class: 'btn btn-sec grow', onclick: passoTabela }, rot('setaEsq', 'Voltar')),
           el('button', {
             class: 'btn grow', disabled: ped.itens.length ? null : '',
             onclick: passoConferencia
-          }, 'Conferir →')));
+          }, 'Conferir', ico('setaDir'))));
       };
       render();
       corpo(wrap);
@@ -183,9 +183,9 @@
                   }
                 },
                   el('strong', null, (p.codigo ? p.codigo + ' · ' : '') + nomeProd(p)),
-                  el('span', { class: 'sub' }, (semUnid ? '⚠ unidades por placa a cadastrar · '
+                  el('span', { class: 'sub' }, (semUnid ? 'unidades por placa a cadastrar · '
                     : `P=${p.unid_placa_p}un · G=${p.unid_placa_g}un · `) +
-                    (semPreco ? '⚠ preço a cadastrar' : C.fmtMoney(preco)))));
+                    (semPreco ? 'preço a cadastrar' : C.fmtMoney(preco)))));
               });
           }
           rend();
@@ -242,7 +242,7 @@
               `<div class="row space"><span>− Quebradas</span><strong>${item.dev_quebrada}</strong></div>` +
               `<div class="row space destaque"><span>= Vendidas</span><strong>${r.vendidas}</strong></div>` +
               `<div class="row space destaque"><span>${r.vendidas} × ${C.fmtMoney(preco)}</span><strong>${C.fmtMoney(r.valor)}</strong></div>` +
-              (r.vendidas < 0 ? '<div class="aviso">↩ Recolhendo ' + (-r.vendidas) +
+              (r.vendidas < 0 ? '<div class="aviso">' + icoHTML('retorno', 'ic-sm') + ' Recolhendo ' + (-r.vendidas) +
                 ' un — crédito de ' + C.fmtMoney(-r.valor) + ' descontado do total do pedido.</div>' : '');
           }
           atualiza();
@@ -256,7 +256,7 @@
               stepper('Devolvida — Quebrada', 'dev_quebrada', 0)),
             resumo,
             el('div', { class: 'row gap8 mt12' },
-              el('button', { class: 'btn btn-sec grow', onclick: selecionarProduto }, '← Produto'),
+              el('button', { class: 'btn btn-sec grow', onclick: selecionarProduto }, rot('setaEsq', 'Produto')),
               el('button', {
                 class: 'btn grow', onclick: () => {
                   const upp = uppDe();
@@ -307,8 +307,8 @@
       }).join('');
       corpo(el('div', null,
         el('h3', null, 'Conferência'),
-        tot.valor < 0 ? el('div', { class: 'aviso mt4' },
-          '↩ Pedido NEGATIVO — o valor vira CRÉDITO do cliente.') : null,
+        tot.valor < 0 ? el('div', { class: 'aviso mt4' }, ico('retorno', 'ic-sm'),
+          ' Pedido NEGATIVO — o valor vira CRÉDITO do cliente.') : null,
         el('div', { class: 'sub mt4' },
           `${cli.nome} · ${dataBR(ped.data)} · Vendedor: ${rep.nome}` +
           ((rep.contato || rep.telefone) ? ' (' + (rep.contato || rep.telefone) + ')' : '') + ' · ' +
@@ -329,13 +329,13 @@
         cli.condicao_pagamento_padrao ? el('p', { class: 'sub mt4' },
           'Último prazo deste cliente: ' + cli.condicao_pagamento_padrao) : null,
         el('h3', { class: 'mt12' }, 'Material deixado no cliente'),
-        el('label', { class: 'row gap8 mt4' }, chkDisplay, el('span', null, '🪧 Deixei display/mostruário neste cliente')),
+        el('label', { class: 'row gap8 mt4' }, chkDisplay, el('span', null, 'Deixei display/mostruário neste cliente')),
         el('div', { class: 'mt4' }, materialIn),
         el('div', { class: 'mt8' }, obsIn),
         editando ? el('p', { class: 'sub mt8' },
-          '✍ A assinatura já colhida será mantida — as alterações só recalculam valores e comissão.') : null,
+          'A assinatura já colhida será mantida — as alterações só recalculam valores e comissão.') : null,
         el('div', { class: 'row gap8 mt12' },
-          el('button', { class: 'btn btn-sec grow', onclick: () => { guardar(); passoItens(); } }, '← Itens'),
+          el('button', { class: 'btn btn-sec grow', onclick: () => { guardar(); passoItens(); } }, rot('setaEsq', 'Itens')),
           el('button', { class: 'btn grow', onclick: () => {
             guardar();
             if (!ped.condicao_pagamento) {
@@ -343,7 +343,7 @@
               return toast('Escreva a CONDIÇÃO DE PAGAMENTO (prazo) antes de ' + (editando ? 'salvar' : 'assinar') + '.', 'erro');
             }
             if (editando) salvarConcluido(); else passoAssinatura();
-          } }, editando ? '💾 Salvar alterações' : 'Assinar →'))));
+          } }, editando ? rot('salvar', 'Salvar alterações') : rot('setaDir', 'Assinar')))));
 
       function guardar() {
         ped.obs = obsIn.value;
@@ -369,13 +369,13 @@
         el('h3', null, 'Assinatura do cliente'),
         el('p', { class: 'sub' }, 'Informe o nome de quem assina e toque no botão para o cliente assinar em tela cheia.'),
         nomeAssinante,
-        el('button', { class: 'btn big w100 mt12', onclick: abrirTelaCheia }, '✍ Assinar em tela cheia'),
+        el('button', { class: 'btn big w100 mt12', onclick: abrirTelaCheia }, rot('assinatura', 'Assinar em tela cheia')),
         previa, imgPrev,
         el('div', { class: 'row gap8 mt12' },
-          el('button', { class: 'btn btn-sec grow', onclick: passoConferencia }, '← Voltar'),
-          el('button', { class: 'btn grow', onclick: concluir }, '✓ Confirmar e concluir')));
+          el('button', { class: 'btn btn-sec grow', onclick: passoConferencia }, rot('setaEsq', 'Voltar')),
+          el('button', { class: 'btn grow', onclick: concluir }, rot('check', 'Confirmar e concluir'))));
       corpo(cont);
-      if (ped.assinatura) { imgPrev.src = ped.assinatura; imgPrev.style.display = 'block'; previa.textContent = '✍ Assinatura colhida — toque no botão para refazer.'; }
+      if (ped.assinatura) { imgPrev.src = ped.assinatura; imgPrev.style.display = 'block'; previa.textContent = 'Assinatura colhida — toque no botão para refazer.'; }
 
       function abrirTelaCheia() {
         if (!nomeAssinante.value.trim()) {
@@ -398,11 +398,11 @@
                 ped.assinatura = cvF.toDataURL('image/png');
                 ped.assinante_nome = nomeAssinante.value.trim();
                 imgPrev.src = ped.assinatura; imgPrev.style.display = 'block';
-                previa.textContent = '✍ Assinatura colhida — toque no botão para refazer.';
+                previa.textContent = 'Assinatura colhida — toque no botão para refazer.';
                 tela.remove();
                 toast('Assinatura salva. Agora toque em "Confirmar e concluir".');
               }
-            }, '✓ Confirmar assinatura')));
+            }, rot('check', 'Confirmar assinatura'))));
         document.body.appendChild(tela);
         const cx = cvF.getContext('2d');
         const st = [];
@@ -534,7 +534,7 @@
 
       m.fechar();
       toast(editando
-        ? '✏ Pedido atualizado! Novo total ' + C.fmtMoney(tot.valor) + ' · comissão recalculada (' + com.pct + '% = ' + C.fmtMoney(com.valor) + ').'
+        ? 'Pedido atualizado! Novo total ' + C.fmtMoney(tot.valor) + ' · comissão recalculada (' + com.pct + '% = ' + C.fmtMoney(com.valor) + ').'
         : com.valor < 0
           ? 'Pedido concluído com CRÉDITO de ' + C.fmtMoney(Math.abs(tot.valor)) + ' ao cliente (comissão abatida em ' + C.fmtMoney(Math.abs(com.valor)) + ').'
           : 'Pedido concluído! Comissão de ' + com.pct + '% (' + C.fmtMoney(com.valor) + ') registrada.');
@@ -545,7 +545,7 @@
 
     function cabecalhoCliente(cli, p) {
       return el('div', { class: 'chip-cliente' },
-        el('strong', null, (temAlertaCliente(cli.id) ? '⚠ ' : '') + cli.nome),
+        el('strong', null, temAlertaCliente(cli.id) ? ico('alerta', 'ic-aviso') : null, cli.nome),
         el('span', { class: 'sub' }, [cli.cidade, cli.uf].filter(Boolean).join(' - ') +
           (p && p.tabela ? ' · Tabela ' + (p.tabela === 'lucro' ? 'Lucro Presumido' : 'Simples') : '')));
     }
@@ -611,17 +611,17 @@
     const acoes = el('div', { class: 'col gap8 mt12' },
       el('button', { class: 'btn big', onclick: async () => {
         abrirBlob(await gerarPDF(pedidoId), nomeArq);
-      } }, '📄 Visualizar PDF'),
+      } }, rot('documento', 'Visualizar PDF')),
       el('button', { class: 'btn big btn-sec', onclick: async () => {
         const blob = await gerarPDF(pedidoId);
         const file = new File([blob], nomeArq, { type: 'application/pdf' });
         if (navigator.canShare && navigator.canShare({ files: [file] }))
           await navigator.share({ files: [file], title: 'Pedido New Star' }).catch(() => {});
         else { window.NSUI.baixar(blob, nomeArq); toast('PDF baixado (compartilhamento não suportado neste navegador).'); }
-      } }, '📤 Compartilhar PDF'),
+      } }, rot('compartilhar', 'Compartilhar PDF')),
       el('button', { class: 'btn big btn-sec', onclick: async () => {
         imprimirBlob(await gerarPDF(pedidoId));
-      } }, '🖨 Imprimir'),
+      } }, rot('impressora', 'Imprimir')),
       el('button', { class: 'btn big btn-sec', onclick: async () => {
         const blob = await gerarCupom(pedidoId);
         const nomeCupom = 'cupom-' + (p.numero || String(p.id).slice(0, 8)) + '.png';
@@ -632,11 +632,11 @@
         } else {
           abrirBlob(blob, nomeCupom);
         }
-      } }, '🧾 Cupom 58mm (imagem p/ outros apps)'),
+      } }, rot('recibo', 'Cupom 58mm (imagem)')),
       p.status === 'concluido' ? el('button', { class: 'btn big btn-sec', onclick: () => {
         mAbrir.fechar();
         novo(null, p);
-      } }, '✏ Editar pedido (itens, prazo, devoluções)') : null);
+      } }, rot('lapis', 'Editar pedido (itens, prazo, devoluções)')) : null);
 
     const linhas = itens.map(it => {
       const pr = DB.byId('produtos', it.produto_id) || {};
@@ -646,16 +646,16 @@
     }).join('');
 
     const mAbrir = modal(el('div', null,
-      recemConcluido ? el('div', { class: 'sucesso-banner' }, '✅ Pedido concluído e assinado!') : null,
+      recemConcluido ? el('div', { class: 'sucesso-banner' }, ico('checkCirculo'), 'Pedido concluído e assinado!') : null,
       el('div', { class: 'sub' }, `Pedido nº ${p.numero || 'PENDENTE (aguardando sync)'} · ${dataBR(p.data_pedido)} · ` +
-        (Number(p.total_valor) < 0 ? '↩ CRÉDITO · ' : '') +
+        (Number(p.total_valor) < 0 ? 'CRÉDITO · ' : '') +
         `${p.status.toUpperCase()} · Tabela ${p.tabela === 'lucro' ? 'Lucro Presumido' : 'Simples'}` +
         (p.condicao_pagamento ? ' · ' + p.condicao_pagamento : '')),
       (() => {
         const rp = DB.byId('representantes', p.representante_id) || {};
         const fone = rp.contato || rp.telefone || rp.celular || '';
-        return el('div', { class: 'sub mt4' }, '🧑‍💼 Vendedor: ' + (rp.nome || '—') +
-          (fone ? ' · 📞 ' + fone : ' · ⚠ sem telefone no cadastro (Admin → Vendedores)'));
+        return el('div', { class: 'sub mt4' }, ico('usuario', 'ic-sm'), ' Vendedor: ' + (rp.nome || '—') +
+          (fone ? ' · ' + fone : ' · sem telefone no cadastro (Admin → Vendedores)'));
       })(),
       el('h3', { class: 'mt8' }, cli.nome || '—'),
       el('div', { class: 'tabela-scroll mt8', html:
@@ -686,7 +686,7 @@
           toast('Pedido excluído.');
           if (window.NSApp.aoConcluirPedido) window.NSApp.aoConcluirPedido();
         }
-      }, '🗑 Excluir pedido')
+      }, rot('lixeira', 'Excluir pedido'))
     ), { titulo: 'Pedido ' + (p.numero ? 'nº ' + p.numero : '') });
   }
 
