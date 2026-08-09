@@ -1132,7 +1132,9 @@
           el('div', { class: 'progresso-info' },
             `${C.fmtMoney(vendAno)} de ${C.fmtMoney(metaAno)} · ${C.fmtPct(pctAno)} da meta do ano`),
           el('div', { class: 'progresso-barra' }, el('div', { class: 'progresso-fill', style: 'width:' + Math.min(100, pctAno) + '%' }))));
-        wrap.appendChild(el('div', { class: (projAno >= metaAno ? 'sugestao' : 'aviso') + ' mt8' },
+        // a projeção do ano só faz sentido olhando de hoje; num mês passado
+        // ela confundiria (o ano continuou correndo depois daquele mês)
+        if (ehMesAtual) wrap.appendChild(el('div', { class: (projAno >= metaAno ? 'sugestao' : 'aviso') + ' mt8' },
           `Nesse ritmo o ano fecha em ${C.fmtMoney(projAno)} — ${C.fmtPct(metaAno > 0 ? C.round2(projAno / metaAno * 100) : 0)} da meta.`));
       } else {
         wrap.appendChild(el('p', { class: 'sub mt4' },
