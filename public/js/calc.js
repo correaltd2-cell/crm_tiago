@@ -18,6 +18,11 @@
   function fmtMoney(n) {
     return (n == null ? 0 : n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   }
+  // porcentagem no padrão brasileiro: vírgula decimal e no máximo 1 casa (59,45 → 59,5%)
+  function fmtPct(n) {
+    return (Number(n) || 0).toLocaleString('pt-BR',
+      { minimumFractionDigits: 0, maximumFractionDigits: 1 }) + '%';
+  }
 
   // ---------- Talão: cálculo de item ----------
   // unidades colocadas = placas × unidades da placa (P/G)
@@ -440,7 +445,7 @@
   const api = {
     TABELAS_PERMITIDAS, NOME_TABELA, tabelaPermitida, tabelasDoCliente,
     fmtCNPJ,
-    round2, fmtMoney, calcItem, calcTotais, calcComissao, cicloDoDia,
+    round2, fmtMoney, fmtPct, calcItem, calcTotais, calcComissao, cicloDoDia,
     DIAS_SEMANA, normDia, mesmoDia, clienteJaComprou, classeRank,
     haversineKm, matrizHaversine, nearestNeighbor, comprimentoRota, doisOpt,
     otimizarRota, detourInsercao, decidirPernoite, sugestaoFrequencia,

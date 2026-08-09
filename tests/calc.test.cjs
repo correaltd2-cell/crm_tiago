@@ -216,6 +216,13 @@ eq('A antes de B, C e D por último', [{classe:'C'},{classe:'D'},{classe:'A'},{}
   .sort((a,b) => C.classeRank(a) - C.classeRank(b)).map(c => c.classe || 'B').join(''), 'ABBCD');
 eq('sem classe = B', C.classeRank({}), 1);
 
+console.log('\nPorcentagem no padrão brasileiro:');
+eq('vírgula decimal, não ponto', C.fmtPct(59.45), '59,5%');
+eq('inteiro sai sem casa decimal', C.fmtPct(100), '100%');
+eq('uma casa quando precisa', C.fmtPct(12.3), '12,3%');
+eq('zero', C.fmtPct(0), '0%');
+eq('nulo vira zero', C.fmtPct(null), '0%');
+
 console.log('\nTabela de preço permitida por cliente:');
 eq('sem o campo = ambas (padrão)', C.tabelaPermitida({}), 'ambas');
 eq('cliente novo (undefined) = ambas', C.tabelaPermitida(undefined), 'ambas');

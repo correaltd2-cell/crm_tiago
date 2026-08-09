@@ -333,6 +333,45 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   check('relatórios: contador de visitas do dia', rel.includes('atendidos') || rel.includes('Visitas:'));
   check('relatórios: contador de novos clientes (15%)', rel.includes('Novos clientes') && rel.includes('1 novo(s) cliente(s)'));
 
+  // navegação por mês: a meta é POR COMPETÊNCIA (senão cadastrar a meta de agora
+  // reescreveria o histórico e a % dos meses fechados sairia errada)
+  const relModal = page.locator('.ns-overlay').last();
+  const mesAgora = new Date().toISOString().slice(0, 7);
+  const mesPassado = (() => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); return d.toISOString().slice(0, 7); })();
+  check('relatórios: mostra as vendas do mês escolhido', rel.includes('Vendas de'));
+  check('relatórios: mês corrente mostra o bloco de hoje', rel.includes('Hoje —'));
+
+  // metas diferentes em dois meses
+  await page.evaluate((ms) => {
+    window.NSDB.upsertConfig('meta_mes_' + ms[0], 1000);
+    window.NSDB.upsertConfig('meta_mes_' + ms[1], 500);
+  }, [mesAgora, mesPassado]);
+
+  await relModal.locator('button[aria-label="Mês anterior"]').click();
+  await page.waitForTimeout(250);
+  const relAnterior = (await relModal.textContent()).replace(/\u00a0/g, ' ');
+  check('mês anterior: some o bloco "Hoje" e avisa que o mês está fechado',
+    !relAnterior.includes('Hoje —') && relAnterior.includes('Mês fechado'));
+  check('mês anterior: 0 pedidos (não puxa a venda do mês corrente)',
+    relAnterior.includes('0 pedido(s) no mês'));
+  check('mês anterior usa a meta DELE (500), não a de agora',
+    relAnterior.includes('500,00') && !relAnterior.includes('1.000,00'));
+
+  await relModal.locator('button[aria-label="Próximo mês"]').click();
+  await page.waitForTimeout(250);
+  const relVolta = (await relModal.textContent()).replace(/\u00a0/g, ' ');
+  check('mês corrente volta com a meta dele (1.000) e a venda de 594,50',
+    relVolta.includes('1.000,00') && relVolta.includes('594,50') && relVolta.includes('Hoje —'));
+  check('mês corrente: 594,50 de 1.000 = 59,5% da meta (vírgula, padrão BR)',
+    relVolta.includes('59,5%') && !relVolta.includes('59.45'));
+
+  // mês sem meta própria herda o padrão geral (compatível com o que já estava cadastrado)
+  const herda = await page.evaluate(() => {
+    window.NSDB.upsertConfig('meta_mes_valor', 7777);
+    return window.NSDB.config('meta_mes_2019-01', null);
+  });
+  check('mês sem meta própria não tem chave dele (usa o padrão geral)', herda === null);
+
   // rota manual: criar rota do dia, adicionar cliente, registrar visita sem pedido
   await page.locator('.ns-overlay').last().locator('.btn-icon').first().click();
   await page.waitForTimeout(200);

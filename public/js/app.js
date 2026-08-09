@@ -352,7 +352,7 @@
       const feitos = lista.filter(c => visitaDeHoje(c.id)).length;
       const pct = Math.round(feitos / lista.length * 100);
       view.appendChild(el('div', { class: 'progresso mt8' },
-        el('div', { class: 'progresso-info' }, `${feitos} de ${lista.length} visitados · ${pct}%`),
+        el('div', { class: 'progresso-info' }, `${feitos} de ${lista.length} visitados · ${C.fmtPct(pct)}`),
         el('div', { class: 'progresso-barra' }, el('div', { class: 'progresso-fill', style: 'width:' + pct + '%' }))));
     }
 
@@ -995,17 +995,58 @@
   }
 
   // ---------- Relatórios: venda do dia, metas do mês/dia, redes, display ----------
+  // O relatório navega por MÊS (mês atual e anteriores). Cada mês guarda a sua
+  // própria meta — senão, ao cadastrar a meta agora, ela reescreveria o histórico
+  // e a % dos meses já fechados sairia errada.
+  let mesRelOffset = 0;
+
+  // último dia do mês (ISO) — usado como "hoje" de referência num mês já fechado
+  function ultimoDiaISO(mes) {
+    const [a, m] = mes.split('-').map(Number);
+    return mes + '-' + String(new Date(a, m, 0).getDate()).padStart(2, '0');
+  }
+  // meta do período: o valor daquele mês/ano; se nunca foi cadastrado, cai no padrão
+  // geral (que é onde ficavam as metas antes de existir meta por competência)
+  const META_PADRAO = {
+    meta_mes: 'meta_mes_valor', meta_dia: 'meta_dia_valor',
+    meta_ano: 'meta_ano_valor', meta_novos: 'meta_novos_clientes'
+  };
+  function metaDoPeriodo(base, periodo) {
+    const v = DB.config(base + '_' + periodo, null);
+    if (v === null || v === undefined || v === '') return Number(DB.config(META_PADRAO[base], 0)) || 0;
+    return Number(v) || 0;
+  }
+
   function telaRelatorios() {
     const s = sessao();
     const repId = s.consolidado ? null : s.rep.id;
     const doRep = (r) => !repId || r.representante_id === repId;
     const wrap = el('div');
+    mesRelOffset = 0;   // sempre abre no mês corrente
     const m = modal(wrap, { titulo: 'Relatórios' + (s.consolidado ? ' — todos os vendedores' : ' — ' + s.rep.nome), full: true });
     render();
 
     function render() {
       wrap.innerHTML = '';
-      const hoje = hojeISO(), mes = hoje.slice(0, 7);
+      const hoje = hojeISO(), mesAtual = hoje.slice(0, 7);
+      const mes = mesISOoffset(mesRelOffset);
+      const ehMesAtual = mes === mesAtual, futuro = mes > mesAtual;
+      // referência de "onde estamos" no mês: hoje (mês corrente), o último dia
+      // (mês fechado) ou o dia 1 (mês que ainda não começou)
+      const ref = ehMesAtual ? hoje : (futuro ? mes + '-01' : ultimoDiaISO(mes));
+      const ano = mes.slice(0, 4);
+
+      // navegação de mês
+      wrap.appendChild(el('div', { class: 'row space gap8' },
+        el('button', { class: 'btn-mini', 'aria-label': 'Mês anterior',
+          onclick: () => { mesRelOffset--; render(); } }, ico('setaEsq')),
+        el('strong', null, rotuloMes(mes)),
+        el('button', { class: 'btn-mini', 'aria-label': 'Próximo mês',
+          onclick: () => { mesRelOffset++; render(); } }, ico('setaDir'))));
+      if (!ehMesAtual) wrap.appendChild(el('p', { class: 'sub c mt4' },
+        futuro ? 'Mês que ainda não começou — dá para deixar a meta cadastrada.'
+               : 'Mês fechado — os números são os finais.'));
+
       const peds = DB.all('pedidos').filter(doRep).filter(p => p.status === 'concluido');
       const pedsHoje = peds.filter(p => p.data_pedido === hoje);
       const vendHoje = pedsHoje.reduce((t, p) => t + Number(p.total_valor || 0), 0);
@@ -1021,96 +1062,119 @@
       }).length;
       const fora = visHoje.length - naRota;
 
-      // metas
-      const metaMes = Number(DB.config('meta_mes_valor', 0));
-      const metaDiaManual = Number(DB.config('meta_dia_valor', 0));
-      const metaNovos = Number(DB.config('meta_novos_clientes', 0));
-      const mt = C.calcMeta({ metaMes, hoje, vendidoMes: vendMes, metaDiaManual });
+      // metas DO MÊS ESCOLHIDO (cada mês guarda a sua; sem valor próprio usa o padrão)
+      const metaMes = metaDoPeriodo('meta_mes', mes);
+      const metaDiaManual = metaDoPeriodo('meta_dia', mes);
+      const metaNovos = metaDoPeriodo('meta_novos', mes);
+      const mt = C.calcMeta({ metaMes, hoje: ref, vendidoMes: vendMes, metaDiaManual });
       // novos clientes do mês = clientes com venda a 15% (primeira compra)
       const novosMes = new Set(DB.all('visitas').filter(doRep)
         .filter(v => (v.data_visita || '').slice(0, 7) === mes &&
           Number(v.comissao_pct) === 15 && Number(v.comissao_valor) > 0)
         .map(v => v.cliente_id)).size;
 
-      wrap.appendChild(el('h3', null, 'Hoje — ' + dataBR(hoje)));
-      wrap.appendChild(el('div', { class: 'total-bar mt4' },
-        el('span', null, pedsHoje.length + ' pedido(s) hoje'),
-        el('strong', null, C.fmtMoney(vendHoje))));
-      wrap.appendChild(el('div', { class: 'sub mt4' },
-        `Visitas: ${naRota} na rota` + (fora ? ` + ${fora} fora da rota = ${visHoje.length} atendidos` : '')));
-      if (mt.metaDia > 0) {
-        const pctDia = Math.round(vendHoje / mt.metaDia * 100);
-        wrap.appendChild(el('div', { class: 'progresso mt8' },
-          el('div', { class: 'progresso-info' },
-            `Meta do dia: ${C.fmtMoney(mt.metaDia)} · vendido ${C.fmtMoney(vendHoje)} · ${pctDia}%`),
-          el('div', { class: 'progresso-barra' }, el('div', { class: 'progresso-fill', style: 'width:' + Math.min(100, pctDia) + '%' }))));
+      if (ehMesAtual) {
+        wrap.appendChild(el('h3', { class: 'mt12' }, 'Hoje — ' + dataBR(hoje)));
+        wrap.appendChild(el('div', { class: 'total-bar mt4' },
+          el('span', null, pedsHoje.length + ' pedido(s) hoje'),
+          el('strong', null, C.fmtMoney(vendHoje))));
+        wrap.appendChild(el('div', { class: 'sub mt4' },
+          `Visitas: ${naRota} na rota` + (fora ? ` + ${fora} fora da rota = ${visHoje.length} atendidos` : '')));
+        if (mt.metaDia > 0) {
+          const pctDia = Math.round(vendHoje / mt.metaDia * 100);
+          wrap.appendChild(el('div', { class: 'progresso mt8' },
+            el('div', { class: 'progresso-info' },
+              `Meta do dia: ${C.fmtMoney(mt.metaDia)} · vendido ${C.fmtMoney(vendHoje)} · ${C.fmtPct(pctDia)}`),
+            el('div', { class: 'progresso-barra' }, el('div', { class: 'progresso-fill', style: 'width:' + Math.min(100, pctDia) + '%' }))));
+        }
       }
 
-      // meta do ano
-      const metaAno = Number(DB.config('meta_ano_valor', 0));
-      const pedsAno = peds.filter(p => (p.data_pedido || '').slice(0, 4) === hoje.slice(0, 4));
+      // vendas do mês escolhido — a base do cálculo da meta
+      wrap.appendChild(el('h3', { class: 'mt16' }, 'Vendas de ' + rotuloMes(mes)));
+      wrap.appendChild(el('div', { class: 'total-bar mt4' },
+        el('span', null, pedsMes.length + ' pedido(s) no mês'),
+        el('strong', null, C.fmtMoney(vendMes))));
+
+      // meta do ano (do ano do mês escolhido)
+      const metaAno = metaDoPeriodo('meta_ano', ano);
+      const pedsAno = peds.filter(p => (p.data_pedido || '').slice(0, 4) === ano);
       const vendAno = pedsAno.reduce((t, p) => t + Number(p.total_valor || 0), 0);
 
-      wrap.appendChild(el('h3', { class: 'mt16' }, 'Meta do mês — ' + rotuloMes(mes)));
+      wrap.appendChild(el('h3', { class: 'mt16' }, 'Meta de ' + rotuloMes(mes)));
       if (metaMes > 0) {
         wrap.appendChild(el('div', { class: 'progresso mt4' },
           el('div', { class: 'progresso-info' },
-            `${C.fmtMoney(vendMes)} de ${C.fmtMoney(metaMes)} · ${mt.pct}% da meta`),
+            `${C.fmtMoney(vendMes)} de ${C.fmtMoney(metaMes)} · ${C.fmtPct(mt.pct)} da meta`),
           el('div', { class: 'progresso-barra' }, el('div', { class: 'progresso-fill', style: 'width:' + Math.min(100, mt.pct) + '%' }))));
-        wrap.appendChild(el('div', { class: 'sub mt4' },
-          `${mt.uteisDecorridos} de ${mt.uteisTotal} dias úteis · ritmo de ${C.fmtMoney(mt.ritmoDia)}/dia útil`));
-        wrap.appendChild(el('div', { class: (mt.projecaoPct >= 100 ? 'sugestao' : 'aviso') + ' mt8' },
-          `Nesse ritmo o mês fecha em ${C.fmtMoney(mt.projecao)} — ${mt.projecaoPct}% da meta.`));
+        if (ehMesAtual) {
+          wrap.appendChild(el('div', { class: 'sub mt4' },
+            `${mt.uteisDecorridos} de ${mt.uteisTotal} dias úteis · ritmo de ${C.fmtMoney(mt.ritmoDia)}/dia útil`));
+          wrap.appendChild(el('div', { class: (mt.projecaoPct >= 100 ? 'sugestao' : 'aviso') + ' mt8' },
+            `Nesse ritmo o mês fecha em ${C.fmtMoney(mt.projecao)} — ${C.fmtPct(mt.projecaoPct)} da meta.`));
+        } else if (!futuro) {
+          wrap.appendChild(el('div', { class: (mt.pct >= 100 ? 'sugestao' : 'aviso') + ' mt8' },
+            mt.pct >= 100
+              ? `Mês fechado batendo a meta (${C.fmtPct(mt.pct)}).`
+              : `Mês fechado em ${C.fmtPct(mt.pct)} da meta — faltaram ${C.fmtMoney(C.round2(metaMes - vendMes))}.`));
+        }
       } else {
         wrap.appendChild(el('p', { class: 'sub mt4' }, 'Nenhuma meta cadastrada para o mês.'));
       }
       // meta do ano
-      wrap.appendChild(el('h3', { class: 'mt16' }, 'Meta do ano — ' + hoje.slice(0, 4)));
+      wrap.appendChild(el('h3', { class: 'mt16' }, 'Meta do ano — ' + ano));
       if (metaAno > 0) {
         const pctAno = C.round2(vendAno / metaAno * 100);
         // ritmo pelos meses decorridos (mês atual conta proporcional aos dias úteis)
-        const mesesDecorridos = (Number(mes.slice(5)) - 1) + (mt.uteisDecorridos / (mt.uteisTotal || 1));
+        const mesesDecorridos = ano < mesAtual.slice(0, 4) ? 12
+          : (Number(mes.slice(5)) - 1) + (mt.uteisDecorridos / (mt.uteisTotal || 1));
         const projAno = mesesDecorridos > 0 ? C.round2(vendAno / mesesDecorridos * 12) : 0;
         wrap.appendChild(el('div', { class: 'progresso mt4' },
           el('div', { class: 'progresso-info' },
-            `${C.fmtMoney(vendAno)} de ${C.fmtMoney(metaAno)} · ${pctAno}% da meta do ano`),
+            `${C.fmtMoney(vendAno)} de ${C.fmtMoney(metaAno)} · ${C.fmtPct(pctAno)} da meta do ano`),
           el('div', { class: 'progresso-barra' }, el('div', { class: 'progresso-fill', style: 'width:' + Math.min(100, pctAno) + '%' }))));
         wrap.appendChild(el('div', { class: (projAno >= metaAno ? 'sugestao' : 'aviso') + ' mt8' },
-          `Nesse ritmo o ano fecha em ${C.fmtMoney(projAno)} — ${metaAno > 0 ? C.round2(projAno / metaAno * 100) : 0}% da meta.`));
+          `Nesse ritmo o ano fecha em ${C.fmtMoney(projAno)} — ${C.fmtPct(metaAno > 0 ? C.round2(projAno / metaAno * 100) : 0)} da meta.`));
       } else {
         wrap.appendChild(el('p', { class: 'sub mt4' },
           C.fmtMoney(vendAno) + ' vendidos no ano. Nenhuma meta anual cadastrada.'));
       }
 
       // meta de novos clientes (vendas a 15% — interessante para o vendedor)
-      wrap.appendChild(el('h3', { class: 'mt16' }, 'Novos clientes no mês (comissão 15%)'));
+      wrap.appendChild(el('h3', { class: 'mt16' }, 'Novos clientes em ' + rotuloMes(mes) + ' (comissão 15%)'));
       if (metaNovos > 0) {
         const pctNv = Math.round(novosMes / metaNovos * 100);
-        const projNv = Math.round(novosMes / mt.uteisDecorridos * mt.uteisTotal);
+        const projNv = ehMesAtual ? Math.round(novosMes / mt.uteisDecorridos * mt.uteisTotal) : novosMes;
         wrap.appendChild(el('div', { class: 'progresso mt4' },
-          el('div', { class: 'progresso-info' }, `${novosMes} de ${metaNovos} novos clientes · ${pctNv}%`),
+          el('div', { class: 'progresso-info' }, `${novosMes} de ${metaNovos} novos clientes · ${C.fmtPct(pctNv)}`),
           el('div', { class: 'progresso-barra' }, el('div', { class: 'progresso-fill', style: 'width:' + Math.min(100, pctNv) + '%' }))));
-        wrap.appendChild(el('div', { class: (projNv >= metaNovos ? 'sugestao' : 'aviso') + ' mt8' },
+        if (ehMesAtual) wrap.appendChild(el('div', { class: (projNv >= metaNovos ? 'sugestao' : 'aviso') + ' mt8' },
           `Nesse ritmo o mês fecha com ~${projNv} novo(s) cliente(s).`));
       } else {
         wrap.appendChild(el('p', { class: 'sub mt4' },
-          novosMes + ' novo(s) cliente(s) este mês. Nenhuma meta de novos clientes cadastrada.'));
+          novosMes + ' novo(s) cliente(s) em ' + rotuloMes(mes) + '. Nenhuma meta cadastrada.'));
       }
       if (s.papel === 'gestor') {
-        const inMeta = el('input', { class: 'input', type: 'number', inputmode: 'decimal', placeholder: 'Meta do MÊS em R$ (ex.: 200000)', value: metaMes || '' });
+        const inMeta = el('input', { class: 'input', type: 'number', inputmode: 'decimal', placeholder: 'Meta de ' + rotuloMes(mes) + ' em R$ (ex.: 200000)', value: metaMes || '' });
         const inMetaDia = el('input', { class: 'input', type: 'number', inputmode: 'decimal', placeholder: 'Meta do DIA em R$ (vazio = mês ÷ dias úteis)', value: metaDiaManual || '' });
         const inMetaNovos = el('input', { class: 'input', type: 'number', inputmode: 'numeric', placeholder: 'Meta de NOVOS CLIENTES no mês (ex.: 10)', value: metaNovos || '' });
-        const inMetaAno = el('input', { class: 'input', type: 'number', inputmode: 'decimal', placeholder: 'Meta do ANO em R$ (ex.: 2400000)', value: metaAno || '' });
+        const inMetaAno = el('input', { class: 'input', type: 'number', inputmode: 'decimal', placeholder: 'Meta de ' + ano + ' em R$ (ex.: 2400000)', value: metaAno || '' });
+        wrap.appendChild(el('h4', { class: 'mt16' }, 'Cadastrar metas de ' + rotuloMes(mes)));
+        wrap.appendChild(el('p', { class: 'sub mt4' },
+          'A meta vale só para este mês. Os meses seguintes começam com o mesmo valor até você trocar — e os meses já fechados continuam com a meta que tinham.'));
         wrap.appendChild(el('div', { class: 'col gap8 mt8' }, inMeta, inMetaDia, inMetaAno, inMetaNovos,
           el('button', {
             class: 'btn w100', onclick: () => {
-              DB.upsertConfig('meta_mes_valor', Number(inMeta.value) || 0);
-              DB.upsertConfig('meta_dia_valor', Number(inMetaDia.value) || 0);
-              DB.upsertConfig('meta_ano_valor', Number(inMetaAno.value) || 0);
-              DB.upsertConfig('meta_novos_clientes', Number(inMetaNovos.value) || 0);
-              toast('Metas salvas!'); render();
+              const salvar = (base, periodo, valor) => {
+                DB.upsertConfig(base + '_' + periodo, valor);      // histórico daquele período
+                DB.upsertConfig(META_PADRAO[base], valor);         // e vira o padrão dos próximos
+              };
+              salvar('meta_mes', mes, Number(inMeta.value) || 0);
+              salvar('meta_dia', mes, Number(inMetaDia.value) || 0);
+              salvar('meta_novos', mes, Number(inMetaNovos.value) || 0);
+              salvar('meta_ano', ano, Number(inMetaAno.value) || 0);
+              toast('Metas de ' + rotuloMes(mes) + ' salvas.'); render();
             }
-          }, rot('salvar', 'Salvar metas'))));
+          }, rot('salvar', 'Salvar metas de ' + rotuloMes(mes)))));
       }
 
       // por rede (mês)
