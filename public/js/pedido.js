@@ -27,6 +27,7 @@
       itens: DB.all('pedido_itens').filter(i => i.pedido_id === pedidoExistente.id)
         .map(i => Object.assign({}, i)),
       obs: pedidoExistente.observacoes || '',
+      desconto_pct: Number(pedidoExistente.desconto_pct || 0),
       assinatura: pedidoExistente.assinatura || null,
       assinante_nome: pedidoExistente.assinante_nome || null,
       deixou_display: !!pedidoExistente.deixou_display,
@@ -34,7 +35,7 @@
     } : {
       id: DB.uuid(), cliente_id: clientePre ? clientePre.id : null,
       data: hojeISO(), tabela: null, condicao_pagamento: null,
-      itens: [], obs: '', assinatura: null
+      itens: [], obs: '', assinatura: null, desconto_pct: 0
     };
     const m = modal(el('div'), {
       titulo: editando ? 'Editar Pedido nº ' + (pedidoExistente.numero || '') : 'Novo Pedido',
@@ -292,6 +293,23 @@
       });
       // data do pedido editável: pedido esquecido de ontem entra na data certa
       const dataIn = el('input', { class: 'input big', type: 'date', value: ped.data || hojeISO() });
+      const descIn = el('input', {
+        class: 'input big', type: 'number', inputmode: 'decimal', step: '0.01', min: '0', max: '100',
+        placeholder: '0', value: ped.desconto_pct || ''
+      });
+      const descResumo = el('div', { class: 'desc-resumo' });
+      const atualizaDesc = () => {
+        const d = C.aplicarDesconto(tot.valor, descIn.value);
+        descResumo.innerHTML = '';
+        if (!d.pct) { descResumo.appendChild(el('span', { class: 'sub' }, 'Sem desconto — vale o valor cheio.')); return; }
+        descResumo.appendChild(el('div', { class: 'row space' },
+          el('span', null, 'Valor do pedido'), el('strong', null, C.fmtMoney(d.bruto))));
+        descResumo.appendChild(el('div', { class: 'row space' },
+          el('span', null, 'Desconto de ' + C.fmtPct(d.pct)), el('strong', { class: 'menos' }, '− ' + C.fmtMoney(d.desconto))));
+        descResumo.appendChild(el('div', { class: 'row space total' },
+          el('span', null, 'Valor final'), el('strong', null, C.fmtMoney(d.liquido))));
+      };
+      descIn.addEventListener('input', atualizaDesc);
       const chkDisplay = el('input', { type: 'checkbox' });
       if (ped.deixou_display) chkDisplay.checked = true;
       const materialIn = el('input', {
@@ -318,9 +336,14 @@
           `<table class="tabela"><thead><tr><th>Cód</th><th>Produto</th><th>Tam</th><th>Placas</th>` +
           `<th>Coloc.</th><th>Dev.Disp</th><th>Dev.Queb</th><th>Vend.</th><th>Preço</th><th>Total</th></tr></thead>` +
           `<tbody>${linhas}</tbody></table>` }),
-        el('div', { class: 'total-bar mt8' },
-          el('span', null, `${tot.colocadas} colocadas · ${tot.devDisplay} display · ${tot.devQuebrada} quebradas · ${tot.vendidas} vendidas`),
-          el('strong', null, C.fmtMoney(tot.valor))),
+        (() => {
+          const d = C.aplicarDesconto(tot.valor, ped.desconto_pct);
+          return el('div', { class: 'total-bar mt8' },
+            el('span', null, `${tot.colocadas} colocadas · ${tot.devDisplay} display · ` +
+              `${tot.devQuebrada} quebradas · ${tot.vendidas} vendidas` +
+              (d.pct ? ' · desconto ' + C.fmtPct(d.pct) : '')),
+            el('strong', null, C.fmtMoney(d.liquido)));
+        })(),
         // cada informação do fechamento numa caixa própria, com cor e rótulo
         // grandes — antes era campo branco em cima de campo branco
         el('div', { class: 'campo-box azul mt12' },
@@ -334,6 +357,14 @@
           prazoIn,
           cli.condicao_pagamento_padrao ? el('p', { class: 'campo-box-ajuda' },
             'Último prazo deste cliente: ' + cli.condicao_pagamento_padrao) : null),
+        el('div', { class: 'campo-box verde mt12' },
+          el('div', { class: 'campo-box-tit' }, 'Desconto no pedido (%)',
+            el('span', { class: 'so-interno' }, 'entra na nota')),
+          descIn,
+          descResumo,
+          el('p', { class: 'campo-box-ajuda' },
+            'Ex.: 3 para 3% de desconto à vista. O valor final (já com o abatimento) ' +
+            'é o que conta no faturamento, na meta e na comissão.')),
         el('div', { class: 'campo-box roxo mt12' },
           el('div', { class: 'campo-box-tit' }, 'Material deixado no cliente'),
           el('label', { class: 'row gap8 chk-grande' }, chkDisplay,
@@ -358,8 +389,10 @@
             if (editando) salvarConcluido(); else passoAssinatura();
           } }, editando ? rot('salvar', 'Salvar alterações') : el('span', { class: 'row gap8' }, 'Assinar', ico('setaDir'))))));
 
+      atualizaDesc();
       function guardar() {
         ped.obs = obsIn.value;
+        ped.desconto_pct = Math.min(100, Math.max(0, Number(descIn.value) || 0));
         ped.condicao_pagamento = prazoIn.value.trim();
         ped.deixou_display = chkDisplay.checked;
         ped.material_deixado = materialIn.value.trim();
@@ -527,6 +560,9 @@
       const rep = sessao().rep;
       const cli = DB.byId('clientes', ped.cliente_id);
       const agora = new Date().toISOString();
+      // desconto do pedido: daqui para a frente vale o LÍQUIDO — é ele que entra
+      // no faturamento, na meta e na comissão
+      const desc = C.aplicarDesconto(tot.valor, ped.desconto_pct);
 
       // 1) pedido rascunho → 2) itens → 3) visita → 4) concluir (ordem respeitada pela fila offline;
       // no servidor o trigger de conclusão recalcula tudo e reaproveita a visita do dia)
@@ -550,13 +586,13 @@
       const visOriginal = editando ? DB.all('visitas').find(v => v.pedido_id === ped.id) : null;
       const pctNovoRep = (rep.comissao_pct_novo != null) ? Number(rep.comissao_pct_novo) : 15;
       let clienteNovo;
-      if (tot.valor < 0) clienteNovo = false;
+      if (desc.liquido < 0) clienteNovo = false;
       else if (visOriginal && visOriginal.comissao_pct != null)
         clienteNovo = Number(visOriginal.comissao_pct) === pctNovoRep;
       else clienteNovo = !C.clienteJaComprou(cli,
         DB.all('visitas').filter(v => v.cliente_id === ped.cliente_id));
       const com = C.calcComissao({
-        valor: tot.valor, clienteNovo,
+        valor: desc.liquido, clienteNovo,
         pctNovo: rep.comissao_pct_novo, pctReposicao: rep.comissao_pct,
         dataPedido: ped.data, recebimentoDias: cli.recebimento_dias || 0
       });
@@ -566,7 +602,7 @@
       const visitaHoje = DB.all('visitas').find(v => v.cliente_id === ped.cliente_id &&
         v.data_visita === ped.data && (!v.pedido_id || v.pedido_id === ped.id));
       const visitaBody = {
-        realizada: true, fez_pedido: true, pedido_id: ped.id, valor_pedido: tot.valor,
+        realizada: true, fez_pedido: true, pedido_id: ped.id, valor_pedido: desc.liquido,
         data_visita: ped.data,
         comissao_pct: com.pct, comissao_valor: com.valor, comissao_recebimento_em: com.recebimentoEm
       };
@@ -584,7 +620,8 @@
         deixou_display: !!ped.deixou_display, material_deixado: ped.material_deixado || null,
         total_unid_colocadas: tot.colocadas, total_unid_dev_display: tot.devDisplay,
         total_unid_dev_quebrada: tot.devQuebrada, total_unid_vendidas: tot.vendidas,
-        total_valor: tot.valor, assinatura: ped.assinatura,
+        total_bruto: desc.bruto, desconto_pct: desc.pct, desconto_valor: desc.desconto,
+        total_valor: desc.liquido, assinatura: ped.assinatura,
         assinado_em: editando ? (pedidoExistente.assinado_em || agora) : agora,
         assinante_nome: ped.assinante_nome || null,
         visita_id: visitaId, observacoes: ped.obs || null
@@ -598,7 +635,7 @@
         condicao_pagamento_padrao: ped.condicao_pagamento || cli.condicao_pagamento_padrao || null,
         ultima_visita_em: ped.data, proxima_visita_prevista: proxima
       };
-      if (tot.valor > 0) patchCli.ultimo_pedido_em = ped.data;
+      if (desc.liquido > 0) patchCli.ultimo_pedido_em = ped.data;
       // material deixado fica marcado na ficha (para relatórios e recolha futura)
       if (ped.deixou_display) patchCli.display_no_cliente = true;
       if (ped.material_deixado) patchCli.material_no_cliente = ped.material_deixado;
@@ -612,11 +649,12 @@
         DB.insert('cliente_produtos', { id: cli.id + '_' + pid, cliente_id: cli.id, produto_id: pid, representante_id: rep.id });
 
       m.fechar();
+      const txtDesc = desc.pct ? ' (desconto de ' + C.fmtPct(desc.pct) + ' já abatido)' : '';
       toast(editando
-        ? 'Pedido atualizado! Novo total ' + C.fmtMoney(tot.valor) + ' · comissão recalculada (' + com.pct + '% = ' + C.fmtMoney(com.valor) + ').'
+        ? 'Pedido atualizado! Novo total ' + C.fmtMoney(desc.liquido) + txtDesc + ' · comissão recalculada (' + com.pct + '% = ' + C.fmtMoney(com.valor) + ').'
         : com.valor < 0
-          ? 'Pedido concluído com CRÉDITO de ' + C.fmtMoney(Math.abs(tot.valor)) + ' ao cliente (comissão abatida em ' + C.fmtMoney(Math.abs(com.valor)) + ').'
-          : 'Pedido concluído! Comissão de ' + com.pct + '% (' + C.fmtMoney(com.valor) + ') registrada.');
+          ? 'Pedido concluído com CRÉDITO de ' + C.fmtMoney(Math.abs(desc.liquido)) + ' ao cliente (comissão abatida em ' + C.fmtMoney(Math.abs(com.valor)) + ').'
+          : 'Pedido concluído! Comissão de ' + com.pct + '% (' + C.fmtMoney(com.valor) + ') registrada' + txtDesc + '.');
       const salvo = DB.byId('pedidos', ped.id);
       abrir(salvo.id, true);
       if (window.NSApp.aoConcluirPedido) window.NSApp.aoConcluirPedido(salvo);
@@ -742,10 +780,14 @@
       el('div', { class: 'tabela-scroll mt8', html:
         `<table class="tabela"><thead><tr><th>Cód</th><th>Produto</th><th>Tam</th><th>Placas</th><th>Coloc.</th>` +
         `<th>Dev.Disp</th><th>Dev.Queb</th><th>Vend.</th><th>Total</th></tr></thead><tbody>${linhas}</tbody></table>` }),
+      Number(p.desconto_pct) > 0 ? el('div', { class: 'sub mt8' },
+        'Subtotal ' + C.fmtMoney(Number(p.total_bruto || 0)) +
+        ' · desconto de ' + C.fmtPct(Number(p.desconto_pct)) +
+        ' (−' + C.fmtMoney(Number(p.desconto_valor || 0)) + ')') : null,
       el('div', { class: 'total-bar mt8' },
         el('span', null, Number(p.total_valor) < 0
           ? `crédito do cliente (${p.total_unid_vendidas} un líquidas)`
-          : `${p.total_unid_vendidas} un vendidas`),
+          : `${p.total_unid_vendidas} un vendidas` + (Number(p.desconto_pct) > 0 ? ' · já com desconto' : '')),
         el('strong', null, C.fmtMoney(Number(p.total_valor)))),
       p.assinatura ? el('div', { class: 'mt8 assinatura-preview' },
         el('img', { src: p.assinatura, alt: 'Assinatura do cliente' }),

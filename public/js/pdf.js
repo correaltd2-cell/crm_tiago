@@ -213,6 +213,13 @@
     pg.text(W - M - 200, y - 4, 'Unidades vendidas: ' + pedido.total_unid_vendidas, 8.5, true);
     pg.text(W - M, y - 4, 'Quebradas: ' + pedido.total_unid_dev_quebrada, 8.5, true, 'right');
     y -= 20;
+    if (Number(pedido.desconto_pct) > 0) {
+      pg.text(W - M, y - 4, 'Subtotal: ' + C.fmtMoney(Number(pedido.total_bruto || 0)), 8.5, false, 'right');
+      y -= 12;
+      pg.text(W - M, y - 4, 'Desconto ' + C.fmtPct(Number(pedido.desconto_pct)) + ': -' +
+        C.fmtMoney(Number(pedido.desconto_valor || 0)), 8.5, true, 'right');
+      y -= 16;
+    }
     pg.rect(W - M - 220, y - 20, 220, 20, true);
     pg.text(W - M - 8, y - 14, (Number(pedido.total_valor) < 0 ? 'CRÉDITO DO CLIENTE: ' : 'TOTAL: ') +
       C.fmtMoney(Number(pedido.total_valor)), 12, true, 'right');
@@ -338,6 +345,11 @@
       ' · Devolvidas: ' + pedido.total_unid_dev_display, 6.5, {}, 8);
     txt('Quebradas: ' + pedido.total_unid_dev_quebrada +
       ' · Vendidas: ' + pedido.total_unid_vendidas, 6.5, {}, 11);
+    if (Number(pedido.desconto_pct) > 0) {
+      txt('Subtotal ' + C.fmtMoney(Number(pedido.total_bruto || 0)), 6.5, {}, 8);
+      txt('Desconto ' + C.fmtPct(Number(pedido.desconto_pct)) + ' -' +
+        C.fmtMoney(Number(pedido.desconto_valor || 0)), 6.5, {}, 10);
+    }
     txt(Number(pedido.total_valor) < 0 ? 'CRÉDITO' : 'TOTAL', 9, { b: true }, 0);
     txt(C.fmtMoney(Number(pedido.total_valor)), 10, { b: true, al: 'right' }, 12);
     fecha();
@@ -536,6 +548,11 @@
       par('Quebradas', String(pedido.total_unid_dev_quebrada), F(19));
       par('Vendidas', String(pedido.total_unid_vendidas), F(19));
       y += Math.round(6 * k);
+      if (Number(pedido.desconto_pct) > 0) {
+        par('Subtotal', C.fmtMoney(Number(pedido.total_bruto || 0)), F(19));
+        par('Desconto ' + C.fmtPct(Number(pedido.desconto_pct)),
+          '-' + C.fmtMoney(Number(pedido.desconto_valor || 0)), F(19));
+      }
       par(negativo ? 'CRÉDITO' : 'TOTAL', C.fmtMoney(Number(pedido.total_valor)), F(28), true);
       y += Math.round(8 * k);
       if (observacoes) { hr(); multi(observacoes, F(13), false); }

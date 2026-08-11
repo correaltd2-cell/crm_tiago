@@ -313,7 +313,13 @@
     return temAlerta(c) ? el('span', { class: 'alerta-obs', title: 'Este cliente tem observação' }, '?') : null;
   }
   function visitaDeHoje(clienteId) {
-    return DB.all('visitas').find(v => v.cliente_id === clienteId && v.data_visita === hojeISO() && v.realizada);
+    return visitaNoDia(clienteId, hojeISO());
+  }
+  // visita registrada numa data específica — usada para mostrar o histórico da
+  // semana: na quinta-feira, a aba de quarta continua marcando quem foi atendido
+  function visitaNoDia(clienteId, dataISO) {
+    return DB.all('visitas').find(v => v.cliente_id === clienteId &&
+      v.data_visita === dataISO && v.realizada);
   }
 
   // ---- visão do gestor (todos os vendedores, somente leitura) ----
@@ -323,20 +329,20 @@
     const reps = DB.all('representantes').filter(r => r.papel !== 'gestor' && r.ativo !== false);
     for (const rep of reps) {
       const lista = clientesDaRota(rep.id, diaRota);
-      const feitos = lista.filter(c => visitaDeHoje(c.id)).length;
+      const feitos = lista.filter(c => visitaNoDia(c.id, dataDoDia(diaRota))).length;
       view.appendChild(el('h3', { class: 'mt16' }, ico('usuario', 'ic-sm'), rep.nome +
         (lista.length ? ` — ${feitos}/${lista.length} visitados` : '')));
       if (!lista.length) { view.appendChild(el('p', { class: 'vazio' }, 'Sem rota criada para ' + diaRota + '.')); continue; }
       const box = el('div', { class: 'col gap8 mt8' });
       lista.forEach((c, i) => box.appendChild(el('div', {
-        class: 'card-visita st-' + statusDoCliente(c).k + (visitaDeHoje(c.id) ? ' feito' : ''),
+        class: 'card-visita st-' + statusDoCliente(c).k + (visitaNoDia(c.id, dataDoDia(diaRota)) ? ' feito' : ''),
         onclick: () => fichaCliente(c.id)
       },
         el('div', { class: 'row space' },
           el('div', null,
             el('strong', null, el('span', { class: 'st-tag ' + statusDoCliente(c).k }), marcaAlerta(c), `${i + 1}. ${c.nome}`),
             el('div', { class: 'sub' }, [c.cidade, c.uf].filter(Boolean).join(' - '))),
-          visitaDeHoje(c.id) ? el('span', { class: 'badge ok' }, ico('check', 'ic-sm')) : null))));
+          visitaNoDia(c.id, dataDoDia(diaRota)) ? el('span', { class: 'badge ok' }, ico('check', 'ic-sm')) : null))));
       view.appendChild(box);
     }
     view.appendChild(el('p', { class: 'sub mt12' },
@@ -366,8 +372,11 @@
       el('h2', null, 'Rota de ' + diaRota + (diaRota === diaDeHoje() ? ' (hoje)' : '')),
       el('span', { class: 'badge' }, lista.length + ' cliente(s)')));
 
+    // data do dia que está aberto na aba — na quinta, a aba de quarta usa a data
+    // de quarta, e por isso as visitas daquele dia continuam aparecendo
+    const dataDaAba = dataDoDia(diaRota);
     if (lista.length) {
-      const feitos = lista.filter(c => visitaDeHoje(c.id)).length;
+      const feitos = lista.filter(c => visitaNoDia(c.id, dataDaAba)).length;
       const pct = Math.round(feitos / lista.length * 100);
       view.appendChild(el('div', { class: 'progresso mt8' },
         el('div', { class: 'progresso-info' }, `${feitos} de ${lista.length} visitados · ${C.fmtPct(pct)}`),
@@ -388,11 +397,42 @@
         }
       }, rot('lixeira', 'Resetar rota de ' + diaRota)));
 
+    // ── histórico do dia: quem foi atendido nesta data mas não está mais na rota
+    // (mudou de dia, foi removido, ou o pedido entrou fora da rota). Fica no fim,
+    // apagado, só para o vendedor não visitar o mesmo cliente duas vezes.
+    const idsNaRota = new Set(lista.map(c => c.id));
+    const atendidosFora = DB.all('visitas')
+      .filter(v => v.data_visita === dataDaAba && v.realizada &&
+        (!rep.id || v.representante_id === rep.id) && !idsNaRota.has(v.cliente_id))
+      .map(v => ({ v, c: DB.byId('clientes', v.cliente_id) }))
+      .filter(x => !!x.c);
+
+    function pintarHistorico() {
+      if (!atendidosFora.length) return;
+      view.appendChild(el('h4', { class: 'mt16' },
+        'Também atendidos em ' + dataBR(dataDaAba) + ' (' + atendidosFora.length + ')'));
+      const histEl = el('div', { class: 'col gap8 mt8' });
+      view.appendChild(histEl);
+      atendidosFora.forEach(({ v, c }) => {
+        histEl.appendChild(el('button', {
+          class: 'card-visita feito historico', onclick: () => fichaCliente(c.id)
+        },
+          el('div', { class: 'row space' },
+            el('strong', null, nomeExib(c)),
+            el('span', { class: 'badge ok' }, ico('check', 'ic-sm'),
+              v.fez_pedido ? 'pedido' : 'visitado')),
+          el('div', { class: 'sub' }, [c.cidade, c.uf].filter(Boolean).join(' - ') +
+            ' · ' + dataBR(v.data_visita) +
+            (v.fez_pedido ? ' · ' + C.fmtMoney(Number(v.valor_pedido || 0)) : ' · sem pedido'))));
+      });
+    }
+
     const listaEl = el('div', { class: 'col gap8 mt12' });
     view.appendChild(listaEl);
     if (!lista.length) {
       listaEl.appendChild(el('p', { class: 'vazio' },
         'Nenhum cliente na rota de ' + diaRota + '. Toque em "Criar rota" para escolher os clientes.'));
+      pintarHistorico();
       return;
     }
     // barra de reordenação: inverter a ordem toda de uma vez
@@ -404,11 +444,11 @@
             toast('Ordem invertida.'); nav('hoje');
           }
         }, rot('sincronizar', 'Inverter ordem')),
-        el('span', { class: 'sub' }, 'Segure o ⠿ e arraste para reordenar')));
+        el('span', { class: 'sub' }, 'Segure o cliente e arraste para reordenar')));
     }
 
     lista.forEach((c, i) => {
-      const v = visitaDeHoje(c.id);
+      const v = visitaNoDia(c.id, dataDaAba);
       const st = statusDoCliente(c);
       const card = el('div', {
         class: 'card-visita st-' + st.k + (v ? ' feito' : '') + (ehProspec(c) ? ' prospec' : ''),
@@ -432,7 +472,13 @@
               ' · ' + txtDias(diasSemPedido(c), 'pedido') + ' · ' + txtDias(diasSemAtendimento(c), 'visita')),
             (() => { const n = ultimaNota(c.id); return n ? el('div', { class: 'nota-previa' },
               n.length > 90 ? n.slice(0, 90) + '…' : n) : null; })()),
-          v ? el('span', { class: 'badge ok' }, ico('check', 'ic-sm'), v.fez_pedido ? 'pedido' : 'visitado') : null),
+          v ? el('span', { class: 'badge ok' }, ico('check', 'ic-sm'),
+            (v.fez_pedido ? 'pedido' : 'visitado') + ' ' + dataBR(v.data_visita)) : null),
+        // o botão de visita continua sempre (dá para atender o mesmo cliente 2× no dia);
+        // acima dele fica a linha do que já foi registrado naquele dia
+        v ? el('div', { class: 'atendido-linha mt8' }, ico('check', 'ic-sm'),
+          'Atendido em ' + dataBR(v.data_visita) +
+          (v.fez_pedido ? ' · ' + C.fmtMoney(Number(v.valor_pedido || 0)) : ' · sem pedido')) : null,
         el('div', { class: 'row gap8 mt8' },
           el('button', { class: 'btn-mini verde grow', onclick: () => dialogoVisita(c, rep) }, rot('check', 'Registrar visita')),
           el('button', { class: 'btn-mini vermelho', onclick: () => removerDaRota(c) }, rot('fechar', 'Remover da rota'))),
@@ -457,40 +503,105 @@
       listaEl.appendChild(card);
     });
     ligarArrastar(listaEl, lista);
+
+    pintarHistorico();
   }
 
-  // Arrastar e soltar por toque: a alça ⠿ segura o cartão e, ao passar por cima
-  // de outro, troca de lugar na hora. Ao soltar, a ordem é gravada.
+  // ── Arrastar para reordenar a rota ──
+  // No celular, segurar o dedo em cima do texto abria o menu de copiar do sistema
+  // e o arraste não pegava. Agora: toque longo (250ms) em qualquer parte do cartão
+  // — ou toque direto na alça ⠿ — inicia o arraste; se o dedo deslizar antes disso,
+  // é rolagem e nada acontece. Botões continuam funcionando normalmente.
   function ligarArrastar(container, lista) {
-    let arrastando = null;
-    container.querySelectorAll('.arrasta').forEach((alca) => {
-      alca.addEventListener('pointerdown', (e) => {
-        e.preventDefault();
-        arrastando = alca.closest('.card-visita');
-        arrastando.classList.add('arrastando');
-        alca.setPointerCapture(e.pointerId);
+    const ESPERA = 250;      // ms segurando para virar arraste
+    const TOLERANCIA = 12;   // px de folga antes de considerar rolagem
+    let alvo = null, timer = null, ativo = false;
+    let y0 = 0, x0 = 0, desloc = 0, pid = null, marcador = null;
+
+    const cancelarTimer = () => { clearTimeout(timer); timer = null; };
+
+    let topo0 = 0;
+    function comecar(card) {
+      ativo = true;
+      alvo = card;
+      desloc = 0;
+      const r = card.getBoundingClientRect();
+      topo0 = r.top;
+      // o espaço tracejado fica no lugar do cartão para a lista não pular
+      marcador = document.createElement('div');
+      marcador.className = 'solta-aqui';
+      marcador.style.height = r.height + 'px';
+      container.insertBefore(marcador, card);
+      // o cartão sai do fluxo e passa a seguir o dedo
+      card.classList.add('arrastando');
+      card.style.position = 'fixed';
+      card.style.left = r.left + 'px';
+      card.style.top = r.top + 'px';
+      card.style.width = r.width + 'px';
+      card.style.zIndex = '60';
+      if (navigator.vibrate) { try { navigator.vibrate(15); } catch (err) {} }
+    }
+
+    function mover(e) {
+      if (!ativo || !alvo) return;
+      desloc = e.clientY - y0;
+      alvo.style.top = (topo0 + desloc) + 'px';
+      // elementsFromPoint (plural) devolve a pilha toda — pegamos o primeiro cartão
+      // que não é o que está na mão. (Zerar pointer-events no arrastado soltaria a
+      // captura do toque e o arraste morria no meio.)
+      const pilha = document.elementsFromPoint(e.clientX, e.clientY) || [];
+      let card = null;
+      for (const nó of pilha) {
+        const c = nó.closest ? nó.closest('.card-visita') : null;
+        if (c && c !== alvo) { card = c; break; }
+      }
+      if (!card || card.parentElement !== container) return;
+      const r = card.getBoundingClientRect();
+      const depois = e.clientY > r.top + r.height / 2;
+      container.insertBefore(marcador, depois ? card.nextSibling : card);
+    }
+
+    function soltar() {
+      cancelarTimer();
+      if (!ativo || !alvo) { ativo = false; alvo = null; return; }
+      const card = alvo;
+      card.classList.remove('arrastando');
+      card.style.cssText = '';
+      if (marcador) { container.insertBefore(card, marcador); marcador.remove(); marcador = null; }
+      ativo = false; alvo = null;
+      const ids = Array.from(container.children)
+        .filter(x => x.classList.contains('card-visita'))
+        .map(x => x.getAttribute('data-id'));
+      gravarOrdem(ids.map(id => lista.find(c => c.id === id)).filter(Boolean));
+      nav('hoje');
+    }
+
+    container.querySelectorAll('.card-visita').forEach((card) => {
+      card.addEventListener('pointerdown', (e) => {
+        // não sequestrar o toque de botões, links e campos
+        if (e.target.closest('button, a, input, select, textarea')) return;
+        const naAlca = !!e.target.closest('.arrasta');
+        pid = e.pointerId; y0 = e.clientY; x0 = e.clientX;
+        if (naAlca) { e.preventDefault(); card.setPointerCapture(pid); comecar(card); return; }
+        timer = setTimeout(() => {
+          card.setPointerCapture(pid);
+          comecar(card);
+        }, ESPERA);
       });
-      alca.addEventListener('pointermove', (e) => {
-        if (!arrastando) return;
+      card.addEventListener('pointermove', (e) => {
+        if (!ativo) {
+          // deslizou antes de segurar o tempo todo = está rolando a tela
+          if (timer && (Math.abs(e.clientY - y0) > TOLERANCIA || Math.abs(e.clientX - x0) > TOLERANCIA))
+            cancelarTimer();
+          return;
+        }
         e.preventDefault();
-        const alvo = document.elementFromPoint(e.clientX, e.clientY);
-        const card = alvo && alvo.closest ? alvo.closest('.card-visita') : null;
-        if (!card || card === arrastando || card.parentElement !== container) return;
-        const cards = Array.from(container.children);
-        const de = cards.indexOf(arrastando), para = cards.indexOf(card);
-        if (de < para) container.insertBefore(arrastando, card.nextSibling);
-        else container.insertBefore(arrastando, card);
+        mover(e);
       });
-      const soltar = () => {
-        if (!arrastando) return;
-        arrastando.classList.remove('arrastando');
-        arrastando = null;
-        const ids = Array.from(container.children).map(x => x.getAttribute('data-id'));
-        gravarOrdem(ids.map(id => lista.find(c => c.id === id)).filter(Boolean));
-        nav('hoje');
-      };
-      alca.addEventListener('pointerup', soltar);
-      alca.addEventListener('pointercancel', soltar);
+      card.addEventListener('pointerup', soltar);
+      card.addEventListener('pointercancel', soltar);
+      // segurar em cima do texto não pode abrir o menu de copiar do sistema
+      card.addEventListener('contextmenu', (e) => { if (ativo || timer) e.preventDefault(); });
     });
   }
 
@@ -1037,9 +1148,33 @@
     const realizadasMes = vMes.filter(v => v.realizada);
     const comPedido = realizadasMes.filter(v => v.fez_pedido);
     const faturamento = comPedido.reduce((s, v) => s + Number(v.valor_pedido || 0), 0);
-    const comissaoGerada = vMes.reduce((s, v) => s + Number(v.comissao_valor || 0), 0);
-    const aReceber = visitas.filter(v => noMes(v.comissao_recebimento_em))
-      .reduce((s, v) => s + Number(v.comissao_valor || 0), 0);
+    // ── comissões ──
+    // Clamed paga 45 dias depois da venda; os demais clientes caem no dia 1 do
+    // mês seguinte. Por isso separamos "o que a venda deste mês gerou" de
+    // "o que efetivamente cai no caixa em cada mês".
+    const ehClamed = (v) => {
+      const c = DB.byId('clientes', v.cliente_id);
+      return !!(c && Number(c.recebimento_dias) > 0);
+    };
+    const comValor = (arr) => arr.reduce((s, v) => s + Number(v.comissao_valor || 0), 0);
+    const proxMes = (() => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + 1);
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); })();
+    const comComissao = visitas.filter(v => Number(v.comissao_valor || 0) !== 0);
+
+    // 1) o que a venda DESTE mês gerou de comissão (cai depois)
+    const comissaoVendasMes = comValor(vMes);
+    // 2) comissão da Clamed que CAI neste mês (venda de ~45 dias atrás)
+    const clamedCaiEsteMes = comValor(comComissao.filter(v => ehClamed(v) && noMes(v.comissao_recebimento_em)));
+    // "comissão gerada" = o que vendi agora + a Clamed que está caindo agora
+    const comissaoGerada = C.round2(comissaoVendasMes + clamedCaiEsteMes);
+    // 3) o que entra no PRÓXIMO mês (normais + Clamed que vence lá)
+    const noProx = (iso) => (iso || '').slice(0, 7) === proxMes;
+    const proxNormais = comValor(comComissao.filter(v => !ehClamed(v) && noProx(v.comissao_recebimento_em)));
+    const proxClamed = comValor(comComissao.filter(v => ehClamed(v) && noProx(v.comissao_recebimento_em)));
+    const aReceber = C.round2(proxNormais + proxClamed);
+    // 4) TODA a Clamed ainda pendente (próximo mês e os seguintes)
+    const clamedPendente = comValor(comComissao.filter(v => ehClamed(v) &&
+      (v.comissao_recebimento_em || '') > hojeISO()));
     const despesas = DB.all('despesas').filter(doRep).filter(d => noMes(d.data_despesa));
     const totDesp = despesas.reduce((s, d) => s + Number(d.valor || 0), 0);
     const kmLanc = despesas.reduce((s, d) => s + Number(d.km_rodado || 0), 0);
@@ -1088,10 +1223,29 @@
         'Nenhuma meta cadastrada para ' + rotuloMes(mes) + ' — cadastre em Mais → Relatórios.'));
     }
 
+    // quadro de comissões: o que gerei agora e o que tenho para receber
+    view.appendChild(el('div', { class: 'painel-comissao mt12' },
+      el('div', { class: 'painel-meta-topo' },
+        el('span', null, 'A receber no próximo mês'),
+        el('strong', null, C.fmtMoney(aReceber))),
+      el('div', { class: 'meta-corpo mt8' },
+        el('div', { class: 'row space meta-linha' },
+          el('span', null, 'Clientes normais'), el('strong', null, C.fmtMoney(proxNormais))),
+        el('div', { class: 'row space meta-linha' },
+          el('span', null, 'Clamed (45 dias)'), el('strong', null, C.fmtMoney(proxClamed))),
+        el('div', { class: 'meta-sep' }),
+        el('div', { class: 'row space meta-linha' },
+          el('span', null, 'Clamed pendente (todos os meses)'),
+          el('strong', { class: 'destaque' }, C.fmtMoney(clamedPendente))),
+        el('div', { class: 'row space meta-linha' },
+          el('span', null, 'Comissão das vendas deste mês'), el('strong', null, C.fmtMoney(comissaoVendasMes))),
+        el('div', { class: 'row space meta-linha' },
+          el('span', null, 'Clamed caindo neste mês'), el('strong', null, C.fmtMoney(clamedCaiEsteMes))))));
+
     view.appendChild(el('div', { class: 'kpis mt16' },
       kpi('Faturamento (vendido)', C.fmtMoney(faturamento)),
-      kpi('Comissão gerada', C.fmtMoney(comissaoGerada)),
-      kpi('A receber no mês', C.fmtMoney(aReceber), 'destaque'),
+      kpi('Comissão gerada no mês', C.fmtMoney(comissaoGerada)),
+      kpi('A receber no próximo mês', C.fmtMoney(aReceber), 'destaque'),
       kpi('Despesas', C.fmtMoney(totDesp)),
       kpi('Líquido (comissão − despesas)', C.fmtMoney(comissaoGerada - totDesp), comissaoGerada - totDesp >= 0 ? 'ok' : 'erro'),
       kpi('Km rodado (rotas)', Math.round(kmRotas) + ' km'),

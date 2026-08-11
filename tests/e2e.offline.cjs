@@ -464,6 +464,106 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   check('e mantém o histórico de visitas da prospecção', virouCliente.visitas >= 1);
   await page.evaluate(() => document.querySelectorAll('.ns-overlay').forEach(o => o.remove()));
 
+  // ── desconto no pedido: entra no faturamento, na meta e na comissão ──
+  await page.click('#fab');
+  await page.waitForSelector('.ns-modal');
+  await page.fill('.ns-modal input', 'FARMACIA TESTE');
+  await page.click('.ns-modal .item-lista');
+  await page.click('text=Tabela Lucro Presumido');
+  await page.click('text=+ Adicionar produto');
+  const mDesc = page.locator('.ns-overlay').last().locator('.ns-modal');
+  await mDesc.waitFor();
+  await mDesc.locator('.item-lista').click();
+  await mDesc.locator('button:has-text("Adicionar")').click();
+  await page.waitForTimeout(200);
+  await page.click('button:has-text("Conferir")');
+  await page.waitForTimeout(300);
+  const brutoDesc = await page.evaluate(() =>
+    Number(document.querySelector('.total-bar strong').textContent.replace(/[^\d,]/g, '').replace(',', '.')));
+  await page.locator('.ns-modal input[type=number]').last().fill('10');
+  await page.waitForTimeout(250);
+  const resumoDesc = (await page.textContent('.desc-resumo')).replace(/\u00a0/g, ' ');
+  check('desconto mostra bruto, abatimento e valor final',
+    resumoDesc.includes('Desconto de 10%') && resumoDesc.includes('Valor final'));
+  await page.locator('.ns-modal input[placeholder*="Prazo"]').fill('à vista');
+  await page.click('button:has-text("Assinar")');
+  await page.waitForTimeout(250);
+  await page.locator('.ns-modal input[placeholder*="Nome de quem assina"]').fill('Teste');
+  await page.click('button:has-text("Assinar em tela cheia")');
+  await page.waitForSelector('.assina-full canvas');
+  await page.waitForTimeout(400);
+  const bbD = await page.locator('.assina-full canvas').boundingBox();
+  await page.mouse.move(bbD.x + 40, bbD.y + bbD.height / 2);
+  await page.mouse.down();
+  for (let i = 0; i < 8; i++) await page.mouse.move(bbD.x + 40 + i * 15, bbD.y + bbD.height / 2 + i * 4);
+  await page.mouse.up();
+  await page.click('.assina-full button:has-text("Confirmar assinatura")');
+  await page.waitForTimeout(300);
+  await page.click('button:has-text("Confirmar e concluir")');
+  await page.waitForSelector('.sucesso-banner');
+  const pedDesc = await page.evaluate(() => {
+    const ps = window.NSDB.all('pedidos').filter(p => p.status === 'concluido')
+      .sort((a, b) => (b.numero || 0) - (a.numero || 0));
+    const p = ps[0];
+    const v = window.NSDB.all('visitas').find(x => x.pedido_id === p.id);
+    return { bruto: p.total_bruto, pct: p.desconto_pct, desc: p.desconto_valor,
+      total: p.total_valor, comissao: v && v.comissao_valor, valorVisita: v && v.valor_pedido };
+  });
+  check('pedido grava bruto, % e valor do desconto',
+    pedDesc.pct === 10 && Math.abs(pedDesc.bruto - brutoDesc) < 0.01 &&
+    Math.abs(pedDesc.desc - brutoDesc * 0.1) < 0.02);
+  check('total do pedido já é o líquido (com o desconto abatido)',
+    Math.abs(pedDesc.total - brutoDesc * 0.9) < 0.02);
+  check('comissão é calculada sobre o valor com desconto',
+    Math.abs(pedDesc.comissao - pedDesc.total * 0.1) < 0.02);
+  check('a visita (que alimenta meta e painel) usa o valor líquido',
+    Math.abs(pedDesc.valorVisita - pedDesc.total) < 0.01);
+  const cupomDesc = await page.evaluate(async () => {
+    const p = window.NSDB.all('pedidos').filter(x => x.status === 'concluido')
+      .sort((a, b) => (b.numero || 0) - (a.numero || 0))[0];
+    const blob = await window.NSPedido.gerarCupom(p.id);
+    return blob.size;
+  });
+  check('cupom sai com o desconto impresso (imagem gerada)', cupomDesc > 5000);
+  // desfaz o pedido do teste de desconto para os cenários seguintes voltarem ao estado esperado
+  await page.evaluate(() => {
+    const p = window.NSDB.all('pedidos').filter(x => x.status === 'concluido')
+      .sort((a, b) => (b.numero || 0) - (a.numero || 0))[0];
+    window.NSDB.removeWhere('pedido_itens', i => i.pedido_id === p.id);
+    window.NSDB.removeWhere('visitas', v => v.pedido_id === p.id);
+    window.NSDB.remove('pedidos', p.id);
+  });
+  await page.evaluate(() => document.querySelectorAll('.ns-overlay').forEach(o => o.remove()));
+
+  // ── histórico de visitas da semana ──
+  const histSemana = await page.evaluate(() => {
+    const rep = window.NSDB.all('representantes')[0];
+    // cliente próprio do cenário, para não mexer nos números dos outros testes
+    const cli = window.NSDB.insert('clientes', { representante_id: rep.id,
+      nome: 'FARMACIA DE ONTEM', cidade: 'Erechim', uf: 'RS', status: 'ativo', classe: 'B' });
+    // visita de ontem, num cliente que não está na rota de hoje
+    const ontem = new Date(); ontem.setDate(ontem.getDate() - 1);
+    const iso = ontem.toISOString().slice(0, 10);
+    window.NSDB.insert('visitas', { cliente_id: cli.id, representante_id: rep.id,
+      data_visita: iso, realizada: true, fez_pedido: true, valor_pedido: 1234.5 });
+    return { iso, diaSemana: ontem.getDay() };
+  });
+  const DIAS = ['', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta'];
+  if (histSemana.diaSemana >= 1 && histSemana.diaSemana <= 5) {
+    await page.click('#tabs button[data-v=hoje]');
+    await page.waitForTimeout(250);
+    await page.locator('#view .chip', { hasText: DIAS[histSemana.diaSemana] }).first().click();
+    await page.waitForTimeout(350);
+    const abaOntem = await page.textContent('#view');
+    if (process.env.DBG) console.log('--ABA ONTEM--', abaOntem.slice(0, 500));
+    check('a aba do dia anterior continua mostrando quem foi atendido',
+      abaOntem.includes('FARMACIA DE ONTEM') &&
+      (abaOntem.includes('Também atendidos') || abaOntem.includes('Atendido em')));
+    check('e o histórico mostra o valor do pedido daquele dia', abaOntem.includes('1.234,50'));
+    await page.locator('#view .chip', { hasText: DIAS[new Date().getDay()] || 'Segunda' }).first().click();
+    await page.waitForTimeout(250);
+  }
+
   // ── ordem manual da rota ──
   await page.evaluate(() => {
     const reps = window.NSDB.all('representantes')[0];
@@ -503,6 +603,40 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
       .map(x => window.NSDB.byId('clientes', x.getAttribute('data-id')).rota_ordem));
   check('a ordem manual fica gravada (1, 2, 3…)',
     ordemGravada.join(',') === ordemGravada.map((_, i) => i + 1).join(','));
+
+  // arrastar com toque longo: segurar no cartão (não num botão) e puxar
+  const cards = page.locator('#view .card-visita');
+  const antesDrag = await nomesNaRota();
+  const cx1 = await cards.first().boundingBox();
+  const cx3 = await cards.nth(2).boundingBox();
+  await page.mouse.move(cx1.x + cx1.width / 2, cx1.y + 24);
+  await page.mouse.down();
+  await page.waitForTimeout(400);                     // segura para virar arraste
+  const segurando = await page.locator('#view .card-visita.arrastando').count();
+  check('segurar o cartão inicia o arraste (não aciona botão)', segurando === 1);
+  check('aparece o espaço tracejado mostrando onde vai cair',
+    (await page.locator('#view .solta-aqui').count()) === 1);
+  await page.mouse.move(cx1.x + cx1.width / 2, cx3.y + cx3.height - 10, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForTimeout(350);
+  const depoisDrag = await nomesNaRota();
+  if (process.env.DBG) console.log('DRAG antes:', antesDrag.join('|'), '→ depois:', depoisDrag.join('|'));
+  check('arrastar reordena de verdade', depoisDrag[0] !== antesDrag[0] &&
+    depoisDrag.length === antesDrag.length);
+  check('e a nova ordem fica gravada', (await page.evaluate(() =>
+    Array.from(document.querySelectorAll('#view .card-visita'))
+      .map(x => window.NSDB.byId('clientes', x.getAttribute('data-id')).rota_ordem)
+      .join(','))) === antesDrag.map((_, i) => i + 1).join(','));
+  // deslizar sem segurar = rolagem, não pode reordenar
+  const ordemAntesScroll = await nomesNaRota();
+  const c1 = await cards.first().boundingBox();
+  await page.mouse.move(c1.x + c1.width / 2, c1.y + 24);
+  await page.mouse.down();
+  await page.mouse.move(c1.x + c1.width / 2, c1.y + 120, { steps: 5 });
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  check('deslizar rápido é rolagem — não reordena',
+    (await nomesNaRota()).join('|') === ordemAntesScroll.join('|'));
 
   // limpa a rota montada nos testes de ordem para o cenário seguinte começar do zero
   await page.evaluate(() => {

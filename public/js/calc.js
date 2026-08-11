@@ -41,6 +41,15 @@
     return { colocadas, devDisplay, devQuebrada, vendidas, valor };
   }
 
+  // Desconto/abatimento do pedido (ex.: 3% à vista na nota). O valor que vale
+  // para faturamento, meta e comissão é o LÍQUIDO, depois do abatimento.
+  function aplicarDesconto(totalBruto, pct) {
+    totalBruto = Number(totalBruto) || 0;
+    pct = Math.min(100, Math.max(0, Number(pct) || 0));
+    const desconto = round2(totalBruto * pct / 100);
+    return { bruto: round2(totalBruto), pct, desconto, liquido: round2(totalBruto - desconto) };
+  }
+
   function calcTotais(itens) {
     const t = { colocadas: 0, devDisplay: 0, devQuebrada: 0, vendidas: 0, valor: 0 };
     for (const i of itens) {
@@ -482,7 +491,7 @@
   const api = {
     TABELAS_PERMITIDAS, NOME_TABELA, tabelaPermitida, tabelasDoCliente,
     fmtCNPJ,
-    round2, fmtMoney, fmtPct, calcItem, calcTotais, calcComissao, cicloDoDia,
+    round2, fmtMoney, fmtPct, calcItem, calcTotais, aplicarDesconto, calcComissao, cicloDoDia,
     DIAS_SEMANA, normDia, mesmoDia, clienteJaComprou, classeRank,
     haversineKm, matrizHaversine, nearestNeighbor, comprimentoRota, doisOpt,
     otimizarRota, detourInsercao, decidirPernoite, sugestaoFrequencia,

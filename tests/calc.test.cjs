@@ -218,6 +218,29 @@ eq('A antes de B, C e D por último', [{classe:'C'},{classe:'D'},{classe:'A'},{}
   .sort((a,b) => C.classeRank(a) - C.classeRank(b)).map(c => c.classe || 'B').join(''), 'ABBCD');
 eq('sem classe = B', C.classeRank({}), 1);
 
+console.log('\nDesconto do pedido:');
+let dsc = C.aplicarDesconto(10000, 3);
+eq('3% de 10.000 = 300 de desconto', dsc.desconto, 300);
+eq('valor final: 9.700', dsc.liquido, 9700);
+eq('guarda o bruto para o talão', dsc.bruto, 10000);
+eq('sem desconto o líquido é o bruto', C.aplicarDesconto(1073.10, 0).liquido, 1073.10);
+eq('vazio/nulo não quebra', C.aplicarDesconto(500, null).liquido, 500);
+eq('percentual negativo é ignorado', C.aplicarDesconto(500, -10).liquido, 500);
+eq('acima de 100% trava em 100%', C.aplicarDesconto(500, 150).liquido, 0);
+eq('centavos arredondam certo', C.aplicarDesconto(1073.10, 5).desconto, 53.66);
+eq('pedido negativo (crédito) também aceita desconto', C.aplicarDesconto(-100, 10).liquido, -90);
+// a comissão passa a ser calculada sobre o líquido
+const comSemDesc = C.calcComissao({ valor: 10000, clienteNovo: false, pctNovo: 15, pctReposicao: 10,
+  dataPedido: '2026-08-10', recebimentoDias: 0 });
+const comComDesc = C.calcComissao({ valor: C.aplicarDesconto(10000, 3).liquido, clienteNovo: false,
+  pctNovo: 15, pctReposicao: 10, dataPedido: '2026-08-10', recebimentoDias: 0 });
+eq('comissão sem desconto: 10% de 10.000 = 1.000', comSemDesc.valor, 1000);
+eq('comissão com 3%: 10% de 9.700 = 970', comComDesc.valor, 970);
+// Clamed: 45 dias corridos da venda
+const comClamed = C.calcComissao({ valor: 1000, clienteNovo: false, pctNovo: 15, pctReposicao: 10,
+  dataPedido: '2026-08-10', recebimentoDias: 45 });
+eq('Clamed de 10/08 cai em 24/09 (45 dias)', comClamed.recebimentoEm, '2026-09-24');
+
 console.log('\nMeta diária dinâmica (o exemplo do gestor):');
 // meta 200.000 · vendido 10.000 · restam 10 dias úteis → 190.000 ÷ 10 = 19.000/dia
 let md = C.metaDinamica({ metaMes: 200000, vendidoMes: 10000, vendidoHoje: 0, hoje: '2026-08-18' });

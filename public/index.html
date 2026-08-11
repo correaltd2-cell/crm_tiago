@@ -241,11 +241,19 @@ select.input,select.input.big{appearance:none;-webkit-appearance:none;
 .st-tag.vermelho{background:var(--erro)}.st-tag.amarelo{background:var(--aviso)}
 .st-tag.verde{background:var(--ok)}.st-tag.cinza{background:#98a4b8}
 /* alça de arrastar da rota + numeração da ordem */
-.arrasta{flex:0 0 auto;width:30px;align-self:stretch;display:flex;align-items:center;justify-content:center;
-  color:var(--sub2);font-size:1.25rem;letter-spacing:-.1em;cursor:grab;touch-action:none;
+.arrasta{flex:0 0 auto;width:32px;align-self:stretch;display:flex;align-items:center;justify-content:center;
+  color:var(--sub2);font-size:1.3rem;letter-spacing:-.1em;cursor:grab;
   border-radius:8px;background:var(--bg2)}
-.arrasta:active{cursor:grabbing;background:var(--az1);color:#fff}
-.card-visita.arrastando{opacity:.75;transform:scale(1.02);box-shadow:var(--sombra-2);border-color:var(--az2)}
+.arrasta:active{cursor:grabbing;background:var(--az2);color:#fff}
+/* o cartão inteiro aceita o toque longo para arrastar; nada de menu de copiar */
+.card-visita{touch-action:pan-y;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.card-visita .input,.card-visita input,.card-visita textarea{-webkit-user-select:text;user-select:text}
+.card-visita.arrastando{opacity:.95;box-shadow:0 18px 40px -12px rgba(36,27,82,.5);
+  border-color:var(--az2);transform-origin:center;transition:none}
+/* espaço tracejado mostrando onde o cliente vai cair */
+.solta-aqui{border:2px dashed var(--az2);border-radius:var(--r-lg);background:rgba(43,123,212,.08);
+  animation:respira-solta 1s ease-in-out infinite}
+@keyframes respira-solta{0%,100%{opacity:.65}50%{opacity:1}}
 .ordem-num{flex:0 0 auto;min-width:22px;height:22px;padding:0 5px;border-radius:7px;
   background:var(--navy);color:#fff;font-size:.72rem;font-weight:800;
   display:inline-flex;align-items:center;justify-content:center}
@@ -283,7 +291,13 @@ select.input,select.input.big{appearance:none;-webkit-appearance:none;
 
 .card-visita{background:var(--vidro);backdrop-filter:blur(10px);border:1px solid var(--borda);
   border-radius:var(--r-lg);padding:14px 16px;box-shadow:var(--sombra-1)}
-.card-visita.feito{opacity:.5;filter:saturate(.6)}
+.card-visita.feito{opacity:.55;filter:saturate(.55)}
+.atendido-linha{display:flex;align-items:center;gap:7px;font-size:.8rem;font-weight:700;
+  color:#166b2c;background:#e7f6ec;border:1px solid rgba(30,126,52,.3);
+  border-radius:9px;padding:6px 10px}
+/* histórico: quem foi atendido no dia mas não está mais na rota daquele dia */
+.card-visita.historico{width:100%;text-align:left;border-left:4px solid var(--sub2);
+  background:var(--bg2);opacity:.75}
 .nota-previa{font-size:.78rem;color:var(--az3);font-weight:600;margin-top:4px;background:rgba(var(--glow-rgb),.09);border-left:3px solid var(--az2);border-radius:6px;padding:5px 8px}
 /* cartão de item do pedido: título marinho, valor destacado em azul forte */
 .card-item{background:#fff;border:1px solid var(--borda);border-left:4px solid var(--az2);
@@ -357,6 +371,12 @@ select.input,select.input.big{appearance:none;-webkit-appearance:none;
 .painel-meta-topo span{font-size:.7rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#b6c0e6}
 .painel-meta-topo strong{font-size:1.5rem;font-weight:900;color:var(--ouro-claro);font-variant-numeric:tabular-nums}
 .painel-meta .progresso-barra{background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.2);box-shadow:none}
+.painel-comissao{background:linear-gradient(165deg,var(--az3),#0b3c80);color:#fff;
+  border-radius:var(--r-lg);padding:15px 17px;box-shadow:var(--sombra-2);position:relative;overflow:hidden}
+.painel-comissao::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--az1)}
+.painel-comissao .painel-meta-topo strong{color:#fff}
+.painel-comissao .meta-linha>span{color:#c6dcf7}
+.painel-comissao .meta-linha>strong.destaque{color:var(--ouro-claro)}
 .meta-corpo{display:flex;flex-direction:column;gap:7px}
 .meta-linha{font-size:.92rem}
 .meta-linha>span{color:#c3cdec;font-weight:600}
@@ -399,6 +419,12 @@ select.input,select.input.big{appearance:none;-webkit-appearance:none;
 .campo-box.ouro{border-left-color:var(--ouro);background:linear-gradient(100deg,#fff7e8,#fff 60%)}
 .campo-box.roxo{border-left-color:var(--prospec);background:linear-gradient(100deg,var(--prospec-bg),#fff 60%)}
 .campo-box.cinza{border-left-color:var(--sub2);background:linear-gradient(100deg,#f3f4f9,#fff 60%)}
+.campo-box.verde{border-left-color:var(--ok);background:linear-gradient(100deg,#ecf8f0,#fff 60%)}
+.desc-resumo{margin-top:9px;display:flex;flex-direction:column;gap:5px;font-size:.88rem}
+.desc-resumo strong{font-variant-numeric:tabular-nums;color:var(--navy)}
+.desc-resumo strong.menos{color:var(--erro)}
+.desc-resumo .total{border-top:1.5px solid var(--borda2);padding-top:6px;margin-top:2px}
+.desc-resumo .total strong{font-size:1.12rem;font-weight:900;color:var(--ok)}
 .campo-box-tit{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
   font-size:.76rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
   color:var(--navy);margin-bottom:9px}
