@@ -451,45 +451,20 @@
             }, rot('check', 'Confirmar assinatura'))));
         document.body.appendChild(tela);
 
-        // ── assinatura SEMPRE deitada (paisagem) ──
-        // No Android dá para travar a orientação de verdade. No iPhone o Safari
-        // não deixa, então giramos a própria tela de assinatura 90° por CSS —
-        // o cliente assina na horizontal do mesmo jeito, sem virar o aparelho.
-        let girado = false, tr = null;
+        // Tela cheia e, onde o navegador deixa, orientação travada em paisagem.
+        // Nada de girar a interface por CSS: com a tela rotacionada o retângulo
+        // que o navegador devolve vinha transformado e o traço saía deslocado.
+        let tr = null;
         (async () => {
           try {
             if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();
             if (screen.orientation && screen.orientation.lock) await screen.orientation.lock('landscape');
-          } catch (e) { /* iOS e navegadores sem suporte caem no giro por CSS */ }
-          ajustar();
-        })();
-        function emRetrato() { return window.innerHeight > window.innerWidth; }
-        // Monta o "papel deitado": o comprimento do papel é a altura da tela e a
-        // espessura é a largura. Reservamos duas faixas (cabeçalho e botões) para
-        // que o quadro de assinatura não cubra os botões depois de girar.
-        const FAIXA_TOPO = 46, FAIXA_ACOES = 84, MARGEM = 16;
-        function ajustar() {
-          girado = emRetrato();
-          tela.classList.toggle('deitada', girado);
-          const alvos = [tela.querySelector('.topo'), area, tela.querySelector('.acoes')];
-          if (!girado) { alvos.forEach(x => { if (x) { x.style.cssText = ''; } }); medirCanvas(); return; }
-          const L = window.innerHeight;                  // comprimento do papel
-          const E = window.innerWidth;                   // espessura do papel
-          const base = 'position:absolute;top:50%;left:50%;margin:0;transform-origin:center center;';
-          // translateY(D) no espaço local move D px para a ESQUERDA na tela
-          const giro = (D) => 'translate(-50%,-50%) rotate(90deg) translateY(' + D + 'px)';
-          const topo = tela.querySelector('.topo'), acoes = tela.querySelector('.acoes');
-          if (topo) topo.style.cssText = base + 'width:' + L + 'px;height:' + FAIXA_TOPO +
-            'px;transform:' + giro(E / 2 - FAIXA_TOPO / 2) + ';';
-          if (acoes) acoes.style.cssText = base + 'width:' + L + 'px;height:' + FAIXA_ACOES +
-            'px;transform:' + giro(-(E / 2 - FAIXA_ACOES / 2)) + ';';
-          const alturaUtil = E - FAIXA_TOPO - FAIXA_ACOES - MARGEM * 2;
-          area.style.cssText = base + 'width:' + (L - MARGEM * 2) + 'px;height:' + alturaUtil +
-            'px;transform:' + giro(-(FAIXA_TOPO - FAIXA_ACOES) / 2) + ';';
+          } catch (e) { /* iOS não deixa travar: o cliente vira o aparelho na mão */ }
           medirCanvas();
-        }
-        // não remexer no layout no meio de um traço (o dedo está desenhando)
-        const reajustar = () => { if (!tr) ajustar(); };
+        })();
+
+        // ao virar o aparelho, o quadro é remedido — menos no meio de um traço
+        const reajustar = () => { if (!tr) medirCanvas(); };
         window.addEventListener('resize', reajustar);
         window.addEventListener('orientationchange', reajustar);
 
@@ -504,14 +479,10 @@
         const cx = cvF.getContext('2d');
         const st = [];
         const dpr = window.devicePixelRatio || 1;
-        // tamanho lógico do canvas (o desenho é feito neste espaço)
-        let logW = 0, logH = 0;
         function medirCanvas() {
-          const larg = area.clientWidth || area.getBoundingClientRect().width;
-          const alt = area.clientHeight || area.getBoundingClientRect().height;
-          if (!larg || !alt) return;
-          logW = larg; logH = alt;
-          cvF.width = Math.round(larg * dpr); cvF.height = Math.round(alt * dpr);
+          const r = area.getBoundingClientRect();
+          if (!r.width || !r.height) return;
+          cvF.width = Math.round(r.width * dpr); cvF.height = Math.round(r.height * dpr);
           cx.setTransform(dpr, 0, 0, dpr, 0, 0);
           pinta();
         }
@@ -525,16 +496,10 @@
             cx.stroke();
           }
         }
-        // Ponto do dedo → coordenada dentro do canvas. Quando a tela está girada
-        // 90° por CSS, o retângulo que o navegador devolve já vem transformado;
-        // desfazemos a rotação na mão para o traço sair no lugar certo.
+        // ponto do dedo → coordenada dentro do canvas, direto, sem transformação
         const posF = (e) => {
           const r = cvF.getBoundingClientRect();
-          if (!girado) return { x: e.clientX - r.left, y: e.clientY - r.top };
-          const cxr = r.left + r.width / 2, cyr = r.top + r.height / 2;
-          const dx = e.clientX - cxr, dy = e.clientY - cyr;
-          // rotate(90°) leva (lx,ly) → (−ly, lx); invertendo: lx = dy, ly = −dx
-          return { x: logW / 2 + dy, y: logH / 2 - dx };
+          return { x: e.clientX - r.left, y: e.clientY - r.top };
         };
         cvF.addEventListener('pointerdown', (e) => { e.preventDefault(); cvF.setPointerCapture(e.pointerId); tr = [posF(e)]; st.push(tr); });
         cvF.addEventListener('pointermove', (e) => { if (tr) { tr.push(posF(e)); pinta(); } });

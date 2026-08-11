@@ -170,11 +170,24 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page.mouse.down();
   for (let i = 0; i < 12; i++) await page.mouse.move(bb.x + 40 + i * 20, bb.y + bb.height / 2 + Math.sin(i) * 40);
   await page.mouse.up();
-  const antesConfirmar = await page.evaluate(() => ({
-    girado: document.querySelector('.assina-full').classList.contains('deitada'),
-    tracos: 1
-  }));
-  check('assinatura abre DEITADA quando o aparelho está em pé', antesConfirmar.girado);
+  // o traço tem de sair exatamente onde o dedo passou — sem rotação de tela
+  const tracoOndeEscreveu = await page.evaluate((pt) => {
+    const cv = document.querySelector('.assina-full canvas');
+    const r = cv.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const cx = cv.getContext('2d');
+    // lê o pixel logo abaixo do ponto onde o mouse começou o traço
+    const x = Math.round((pt.x - r.left) * dpr), y = Math.round((pt.y - r.top) * dpr);
+    let achou = false;
+    for (let dx = -6; dx <= 6 && !achou; dx++)
+      for (let dy = -6; dy <= 6 && !achou; dy++) {
+        const d = cx.getImageData(Math.max(0, x + dx), Math.max(0, y + dy), 1, 1).data;
+        if (d[3] > 0) achou = true;
+      }
+    return { achou, semRotacao: !document.querySelector('.assina-full').classList.contains('deitada') };
+  }, { x: bb.x + 40, y: bb.y + bb.height / 2 });
+  check('a tinta aparece exatamente onde o dedo escreveu', tracoOndeEscreveu.achou);
+  check('a tela de assinatura não é girada por CSS', tracoOndeEscreveu.semRotacao);
   await page.click('.assina-full button:has-text("Confirmar assinatura")');
   await page.waitForTimeout(300);
   check('após confirmar, volta para a tela do pedido', !(await page.isVisible('.assina-full')));

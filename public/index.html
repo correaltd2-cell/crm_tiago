@@ -272,16 +272,6 @@ select.input,select.input.big{appearance:none;-webkit-appearance:none;
 .assina-full .topo{padding:14px 16px;padding-top:calc(14px + env(safe-area-inset-top));border-bottom:1px solid var(--borda)}
 .assina-full .area{flex:1;margin:10px;border:2px dashed var(--borda2);border-radius:14px;background:#fdfdfb;overflow:hidden}
 .assina-full canvas{display:block;width:100%;height:100%;touch-action:none}
-/* tela de assinatura deitada: o aparelho continua em pé, a interface é que gira.
-   A posição de cada faixa é calculada no JS (pedido.js) e entra como estilo inline. */
-.assina-full.deitada{overflow:hidden}
-.assina-full.deitada .topo{z-index:2;background:var(--navy);color:#fff;border:none;
-  padding:0 16px;display:flex;align-items:center;gap:12px;white-space:nowrap;overflow:hidden}
-.assina-full.deitada .topo .sub{color:#b9c4e6}
-.assina-full.deitada .acoes{z-index:2;padding:0 14px;background:transparent;align-items:center}
-.assina-full.deitada .acoes .btn{padding:9px 12px;font-size:.85rem}
-.assina-full.deitada .area{z-index:1}
-.assina-full .acoes{padding:12px 16px;padding-bottom:calc(12px + env(safe-area-inset-bottom));display:flex;gap:8px}
 .vazio{color:var(--sub);text-align:center;padding:30px 12px;font-weight:500;font-size:.88rem;line-height:1.6}
 .badge{font-size:.68rem;font-weight:700;letter-spacing:.02em;background:var(--bg2);color:var(--navy);font-weight:800;
   border:1px solid var(--borda);border-radius:999px;padding:4px 10px;white-space:nowrap}
