@@ -310,6 +310,10 @@
           el('span', null, 'Valor final'), el('strong', null, C.fmtMoney(d.liquido))));
       };
       descIn.addEventListener('input', atualizaDesc);
+      const recebidoIn = el('input', {
+        class: 'input big', placeholder: 'Nome de quem recebe a mercadoria',
+        value: ped.assinante_nome || cli.contato || ''
+      });
       const chkDisplay = el('input', { type: 'checkbox' });
       if (ped.deixou_display) chkDisplay.checked = true;
       const materialIn = el('input', {
@@ -365,6 +369,12 @@
           el('p', { class: 'campo-box-ajuda' },
             'Ex.: 3 para 3% de desconto à vista. O valor final (já com o abatimento) ' +
             'é o que conta no faturamento, na meta e na comissão.')),
+        el('div', { class: 'campo-box azul mt12' },
+          el('div', { class: 'campo-box-tit' }, 'Recebido por'),
+          recebidoIn,
+          el('p', { class: 'campo-box-ajuda' },
+            'Nome de quem recebeu. Sai no cupom e no talão. A assinatura é colhida ' +
+            'no fim, na tela do pedido pronto.')),
         el('div', { class: 'campo-box roxo mt12' },
           el('div', { class: 'campo-box-tit' }, 'Material deixado no cliente'),
           el('label', { class: 'row gap8 chk-grande' }, chkDisplay,
@@ -386,13 +396,15 @@
               prazoIn.focus();
               return toast('Escreva a CONDIÇÃO DE PAGAMENTO (prazo) antes de ' + (editando ? 'salvar' : 'assinar') + '.', 'erro');
             }
-            if (editando) salvarConcluido(); else passoAssinatura();
-          } }, editando ? rot('salvar', 'Salvar alterações') : el('span', { class: 'row gap8' }, 'Assinar', ico('setaDir'))))));
+            salvarConcluido();
+          } }, editando ? rot('salvar', 'Salvar alterações')
+            : rot('check', 'Concluir pedido')))));
 
       atualizaDesc();
       function guardar() {
         ped.obs = obsIn.value;
         ped.desconto_pct = Math.min(100, Math.max(0, Number(descIn.value) || 0));
+        ped.assinante_nome = recebidoIn.value.trim() || null;
         ped.condicao_pagamento = prazoIn.value.trim();
         ped.deixou_display = chkDisplay.checked;
         ped.material_deixado = materialIn.value.trim();
@@ -401,124 +413,6 @@
     }
 
     // ---- Passo 5: assinatura ----
-    function passoAssinatura() {
-      const cli = DB.byId('clientes', ped.cliente_id) || {};
-      const nomeAssinante = el('input', {
-        class: 'input big', placeholder: 'Nome de quem assina * (obrigatório)',
-        value: ped.assinante_nome || cli.contato || ''
-      });
-      // a assinatura é colhida em TELA CHEIA (área grande e confortável) e,
-      // ao confirmar, volta para esta tela do pedido com a prévia
-      const previa = el('div', { class: 'sub mt8' }, 'Nenhuma assinatura colhida ainda.');
-      const imgPrev = el('img', { style: 'display:none;max-width:100%;background:#fff;border-radius:10px;margin-top:8px' });
-      const cont = el('div', null,
-        el('h3', null, 'Assinatura do cliente'),
-        el('p', { class: 'sub' }, 'Informe o nome de quem assina e toque no botão para o cliente assinar em tela cheia.'),
-        nomeAssinante,
-        el('button', { class: 'btn big w100 mt12', onclick: abrirTelaCheia }, rot('assinatura', 'Assinar em tela cheia')),
-        previa, imgPrev,
-        el('div', { class: 'row gap8 mt12' },
-          el('button', { class: 'btn btn-sec grow', onclick: passoConferencia }, rot('setaEsq', 'Voltar')),
-          el('button', { class: 'btn grow', onclick: concluir }, rot('check', 'Confirmar e concluir'))));
-      corpo(cont);
-      if (ped.assinatura) { imgPrev.src = ped.assinatura; imgPrev.style.display = 'block'; previa.textContent = 'Assinatura colhida — toque no botão para refazer.'; }
-
-      function abrirTelaCheia() {
-        if (!nomeAssinante.value.trim()) {
-          nomeAssinante.focus();
-          return toast('Informe o NOME de quem assina antes de colher a assinatura.', 'erro');
-        }
-        const cvF = el('canvas');
-        const area = el('div', { class: 'area' }, cvF);
-        const tela = el('div', { class: 'assina-full' },
-          el('div', { class: 'topo' },
-            el('strong', null, 'Assinatura de ' + nomeAssinante.value.trim()),
-            el('div', { class: 'sub' }, cli.nome || '')),
-          area,
-          el('div', { class: 'acoes' },
-            el('button', { class: 'btn btn-sec grow', onclick: () => { st.length = 0; pinta(); } }, 'Limpar'),
-            el('button', { class: 'btn btn-sec grow', onclick: () => { liberarTela(); } }, 'Cancelar'),
-            el('button', {
-              class: 'btn grow', onclick: () => {
-                if (!st.length || st.every(x => x.length < 2)) return toast('Colete a assinatura antes de confirmar.', 'erro');
-                ped.assinatura = cvF.toDataURL('image/png');
-                ped.assinante_nome = nomeAssinante.value.trim();
-                imgPrev.src = ped.assinatura; imgPrev.style.display = 'block';
-                previa.textContent = 'Assinatura colhida — toque no botão para refazer.';
-                liberarTela();
-                toast('Assinatura salva. Agora toque em "Confirmar e concluir".');
-              }
-            }, rot('check', 'Confirmar assinatura'))));
-        document.body.appendChild(tela);
-
-        // Tela cheia e, onde o navegador deixa, orientação travada em paisagem.
-        // Nada de girar a interface por CSS: com a tela rotacionada o retângulo
-        // que o navegador devolve vinha transformado e o traço saía deslocado.
-        let tr = null;
-        (async () => {
-          try {
-            if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();
-            if (screen.orientation && screen.orientation.lock) await screen.orientation.lock('landscape');
-          } catch (e) { /* iOS não deixa travar: o cliente vira o aparelho na mão */ }
-          medirCanvas();
-        })();
-
-        // ao virar o aparelho, o quadro é remedido — menos no meio de um traço
-        const reajustar = () => { if (!tr) medirCanvas(); };
-        window.addEventListener('resize', reajustar);
-        window.addEventListener('orientationchange', reajustar);
-
-        function liberarTela() {
-          window.removeEventListener('resize', reajustar);
-          window.removeEventListener('orientationchange', reajustar);
-          try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (e) {}
-          try { if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen(); } catch (e) {}
-          tela.remove();
-        }
-
-        const cx = cvF.getContext('2d');
-        const st = [];
-        const dpr = window.devicePixelRatio || 1;
-        function medirCanvas() {
-          const r = area.getBoundingClientRect();
-          if (!r.width || !r.height) return;
-          cvF.width = Math.round(r.width * dpr); cvF.height = Math.round(r.height * dpr);
-          cx.setTransform(dpr, 0, 0, dpr, 0, 0);
-          pinta();
-        }
-        setTimeout(medirCanvas, 40);
-        function pinta() {
-          cx.clearRect(0, 0, cvF.width, cvF.height);
-          cx.lineWidth = 3.2; cx.lineCap = 'round'; cx.lineJoin = 'round'; cx.strokeStyle = '#16233b';
-          for (const linha of st) {
-            cx.beginPath();
-            linha.forEach((pt, i) => i ? cx.lineTo(pt.x, pt.y) : cx.moveTo(pt.x, pt.y));
-            cx.stroke();
-          }
-        }
-        // ponto do dedo → coordenada dentro do canvas, direto, sem transformação
-        const posF = (e) => {
-          const r = cvF.getBoundingClientRect();
-          return { x: e.clientX - r.left, y: e.clientY - r.top };
-        };
-        cvF.addEventListener('pointerdown', (e) => { e.preventDefault(); cvF.setPointerCapture(e.pointerId); tr = [posF(e)]; st.push(tr); });
-        cvF.addEventListener('pointermove', (e) => { if (tr) { tr.push(posF(e)); pinta(); } });
-        const fimF = () => { tr = null; };
-        cvF.addEventListener('pointerup', fimF); cvF.addEventListener('pointercancel', fimF);
-      }
-
-      function concluir() {
-        if (!nomeAssinante.value.trim()) {
-          nomeAssinante.focus();
-          return toast('Informe o NOME de quem assina — é obrigatório.', 'erro');
-        }
-        if (!ped.assinatura)
-          return toast('Toque em "Assinar em tela cheia" e colha a assinatura do cliente.', 'erro');
-        ped.assinante_nome = nomeAssinante.value.trim();
-        salvarConcluido();
-      }
-    }
-
     // ---- Persistência + integração com o Módulo A ----
     function salvarConcluido() {
       const tot = C.calcTotais(ped.itens);
@@ -642,6 +536,86 @@
     }
   }
 
+  // ============ COLETAR ASSINATURA (tela cheia) ============
+  // Usada no fim do processo, na tela do pedido pronto. Recebe o nome de quem
+  // assina e devolve o PNG da assinatura em `aoConfirmar`.
+  function coletarAssinatura({ nome, cliente, aoConfirmar }) {
+    const cvF = el('canvas');
+    const area = el('div', { class: 'area' }, cvF);
+    const tela = el('div', { class: 'assina-full' },
+      el('div', { class: 'topo' },
+        el('strong', null, 'Assinatura' + (nome ? ' de ' + nome : '')),
+        el('div', { class: 'sub' }, (cliente && cliente.nome) || '')),
+      area,
+      el('div', { class: 'acoes' },
+        el('button', { class: 'btn btn-sec grow', onclick: () => { st.length = 0; pinta(); } }, 'Limpar'),
+        el('button', { class: 'btn btn-sec grow', onclick: () => { liberarTela(); } }, 'Cancelar'),
+        el('button', {
+          class: 'btn grow', onclick: () => {
+            if (!st.length || st.every(x => x.length < 2)) return toast('Colete a assinatura antes de confirmar.', 'erro');
+            const png = cvF.toDataURL('image/png');
+            liberarTela();
+            if (aoConfirmar) aoConfirmar(png);
+          }
+        }, rot('check', 'Confirmar assinatura'))));
+    document.body.appendChild(tela);
+
+    // Tela cheia e, onde o navegador deixa, orientação travada em paisagem.
+    // Nada de girar a interface por CSS: com a tela rotacionada o retângulo
+    // que o navegador devolve vinha transformado e o traço saía deslocado.
+    let tr = null;
+    (async () => {
+      try {
+        if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();
+        if (screen.orientation && screen.orientation.lock) await screen.orientation.lock('landscape');
+      } catch (e) { /* iOS não deixa travar: o cliente vira o aparelho na mão */ }
+      medirCanvas();
+    })();
+
+    // ao virar o aparelho, o quadro é remedido — menos no meio de um traço
+    const reajustar = () => { if (!tr) medirCanvas(); };
+    window.addEventListener('resize', reajustar);
+    window.addEventListener('orientationchange', reajustar);
+
+    function liberarTela() {
+      window.removeEventListener('resize', reajustar);
+      window.removeEventListener('orientationchange', reajustar);
+      try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (e) {}
+      try { if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen(); } catch (e) {}
+      tela.remove();
+    }
+
+    const cx = cvF.getContext('2d');
+    const st = [];
+    const dpr = window.devicePixelRatio || 1;
+    function medirCanvas() {
+      const r = area.getBoundingClientRect();
+      if (!r.width || !r.height) return;
+      cvF.width = Math.round(r.width * dpr); cvF.height = Math.round(r.height * dpr);
+      cx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      pinta();
+    }
+    setTimeout(medirCanvas, 40);
+    function pinta() {
+      cx.clearRect(0, 0, cvF.width, cvF.height);
+      cx.lineWidth = 3.2; cx.lineCap = 'round'; cx.lineJoin = 'round'; cx.strokeStyle = '#16233b';
+      for (const linha of st) {
+        cx.beginPath();
+        linha.forEach((pt, i) => i ? cx.lineTo(pt.x, pt.y) : cx.moveTo(pt.x, pt.y));
+        cx.stroke();
+      }
+    }
+    // ponto do dedo → coordenada dentro do canvas, direto, sem transformação
+    const posF = (e) => {
+      const r = cvF.getBoundingClientRect();
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    };
+    cvF.addEventListener('pointerdown', (e) => { e.preventDefault(); cvF.setPointerCapture(e.pointerId); tr = [posF(e)]; st.push(tr); });
+    cvF.addEventListener('pointermove', (e) => { if (tr) { tr.push(posF(e)); pinta(); } });
+    const fimF = () => { tr = null; };
+    cvF.addEventListener('pointerup', fimF); cvF.addEventListener('pointercancel', fimF);
+  }
+
   // ============ PEDIDO CONCLUÍDO / HISTÓRICO ============
   async function gerarPDF(pedidoId) {
     const p = DB.byId('pedidos', pedidoId);
@@ -692,6 +666,29 @@
     const cli = DB.byId('clientes', p.cliente_id) || {};
     const itens = DB.all('pedido_itens').filter(i => i.pedido_id === pedidoId);
     const nomeArq = 'pedido-' + (p.numero || String(p.id).slice(0, 8)) + '.pdf';
+    // ÚLTIMO passo do processo: coletar a assinatura. O botão muda de cara
+    // depois que a assinatura entra no pedido.
+    const btnAssinar = el('button', { onclick: () => {
+      const atual = DB.byId('pedidos', pedidoId) || p;
+      coletarAssinatura({
+        nome: atual.assinante_nome || cli.contato || '',
+        cliente: cli,
+        aoConfirmar: (png) => {
+          DB.update('pedidos', pedidoId, { assinatura: png, assinado_em: new Date().toISOString() });
+          toast('Assinatura salva no pedido.');
+          mAbrir.fechar();
+          abrir(pedidoId);
+        }
+      });
+    } });
+    (function pintarBotaoAssinar() {
+      const temAss = !!p.assinatura;
+      btnAssinar.className = 'btn-assinar' + (temAss ? ' coletada' : '');
+      btnAssinar.replaceChildren(
+        ico(temAss ? 'checkCirculo' : 'assinatura'),
+        el('span', null, temAss ? 'ASSINATURA COLETADA' : 'COLETAR ASSINATURA'));
+    })();
+
     const acoes = el('div', { class: 'col gap8 mt12' },
       el('button', { class: 'btn big', onclick: async () => {
         abrirBlob(await gerarPDF(pedidoId), nomeArq);
@@ -720,7 +717,9 @@
       p.status === 'concluido' ? el('button', { class: 'btn big btn-sec', onclick: () => {
         mAbrir.fechar();
         novo(null, p);
-      } }, rot('lapis', 'Editar pedido (itens, prazo, devoluções)')) : null);
+      } }, rot('lapis', 'Editar pedido (itens, prazo, devoluções)')) : null,
+      // ÚLTIMO passo do processo: a assinatura. Fica por último e bem destacada.
+      btnAssinar);
 
     const linhas = itens.map(it => {
       const pr = DB.byId('produtos', it.produto_id) || {};
@@ -730,7 +729,10 @@
     }).join('');
 
     const mAbrir = modal(el('div', null,
-      recemConcluido ? el('div', { class: 'sucesso-banner' }, ico('checkCirculo'), 'Pedido concluído e assinado!') : null,
+      // A assinatura virou o último passo: o pedido já fica concluído sem ela.
+      recemConcluido ? el('div', { class: 'sucesso-banner' }, ico('checkCirculo'),
+        p.assinatura ? 'Pedido concluído e assinado!'
+          : 'Pedido concluído! Falta só coletar a assinatura, no botão roxo lá embaixo.') : null,
       el('div', { class: 'sub' }, `Pedido nº ${p.numero || 'PENDENTE (aguardando sync)'} · ${dataBR(p.data_pedido)} · ` +
         (Number(p.total_valor) < 0 ? 'CRÉDITO · ' : '') +
         `${p.status.toUpperCase()} · Tabela ${p.tabela === 'lucro' ? 'Lucro Presumido' : 'Simples'}` +

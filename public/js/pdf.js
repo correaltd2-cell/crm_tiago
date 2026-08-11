@@ -460,14 +460,8 @@
     const fone = rep.contato || rep.telefone || rep.celular || '';
     const negativo = Number(pedido.total_valor) < 0;
 
-    // assinatura (PNG original, sem conversão)
-    const imgAss = pedido.assinatura ? await new Promise((res) => {
-      const im = new Image();
-      im.onload = () => res(im);
-      im.onerror = () => res(null);
-      im.src = pedido.assinatura;
-    }) : null;
-
+    // O cupom NÃO leva a assinatura — só o nome de quem recebeu.
+    // A assinatura em imagem fica no PDF do talão.
     const cv = document.createElement('canvas');
     const ctx = cv.getContext('2d');
     const fonte = (px, b) => (b ? '700 ' : '') + px + 'px Arial, Helvetica, sans-serif';
@@ -557,18 +551,13 @@
       y += Math.round(8 * k);
       if (observacoes) { hr(); multi(observacoes, F(13), false); }
       hr();
-      if (imgAss) {
-        const aw = 250, ah = Math.min(115, aw * imgAss.height / imgAss.width);
-        if (pintar) ctx.drawImage(imgAss, CX - aw / 2, y, aw, ah);
-        y += ah + 8;
-      } else y += 48;
-      if (pintar) { ctx.fillStyle = '#000'; ctx.fillRect(CX - 125, y, 250, 1.5); }
-      y += Math.round(14 * k);
-      multi((pedido.assinante_nome ? pedido.assinante_nome + ' — ' : '') + (cliente.nome || ''),
-        F(16), false, { al: 'center' });
-      t('Assinatura do cliente', F(15), { al: 'center' });
-      if (pedido.assinado_em)
-        t(new Date(pedido.assinado_em).toLocaleString('pt-BR'), F(13), { al: 'center' });
+      // No cupom entra SÓ o nome de quem recebeu. A assinatura fica no PDF.
+      t('RECEBIDO POR', F(16), { b: true, al: 'center' });
+      y += Math.round(6 * k);
+      multi(pedido.assinante_nome || '____________________', F(20), true, { al: 'center' });
+      if (pintar) { ctx.fillStyle = '#000'; ctx.fillRect(CX - 125, y + 4, 250, 1.5); }
+      y += Math.round(16 * k);
+      multi(cliente.nome || '', F(15), false, { al: 'center' });
       y += 16;
       return y;
     }

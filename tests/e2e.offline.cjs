@@ -146,23 +146,33 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   const conf = await page.textContent('.ns-modal');
   check('conferência mostra tabela e total', conf.includes('Lucro Presumido') && conf.replace(/ /g, ' ').includes('594,50'));
 
-  // prazo obrigatório — agora no FINAL (conferência), não no início
-  await page.click('button:has-text("Assinar")');
+  // prazo obrigatório — no FINAL (conferência), não no início
+  await page.click('button:has-text("Concluir pedido")');
   await page.waitForTimeout(250);
-  check('não deixa assinar sem o prazo (condição de pagamento)', !(await page.isVisible('.assinatura-cv')));
+  check('não deixa concluir sem o prazo (condição de pagamento)', !(await page.isVisible('.sucesso-banner')));
   await page.fill('.ns-modal input[placeholder*="Prazo"]', '30 dias');
+  await page.fill('.ns-modal input[placeholder*="Nome de quem recebe"]', 'João da Silva');
 
-  // assinatura no canvas
-  await page.click('button:has-text("Assinar")');
-  // sem o nome de quem assina, não abre a tela cheia nem conclui
-  await page.fill('.ns-modal input[placeholder*="Nome de quem assina"]', '');
-  await page.click('button:has-text("Confirmar e concluir")');
-  await page.waitForTimeout(250);
-  check('não conclui sem o nome de quem assina', !(await page.isVisible('.sucesso-banner')));
-  await page.fill('.ns-modal input[placeholder*="Nome de quem assina"]', 'João da Silva');
-  await page.click('button:has-text("Assinar em tela cheia")');
+  // o pedido conclui SEM assinatura — ela é o último passo, na tela do pedido pronto
+  await page.click('button:has-text("Concluir pedido")');
+  await page.waitForSelector('.sucesso-banner');
+  check('pedido conclui sem exigir assinatura', await page.isVisible('.sucesso-banner'));
+  const semAssinaturaAinda = await page.evaluate(() =>
+    !JSON.parse(localStorage.getItem('ns_c_pedidos'))[0].assinatura);
+  check('pedido nasce sem assinatura', semAssinaturaAinda);
+  const btnAss = page.locator('.ns-overlay').last().locator('.btn-assinar');
+  check('botão COLETAR ASSINATURA aparece na tela do pedido',
+    (await btnAss.textContent()).includes('COLETAR ASSINATURA'));
+  check('e é o último botão da sequência de ações', await page.evaluate(() => {
+    const modal = document.querySelectorAll('.ns-overlay')[document.querySelectorAll('.ns-overlay').length - 1];
+    const bs = Array.from(modal.querySelectorAll('button'))
+      .filter(b => /PDF|Imprimir|Cupom|Editar pedido|ASSINATURA/.test(b.textContent));
+    return bs[bs.length - 1].classList.contains('btn-assinar');
+  }));
+
+  await btnAss.click();
   await page.waitForSelector('.assina-full canvas');
-  await page.waitForTimeout(400);   // espera a tela assentar em modo deitado
+  await page.waitForTimeout(400);
   check('assinatura abre em TELA CHEIA', await page.isVisible('.assina-full'));
   const cv = page.locator('.assina-full canvas');
   const bb = await cv.boundingBox();
@@ -189,11 +199,13 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   check('a tinta aparece exatamente onde o dedo escreveu', tracoOndeEscreveu.achou);
   check('a tela de assinatura não é girada por CSS', tracoOndeEscreveu.semRotacao);
   await page.click('.assina-full button:has-text("Confirmar assinatura")');
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(400);
   check('após confirmar, volta para a tela do pedido', !(await page.isVisible('.assina-full')));
-  await page.click('button:has-text("Confirmar e concluir")');
-  await page.waitForSelector('.sucesso-banner');
-  check('pedido concluído com assinatura', await page.isVisible('.sucesso-banner'));
+  const btnDepois = page.locator('.ns-overlay').last().locator('.btn-assinar');
+  check('o botão passa a mostrar ASSINATURA COLETADA',
+    (await btnDepois.textContent()).includes('ASSINATURA COLETADA'));
+  check('e muda de cor (classe .coletada)',
+    (await btnDepois.getAttribute('class')).includes('coletada'));
 
   // dados persistidos + comissão 15% (cliente novo) + prazo Clamed +45d
   const dados = await page.evaluate(() => ({
@@ -258,8 +270,24 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   }, dados.pedido.id);
   check('cupom 58mm: imagem PNG com 384px de largura (tira térmica)',
     cupomInfo.type === 'image/png' && cupomInfo.w === 384);
-  check('cupom 58mm: tira com conteúdo e assinatura desenhados',
-    cupomInfo.h > 500 && cupomInfo.tam > 5000);
+  check('cupom 58mm: tira com conteúdo desenhado', cupomInfo.h > 500 && cupomInfo.tam > 5000);
+  // a assinatura fica SÓ no PDF — o cupom leva apenas o nome de quem recebeu
+  const cupomSemAssinatura = await page.evaluate(async (pid) => {
+    const p = window.NSDB.byId('pedidos', pid);
+    const base = { itens: window.NSDB.all('pedido_itens').filter(i => i.pedido_id === pid),
+      cliente: window.NSDB.byId('clientes', p.cliente_id) || {},
+      rep: window.NSDB.byId('representantes', p.representante_id) || {},
+      produtos: window.NSDB.all('produtos'), observacoes: '' };
+    const comAss = await window.NSPDF.gerarCupomImagem(Object.assign({ pedido: p }, base));
+    const semAss = await window.NSPDF.gerarCupomImagem(
+      Object.assign({ pedido: Object.assign({}, p, { assinatura: null }) }, base));
+    const [a, b] = await Promise.all([createImageBitmap(comAss), createImageBitmap(semAss)]);
+    return { igualAltura: a.height === b.height, igualTamanho: comAss.size === semAss.size,
+      temNome: !!p.assinante_nome };
+  }, dados.pedido.id);
+  check('cupom NÃO leva a imagem da assinatura (mesma tira com ou sem ela)',
+    cupomSemAssinatura.igualAltura && cupomSemAssinatura.igualTamanho);
+  check('mas leva o nome de quem recebeu', cupomSemAssinatura.temNome);
   // a letra do cupom é grande (fonte da impressora) e regulável em Configurações —
   // no Android o app encolhe a imagem inteira, e letra pequena vira letra de formiga
   const cupomEscalas = await page.evaluate(async (pid) => {
@@ -499,20 +527,8 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   check('desconto mostra bruto, abatimento e valor final',
     resumoDesc.includes('Desconto de 10%') && resumoDesc.includes('Valor final'));
   await page.locator('.ns-modal input[placeholder*="Prazo"]').fill('à vista');
-  await page.click('button:has-text("Assinar")');
-  await page.waitForTimeout(250);
-  await page.locator('.ns-modal input[placeholder*="Nome de quem assina"]').fill('Teste');
-  await page.click('button:has-text("Assinar em tela cheia")');
-  await page.waitForSelector('.assina-full canvas');
-  await page.waitForTimeout(400);
-  const bbD = await page.locator('.assina-full canvas').boundingBox();
-  await page.mouse.move(bbD.x + 40, bbD.y + bbD.height / 2);
-  await page.mouse.down();
-  for (let i = 0; i < 8; i++) await page.mouse.move(bbD.x + 40 + i * 15, bbD.y + bbD.height / 2 + i * 4);
-  await page.mouse.up();
-  await page.click('.assina-full button:has-text("Confirmar assinatura")');
-  await page.waitForTimeout(300);
-  await page.click('button:has-text("Confirmar e concluir")');
+  await page.locator('.ns-modal input[placeholder*="Nome de quem recebe"]').fill('Teste');
+  await page.click('button:has-text("Concluir pedido")');
   await page.waitForSelector('.sucesso-banner');
   const pedDesc = await page.evaluate(() => {
     const ps = window.NSDB.all('pedidos').filter(p => p.status === 'concluido')
@@ -822,9 +838,10 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   const confRet = (await page.textContent('.ns-modal')).replace(/\u00a0/g, ' ');
   check('confer\u00eancia mostra pedido negativo com aviso de cr\u00e9dito', confRet.includes('-R$ 58,00') && confRet.includes('CR\u00c9DITO'));
   await page.fill('.ns-modal input[placeholder*="Prazo"]', '30 dias');
-  await page.click('button:has-text("Assinar")');
-  await page.fill('.ns-modal input[placeholder*="Nome de quem assina"]', 'Maria Souza');
-  await page.click('button:has-text("Assinar em tela cheia")');
+  await page.fill('.ns-modal input[placeholder*="Nome de quem recebe"]', 'Maria Souza');
+  await page.click('button:has-text("Concluir pedido")');
+  await page.waitForSelector('.sucesso-banner');
+  await page.locator('.ns-overlay').last().locator('.btn-assinar').click();
   await page.waitForSelector('.assina-full canvas');
   await page.waitForTimeout(400);
   const cvR = page.locator('.assina-full canvas');
@@ -834,9 +851,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   for (let i = 0; i < 10; i++) await page.mouse.move(bbR.x + 40 + i * 18, bbR.y + bbR.height / 2 + Math.cos(i) * 30);
   await page.mouse.up();
   await page.click('.assina-full button:has-text("Confirmar assinatura")');
-  await page.waitForTimeout(300);
-  await page.click('button:has-text("Confirmar e concluir")');
-  await page.waitForSelector('.sucesso-banner');
+  await page.waitForTimeout(400);
   const ret = await page.evaluate(() => ({
     pedido: JSON.parse(localStorage.getItem('ns_c_pedidos'))[0],
     visita: JSON.parse(localStorage.getItem('ns_c_visitas')).find(v => v.pedido_id),

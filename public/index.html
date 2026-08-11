@@ -426,6 +426,17 @@ select.input,select.input.big{appearance:none;-webkit-appearance:none;
 .campo-box .input{background:#fff}
 .chk-grande{font-weight:700;font-size:.92rem;color:var(--navy)}
 
+/* ── botão de coletar assinatura: último passo, maior e com cor própria ── */
+.btn-assinar{width:100%;display:flex;align-items:center;justify-content:center;gap:12px;
+  padding:20px 18px;border-radius:18px;font-weight:900;font-size:1.06rem;letter-spacing:.06em;
+  background:linear-gradient(160deg,#8e44d0,#5c1f96);color:#fff;
+  box-shadow:0 1px 0 rgba(255,255,255,.28) inset,0 14px 30px -12px rgba(92,31,150,.75);
+  border:none;transition:transform .15s,filter .2s}
+.btn-assinar .ic{width:1.5em;height:1.5em;stroke-width:1.8}
+.btn-assinar:active{transform:translateY(2px) scale(.985);filter:brightness(.94)}
+.btn-assinar.coletada{background:linear-gradient(160deg,#2a9c4a,#12692e);
+  box-shadow:0 1px 0 rgba(255,255,255,.28) inset,0 12px 26px -12px rgba(18,105,46,.7)}
+
 /* ── assinatura: papel claro para tinta escura (vai pro PDF) ── */
 .assinatura-area{border:2px dashed rgba(var(--glow-rgb),.45);border-radius:var(--r-lg);
   background:#fdfdfb;margin-top:10px;touch-action:none;
