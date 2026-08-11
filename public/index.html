@@ -218,6 +218,10 @@ select.input,select.input.big{appearance:none;-webkit-appearance:none;
 .chip.ativo{background:var(--ouro);color:#2b1c00;border-color:var(--ouro-escuro);
   box-shadow:0 6px 16px -6px rgba(201,134,26,.6)}
 .chip:active{transform:scale(.96)}
+/* filtro de prospecção na rota: roxo, igual ao resto da prospecção */
+.chip.prospec{background:linear-gradient(180deg,var(--prospec),var(--prospec-esc))}
+.chip.prospec.ativo{background:var(--ouro);color:#2b1c00;border-color:var(--prospec-esc)}
+.chip .ic{width:1.05em;height:1.05em;margin-right:5px;vertical-align:-2px}
 /* triângulo de observação interna — bem visível, com brilho pulsante */
 .alerta-obs{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;
   flex:0 0 auto;margin-right:6px;vertical-align:-6px;background:#ffc61a;color:#111;
@@ -240,20 +244,7 @@ select.input,select.input.big{appearance:none;-webkit-appearance:none;
 .item-menu>.ic:last-child{color:var(--sub2)}
 .st-tag.vermelho{background:var(--erro)}.st-tag.amarelo{background:var(--aviso)}
 .st-tag.verde{background:var(--ok)}.st-tag.cinza{background:#98a4b8}
-/* alça de arrastar da rota + numeração da ordem */
-.arrasta{flex:0 0 auto;width:32px;align-self:stretch;display:flex;align-items:center;justify-content:center;
-  color:var(--sub2);font-size:1.3rem;letter-spacing:-.1em;cursor:grab;
-  border-radius:8px;background:var(--bg2)}
-.arrasta:active{cursor:grabbing;background:var(--az2);color:#fff}
-/* o cartão inteiro aceita o toque longo para arrastar; nada de menu de copiar */
-.card-visita{touch-action:pan-y;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
-.card-visita .input,.card-visita input,.card-visita textarea{-webkit-user-select:text;user-select:text}
-.card-visita.arrastando{opacity:.95;box-shadow:0 18px 40px -12px rgba(36,27,82,.5);
-  border-color:var(--az2);transform-origin:center;transition:none}
-/* espaço tracejado mostrando onde o cliente vai cair */
-.solta-aqui{border:2px dashed var(--az2);border-radius:var(--r-lg);background:rgba(43,123,212,.08);
-  animation:respira-solta 1s ease-in-out infinite}
-@keyframes respira-solta{0%,100%{opacity:.65}50%{opacity:1}}
+/* numeração da ordem da rota (a ordem se muda pelos botões ↑ ↓) */
 .ordem-num{flex:0 0 auto;min-width:22px;height:22px;padding:0 5px;border-radius:7px;
   background:var(--navy);color:#fff;font-size:.72rem;font-weight:800;
   display:inline-flex;align-items:center;justify-content:center}
@@ -281,7 +272,37 @@ select.input,select.input.big{appearance:none;-webkit-appearance:none;
 
 .card-visita{background:var(--vidro);backdrop-filter:blur(10px);border:1px solid var(--borda);
   border-radius:var(--r-lg);padding:14px 16px;box-shadow:var(--sombra-1)}
-.card-visita.feito{opacity:.55;filter:saturate(.55)}
+.card-visita.feito{opacity:.62;filter:saturate(.6)}
+/* cliente já atendido: cartão menor, para sobrar tela para quem ainda falta */
+.card-visita.compacto{padding:9px 12px;border-radius:14px}
+.card-visita.compacto strong{font-size:.88rem}
+.card-visita.compacto .btn-mini{padding:7px 10px;font-size:.74rem;border-radius:9px}
+.card-visita.compacto .btn-mini .ic{width:1em;height:1em}
+.card-visita.compacto .atendido-linha{padding:4px 8px;font-size:.74rem}
+.card-visita.compacto .cnpj-chip{padding:2px 7px;font-size:.72rem}
+/* CNPJ em destaque na rota e na ficha do cliente */
+.cnpj-chip{display:inline-flex;align-items:center;gap:7px;background:var(--navy);color:#fff;
+  border-radius:9px;padding:4px 10px;font-weight:800;font-size:.8rem;letter-spacing:.02em;
+  font-variant-numeric:tabular-nums}
+.cnpj-chip .cnpj-rot{font-size:.62rem;font-weight:900;letter-spacing:.1em;opacity:.72}
+.cnpj-chip.grande{font-size:.95rem;padding:7px 13px;border-radius:11px;
+  box-shadow:0 8px 18px -10px rgba(36,27,82,.8)}
+/* pedido faturado no New Star: bolinha laranja com a nota fiscal */
+.card-pedido{position:relative}
+.selo-nf{position:absolute;top:10px;right:10px;width:30px;height:30px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;color:#fff;
+  background:linear-gradient(160deg,#ffa229,#e5760a);
+  box-shadow:0 1px 0 rgba(255,255,255,.4) inset,0 6px 14px -6px rgba(200,105,10,.85)}
+.selo-nf .ic{width:17px;height:17px;stroke-width:1.9}
+.card-pedido:has(.selo-nf) .grow{padding-right:42px}
+.btn-mini.laranja,.btn.laranja{background:linear-gradient(180deg,#ffa229,#e5760a);color:#fff;
+  border-color:#c8690a;box-shadow:0 6px 14px -8px rgba(200,105,10,.9)}
+/* aviso de versão nova — o app nunca se recarrega sozinho */
+.barra-atualizar{position:fixed;left:10px;right:10px;bottom:calc(76px + env(safe-area-inset-bottom));
+  z-index:70;display:flex;align-items:center;justify-content:space-between;gap:10px;
+  background:var(--navy);color:#fff;border-radius:14px;padding:10px 12px;font-size:.82rem;font-weight:700;
+  box-shadow:0 16px 34px -14px rgba(36,27,82,.9)}
+.barra-atualizar .btn-mini{background:rgba(255,255,255,.14);color:#fff;border-color:rgba(255,255,255,.3)}
 .atendido-linha{display:flex;align-items:center;gap:7px;font-size:.8rem;font-weight:700;
   color:#166b2c;background:#e7f6ec;border:1px solid rgba(30,126,52,.3);
   border-radius:9px;padding:6px 10px}

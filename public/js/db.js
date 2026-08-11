@@ -191,6 +191,8 @@
   // ---------- API pública ----------
   const DB = {
     uuid, configured,
+    // relê o cache do localStorage (outra janela do app pode ter gravado nele)
+    recarregarCache() { for (const t of TABLES) delete mem[t]; },
     all(table) { return load(table).slice(); },
     byId(table, id) {
       const pk = PK[table] || 'id';

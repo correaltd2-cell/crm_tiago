@@ -718,6 +718,13 @@
         mAbrir.fechar();
         novo(null, p);
       } }, rot('lapis', 'Editar pedido (itens, prazo, devoluções)')) : null,
+      // controle do faturamento no New Star (sistema de fora)
+      el('button', {
+        class: 'btn big btn-sec' + (p.faturado_ns ? ' laranja' : ''), onclick: () => {
+          window.NSApp.marcarFaturado(pedidoId);
+          mAbrir.fechar(); abrir(pedidoId);
+        }
+      }, rot('notaFiscal', p.faturado_ns ? 'Faturado no New Star ✓' : 'Marcar como faturado no New Star')),
       // ÚLTIMO passo do processo: a assinatura. Fica por último e bem destacada.
       btnAssinar);
 

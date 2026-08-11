@@ -123,7 +123,12 @@
 
   // ================= SHELL =================
   const VIEWS = { hoje: vRota, clientes: vClientes, pedidos: vPedidos, dash: vDashboard, mais: vMais, ajuda: (v) => window.NSAjuda.view(v) };
-  let viewAtual = 'hoje';
+  // a aba aberta fica gravada: se o celular fechar o app (ou a bateria acabar),
+  // ao voltar ele abre exatamente onde o vendedor estava
+  let viewAtual = (function () {
+    const v = localStorage.getItem('ns_view');
+    return (v && Object.prototype.hasOwnProperty.call(VIEWS, v)) ? v : 'hoje';
+  })();
 
   function iniciarApp() {
     $('#topbar').style.display = ''; $('#tabs').style.display = ''; $('#fab').style.display = '';
@@ -191,6 +196,7 @@
 
   function nav(v) {
     viewAtual = v;
+    try { localStorage.setItem('ns_view', v); } catch (e) {}
     $$('#tabs button').forEach(b => b.classList.toggle('ativo', b.dataset.v === v));
     const view = $('#view');
     view.innerHTML = '';
@@ -228,7 +234,17 @@
   // ================= VIEW: HOJE / PRÓXIMOS DIAS =================
   // ================= ROTA MANUAL (o vendedor monta) =================
   const DIAS_ROTA = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta'];
-  let diaRota = null; // dia da semana em edição/visualização
+  // dia da semana em edição/visualização — também gravado, para o app voltar
+  // no mesmo dia de rota depois de fechado
+  let diaRota = (function () {
+    const d = localStorage.getItem('ns_dia_rota');
+    return DIAS_ROTA.indexOf(d) >= 0 ? d : null;
+  })();
+  let filtroRota = 'todos'; // 'todos' ou 'prospec' (só as prospecções da rota)
+  function trocarDia(d) {
+    diaRota = d;
+    try { localStorage.setItem('ns_dia_rota', d); } catch (e) {}
+  }
 
   function diaDeHoje() {
     const d = new Date().getDay(); // 0=dom
@@ -279,10 +295,18 @@
     return lista.sort((a, b) =>
       C.classeRank(a) - C.classeRank(b) || diasSemPedido(b) - diasSemPedido(a));
   }
+  // A ordem da rota é SEMPRE a que o vendedor deixou salva (campo rota_ordem).
+  // O desempate é por id, nunca pela ordem em que o Firestore devolveu os dados —
+  // era isso que fazia a rota aparecer embaralhada depois de fechar e abrir o app.
   function clientesDaRota(repId, dia) {
     return clientesDoRep(repId).filter(c => c.rota_dia === dia)
-      .sort((a, b) => (a.rota_ordem || 0) - (b.rota_ordem || 0));
+      .sort((a, b) => (ordemDe(a) - ordemDe(b)) || String(a.id).localeCompare(String(b.id)));
   }
+  // quem ainda não tem posição salva vai para o fim (e nunca embaralha os demais)
+  const ordemDe = (c) => {
+    const n = Number(c.rota_ordem);
+    return (Number.isFinite(n) && n > 0) ? n : 1e9;
+  };
   // grava a ordem manual: a posição na lista vira rota_ordem 1, 2, 3…
   function gravarOrdem(lista) {
     lista.forEach((c, i) => {
@@ -292,10 +316,18 @@
       }
     });
   }
+  // conserta posições faltando ou repetidas (rotas antigas, ou dois clientes que
+  // caíram no mesmo número) gravando 1,2,3… uma única vez, sem mexer na sequência
+  function normalizarOrdem(lista) {
+    const precisa = lista.some((c, i) => Number(c.rota_ordem) !== i + 1);
+    if (precisa) gravarOrdem(lista);
+    return lista;
+  }
   // põe o cliente na rota de um dia, no fim da fila
   function porNaRota(cliente, dia, repId) {
     const atuais = clientesDaRota(repId || cliente.representante_id, dia);
-    DB.update('clientes', cliente.id, { rota_dia: dia, rota_ordem: atuais.length + 1 });
+    const ultima = atuais.reduce((m, c) => Math.max(m, Number(c.rota_ordem) || 0), 0);
+    DB.update('clientes', cliente.id, { rota_dia: dia, rota_ordem: ultima + 1 });
   }
   // prospecção = possível cliente que ainda não compra; entra na rota igual
   const ehProspec = (c) => c && c.status === 'prospect';
@@ -324,7 +356,7 @@
 
   // ---- visão do gestor (todos os vendedores, somente leitura) ----
   function vRotaConsolidado(view) {
-    if (!diaRota) diaRota = diaDeHoje();
+    if (!diaRota) trocarDia(diaDeHoje());
     view.appendChild(abaDias(() => nav('hoje')));
     const reps = DB.all('representantes').filter(r => r.papel !== 'gestor' && r.ativo !== false);
     for (const rep of reps) {
@@ -355,7 +387,7 @@
       el('div', { class: 'sub row gap8' }, ico('agenda', 'ic-sm'), rotuloSemana()),
       el('div', { class: 'dias-scroll mt4' }, DIAS_ROTA.map(d => el('button', {
         class: 'chip' + (d === diaRota ? ' ativo' : ''),
-        onclick: () => { diaRota = d; aoTrocar(); }
+        onclick: () => { trocarDia(d); aoTrocar(); }
       }, d + ' ' + dataDoDia(d).slice(8, 10) + '/' + dataDoDia(d).slice(5, 7)))));
   }
 
@@ -364,8 +396,9 @@
     const s = sessao();
     if (s.consolidado) return vRotaConsolidado(view);
     const rep = s.rep;
-    if (!diaRota) diaRota = diaDeHoje();
-    const lista = clientesDaRota(rep.id, diaRota);
+    if (!diaRota) trocarDia(diaDeHoje());
+    // a sequência salva manda; só arruma números faltando/repetidos de rotas antigas
+    const lista = normalizarOrdem(clientesDaRota(rep.id, diaRota));
 
     view.appendChild(abaDias(() => nav('hoje')));
     view.appendChild(el('div', { class: 'row space mt8' },
@@ -427,15 +460,21 @@
       });
     }
 
-    const listaEl = el('div', { class: 'col gap8 mt12' });
-    view.appendChild(listaEl);
-    if (!lista.length) {
-      listaEl.appendChild(el('p', { class: 'vazio' },
-        'Nenhum cliente na rota de ' + diaRota + '. Toque em "Criar rota" para escolher os clientes.'));
-      pintarHistorico();
-      return;
+    // ── filtro de prospecção: mostrar a rota inteira ou só os possíveis clientes
+    const nProspec = lista.filter(ehProspec).length;
+    if (lista.length) {
+      view.appendChild(el('div', { class: 'dias-scroll mt12' },
+        el('button', {
+          class: 'chip' + (filtroRota === 'todos' ? ' ativo' : ''),
+          onclick: () => { filtroRota = 'todos'; nav('hoje'); }
+        }, 'Todos ' + lista.length),
+        el('button', {
+          class: 'chip prospec' + (filtroRota === 'prospec' ? ' ativo' : ''),
+          onclick: () => { filtroRota = 'prospec'; nav('hoje'); }
+        }, ico('alvo', 'ic-sm'), 'Prospecção ' + nProspec)));
     }
-    // barra de reordenação: inverter a ordem toda de uma vez
+
+    // barra de reordenação: inverter a ordem toda de uma vez (fica ANTES da lista)
     if (lista.length > 1) {
       view.appendChild(el('div', { class: 'row gap8 mt8' },
         el('button', {
@@ -444,45 +483,64 @@
             toast('Ordem invertida.'); nav('hoje');
           }
         }, rot('sincronizar', 'Inverter ordem')),
-        el('span', { class: 'sub' }, 'Segure o cliente e arraste para reordenar')));
+        el('span', { class: 'sub' }, 'Use ↑ ↓ para mudar a ordem')));
     }
 
-    lista.forEach((c, i) => {
+    const listaEl = el('div', { class: 'col gap8 mt12' });
+    view.appendChild(listaEl);
+    if (!lista.length) {
+      listaEl.appendChild(el('p', { class: 'vazio' },
+        'Nenhum cliente na rota de ' + diaRota + '. Toque em "Criar rota" para escolher os clientes.'));
+      pintarHistorico();
+      return;
+    }
+
+    // o filtro só esconde da tela: a posição (1, 2, 3…) continua sendo a da rota inteira
+    const visiveis = filtroRota === 'prospec' ? lista.filter(ehProspec) : lista;
+    if (!visiveis.length)
+      listaEl.appendChild(el('p', { class: 'vazio' }, 'Nenhuma prospecção na rota de ' + diaRota + '.'));
+
+    visiveis.forEach((c) => {
+      const i = lista.indexOf(c);
       const v = visitaNoDia(c.id, dataDaAba);
       const st = statusDoCliente(c);
+      // já atendido = cartão compacto (nome, CNPJ e o que foi feito), para
+      // sobrar tela para quem ainda falta visitar
       const card = el('div', {
-        class: 'card-visita st-' + st.k + (v ? ' feito' : '') + (ehProspec(c) ? ' prospec' : ''),
+        class: 'card-visita st-' + st.k + (v ? ' feito compacto' : '') + (ehProspec(c) ? ' prospec' : ''),
         'data-id': c.id
       },
         el('div', { class: 'row gap8' },
-          // alça de arrastar (funciona no toque)
-          el('span', { class: 'arrasta', title: 'Arraste para mudar a ordem' }, '⠿'),
           el('div', { class: 'grow', onclick: () => fichaCliente(c.id) },
             el('strong', { class: 'row gap8' }, el('span', { class: 'ordem-num' }, String(i + 1)),
-              marcaAlerta(c), nomeExib(c)),
+              // no cartão compacto a bolinha do farol vem aqui (a linha de status some)
+              v ? farol(st.k) : null, marcaAlerta(c), nomeExib(c)),
             ehProspec(c) ? el('span', { class: 'badge prospec mt4' }, 'PROSPECÇÃO') : null,
-            c.razao_social && c.razao_social !== nomeExib(c)
-              ? el('div', { class: 'sub' }, c.razao_social) : null,
-            c.cnpj_cpf ? el('div', { class: 'sub' }, 'CNPJ ' + C.fmtCNPJ(c.cnpj_cpf)) : null,
-            el('div', { class: 'sub' }, [c.endereco, c.bairro, c.cidade, c.uf].filter(Boolean).join(' · ')),
-            (c.telefone || c.celular) ? el('div', { class: 'sub' }, c.telefone || c.celular) : null,
-            el('div', { class: 'sub' }, farol(st.k), st.rot),
-            el('div', { class: 'sub' }, 'Classe ' + (c.classe || 'B') +
-              ' · ciclo ' + freqDaClasse(c.classe || 'B') + 'd' +
-              ' · ' + txtDias(diasSemPedido(c), 'pedido') + ' · ' + txtDias(diasSemAtendimento(c), 'visita')),
-            (() => { const n = ultimaNota(c.id); return n ? el('div', { class: 'nota-previa' },
-              n.length > 90 ? n.slice(0, 90) + '…' : n) : null; })()),
+            c.cnpj_cpf ? el('div', { class: 'cnpj-chip mt4' },
+              el('span', { class: 'cnpj-rot' }, String(c.cnpj_cpf).replace(/\D/g, '').length === 11 ? 'CPF' : 'CNPJ'),
+              C.fmtCNPJ(c.cnpj_cpf)) : null,
+            v ? null : el('div', { class: 'col gap4 mt4' },
+              c.razao_social && c.razao_social !== nomeExib(c)
+                ? el('div', { class: 'sub' }, c.razao_social) : null,
+              el('div', { class: 'sub' }, [c.endereco, c.bairro, c.cidade, c.uf].filter(Boolean).join(' · ')),
+              (c.telefone || c.celular) ? el('div', { class: 'sub' }, c.telefone || c.celular) : null,
+              el('div', { class: 'sub' }, farol(st.k), st.rot),
+              el('div', { class: 'sub' }, 'Classe ' + (c.classe || 'B') +
+                ' · ciclo ' + freqDaClasse(c.classe || 'B') + 'd' +
+                ' · ' + txtDias(diasSemPedido(c), 'pedido') + ' · ' + txtDias(diasSemAtendimento(c), 'visita')),
+              (() => { const n = ultimaNota(c.id); return n ? el('div', { class: 'nota-previa' },
+                n.length > 90 ? n.slice(0, 90) + '…' : n) : null; })())),
           v ? el('span', { class: 'badge ok' }, ico('check', 'ic-sm'),
-            (v.fez_pedido ? 'pedido' : 'visitado') + ' ' + dataBR(v.data_visita)) : null),
+            (v.fez_pedido ? 'pedido' : 'visitado')) : null),
         // o botão de visita continua sempre (dá para atender o mesmo cliente 2× no dia);
         // acima dele fica a linha do que já foi registrado naquele dia
-        v ? el('div', { class: 'atendido-linha mt8' }, ico('check', 'ic-sm'),
+        v ? el('div', { class: 'atendido-linha mt4' }, ico('check', 'ic-sm'),
           'Atendido em ' + dataBR(v.data_visita) +
           (v.fez_pedido ? ' · ' + C.fmtMoney(Number(v.valor_pedido || 0)) : ' · sem pedido')) : null,
         el('div', { class: 'row gap8 mt8' },
           el('button', { class: 'btn-mini verde grow', onclick: () => dialogoVisita(c, rep) }, rot('check', 'Registrar visita')),
           el('button', { class: 'btn-mini vermelho', onclick: () => removerDaRota(c) }, rot('fechar', 'Remover da rota'))),
-        // subir/descer para quem não quiser arrastar
+        // ordem da rota: só pelos botões (o arrastar foi removido a pedido do uso em campo)
         el('div', { class: 'row gap8 mt4' },
           el('button', {
             class: 'btn-mini', disabled: i === 0 ? '' : null, 'aria-label': 'Subir na rota',
@@ -502,107 +560,8 @@
           }, 'Último')));
       listaEl.appendChild(card);
     });
-    ligarArrastar(listaEl, lista);
 
     pintarHistorico();
-  }
-
-  // ── Arrastar para reordenar a rota ──
-  // No celular, segurar o dedo em cima do texto abria o menu de copiar do sistema
-  // e o arraste não pegava. Agora: toque longo (250ms) em qualquer parte do cartão
-  // — ou toque direto na alça ⠿ — inicia o arraste; se o dedo deslizar antes disso,
-  // é rolagem e nada acontece. Botões continuam funcionando normalmente.
-  function ligarArrastar(container, lista) {
-    const ESPERA = 250;      // ms segurando para virar arraste
-    const TOLERANCIA = 12;   // px de folga antes de considerar rolagem
-    let alvo = null, timer = null, ativo = false;
-    let y0 = 0, x0 = 0, desloc = 0, pid = null, marcador = null;
-
-    const cancelarTimer = () => { clearTimeout(timer); timer = null; };
-
-    let topo0 = 0;
-    function comecar(card) {
-      ativo = true;
-      alvo = card;
-      desloc = 0;
-      const r = card.getBoundingClientRect();
-      topo0 = r.top;
-      // o espaço tracejado fica no lugar do cartão para a lista não pular
-      marcador = document.createElement('div');
-      marcador.className = 'solta-aqui';
-      marcador.style.height = r.height + 'px';
-      container.insertBefore(marcador, card);
-      // o cartão sai do fluxo e passa a seguir o dedo
-      card.classList.add('arrastando');
-      card.style.position = 'fixed';
-      card.style.left = r.left + 'px';
-      card.style.top = r.top + 'px';
-      card.style.width = r.width + 'px';
-      card.style.zIndex = '60';
-      if (navigator.vibrate) { try { navigator.vibrate(15); } catch (err) {} }
-    }
-
-    function mover(e) {
-      if (!ativo || !alvo) return;
-      desloc = e.clientY - y0;
-      alvo.style.top = (topo0 + desloc) + 'px';
-      // elementsFromPoint (plural) devolve a pilha toda — pegamos o primeiro cartão
-      // que não é o que está na mão. (Zerar pointer-events no arrastado soltaria a
-      // captura do toque e o arraste morria no meio.)
-      const pilha = document.elementsFromPoint(e.clientX, e.clientY) || [];
-      let card = null;
-      for (const nó of pilha) {
-        const c = nó.closest ? nó.closest('.card-visita') : null;
-        if (c && c !== alvo) { card = c; break; }
-      }
-      if (!card || card.parentElement !== container) return;
-      const r = card.getBoundingClientRect();
-      const depois = e.clientY > r.top + r.height / 2;
-      container.insertBefore(marcador, depois ? card.nextSibling : card);
-    }
-
-    function soltar() {
-      cancelarTimer();
-      if (!ativo || !alvo) { ativo = false; alvo = null; return; }
-      const card = alvo;
-      card.classList.remove('arrastando');
-      card.style.cssText = '';
-      if (marcador) { container.insertBefore(card, marcador); marcador.remove(); marcador = null; }
-      ativo = false; alvo = null;
-      const ids = Array.from(container.children)
-        .filter(x => x.classList.contains('card-visita'))
-        .map(x => x.getAttribute('data-id'));
-      gravarOrdem(ids.map(id => lista.find(c => c.id === id)).filter(Boolean));
-      nav('hoje');
-    }
-
-    container.querySelectorAll('.card-visita').forEach((card) => {
-      card.addEventListener('pointerdown', (e) => {
-        // não sequestrar o toque de botões, links e campos
-        if (e.target.closest('button, a, input, select, textarea')) return;
-        const naAlca = !!e.target.closest('.arrasta');
-        pid = e.pointerId; y0 = e.clientY; x0 = e.clientX;
-        if (naAlca) { e.preventDefault(); card.setPointerCapture(pid); comecar(card); return; }
-        timer = setTimeout(() => {
-          card.setPointerCapture(pid);
-          comecar(card);
-        }, ESPERA);
-      });
-      card.addEventListener('pointermove', (e) => {
-        if (!ativo) {
-          // deslizou antes de segurar o tempo todo = está rolando a tela
-          if (timer && (Math.abs(e.clientY - y0) > TOLERANCIA || Math.abs(e.clientX - x0) > TOLERANCIA))
-            cancelarTimer();
-          return;
-        }
-        e.preventDefault();
-        mover(e);
-      });
-      card.addEventListener('pointerup', soltar);
-      card.addEventListener('pointercancel', soltar);
-      // segurar em cima do texto não pode abrir o menu de copiar do sistema
-      card.addEventListener('contextmenu', (e) => { if (ativo || timer) e.preventDefault(); });
-    });
   }
 
   function removerDaRota(c) {
@@ -949,8 +908,11 @@
         ? el('div', { class: 'sub' }, 'Razão social: ' + c.razao_social) : null,
       c.nome_fantasia && c.nome_fantasia !== c.nome
         ? el('div', { class: 'sub' }, 'Nome fantasia: ' + c.nome_fantasia) : null,
-      el('div', { class: 'sub' },
-        (c.cnpj_cpf ? 'CNPJ ' + C.fmtCNPJ(c.cnpj_cpf) + ' · ' : '') + [c.endereco, c.bairro, c.cidade, c.uf].filter(Boolean).join(', ')),
+      // CNPJ em destaque, junto das informações principais do cliente
+      c.cnpj_cpf ? el('div', { class: 'cnpj-chip grande mt4' },
+        el('span', { class: 'cnpj-rot' }, String(c.cnpj_cpf).replace(/\D/g, '').length === 11 ? 'CPF' : 'CNPJ'),
+        C.fmtCNPJ(c.cnpj_cpf)) : null,
+      el('div', { class: 'sub mt4' }, [c.endereco, c.bairro, c.cidade, c.uf].filter(Boolean).join(', ')),
       el('div', { class: 'sub mt4' },
         'Contato: ' + (c.contato || '—') + ' · ' + (c.telefone || c.celular || '—') +
         (c.rede ? ' · Rede ' + c.rede + (c.recebimento_dias ? ' (comissão +' + c.recebimento_dias + 'd)' : '') : '') +
@@ -1096,6 +1058,19 @@
   }
 
   // ================= VIEW: PEDIDOS =================
+  // marca/desmarca que o pedido já foi digitado no New Star (o sistema de
+  // faturamento de fora). Só um controle do vendedor — não mexe em valor nenhum.
+  function marcarFaturado(pedidoId, aoMudar) {
+    const p = DB.byId('pedidos', pedidoId);
+    if (!p) return;
+    const novo = !p.faturado_ns;
+    DB.update('pedidos', pedidoId, {
+      faturado_ns: novo,
+      faturado_ns_em: novo ? new Date().toISOString() : null
+    });
+    toast(novo ? 'Pedido marcado como FATURADO no New Star.' : 'Marca de faturado removida.');
+    if (aoMudar) aoMudar();
+  }
   function vPedidos(view) {
     const repId = repEfetivoId();
     const busca = el('input', { class: 'input big', placeholder: 'Buscar por cliente, nº ou data (aaaa-mm-dd)…', oninput: render });
@@ -1122,13 +1097,22 @@
         .slice(0, 60);
       for (const p of peds) {
         const cli = DB.byId('clientes', p.cliente_id) || {};
-        lista.appendChild(el('button', { class: 'item-lista', onclick: () => window.NSPedido.abrir(p.id) },
-          el('div', { class: 'row space w100' },
-            el('strong', null, 'Nº ' + (p.numero || '—') + ' · ' + (cli.nome || '—')),
-            el('strong', null, C.fmtMoney(Number(p.total_valor)))),
-          el('span', { class: 'sub' }, dataBR(p.data_pedido) + ' · ' + p.status +
-            (p.assinatura ? ' · assinado por ' + (p.assinante_nome || '—') : '') +
-            ` · ${p.total_unid_vendidas} un vendidas`)));
+        const card = el('div', { class: 'item-lista card-pedido' },
+          // bolinha laranja com a nota fiscal: pedido já faturado no New Star
+          p.faturado_ns ? el('span', { class: 'selo-nf', title: 'Faturado no New Star' },
+            ico('notaFiscal')) : null,
+          el('div', { class: 'grow', onclick: () => window.NSPedido.abrir(p.id) },
+            el('div', { class: 'row space w100' },
+              el('strong', null, 'Nº ' + (p.numero || '—') + ' · ' + (cli.nome || '—')),
+              el('strong', null, C.fmtMoney(Number(p.total_valor)))),
+            el('span', { class: 'sub' }, dataBR(p.data_pedido) + ' · ' + p.status +
+              (p.assinatura ? ' · assinado por ' + (p.assinante_nome || '—') : '') +
+              ` · ${p.total_unid_vendidas} un vendidas`)),
+          el('button', {
+            class: 'btn-mini w100 mt8' + (p.faturado_ns ? ' laranja' : ''),
+            onclick: () => marcarFaturado(p.id, render)
+          }, rot('notaFiscal', p.faturado_ns ? 'Faturado no New Star' : 'Marcar como faturado no New Star')));
+        lista.appendChild(card);
       }
       if (!peds.length) lista.appendChild(el('p', { class: 'vazio' }, 'Nenhum pedido.'));
     }
@@ -2117,7 +2101,7 @@
 
   // ================= BOOT =================
   window.NSApp = {
-    sessao, nav, recalcularCicloCliente,
+    sessao, nav, recalcularCicloCliente, marcarFaturado,
     // Pedido digitado para quem não estava na rota: o cliente entra na rota de
     // HOJE já atendido, e o atendimento conta na meta de visitação.
     aoConcluirPedido(pedido) {
@@ -2134,20 +2118,46 @@
     }
   };
 
+  // ── Atualização de versão SEM fechar o app ──
+  // O app nunca se recarrega sozinho. Quando existe uma versão nova esperando,
+  // aparece uma faixa discreta no rodapé; a troca só acontece quando o vendedor
+  // toca em "Atualizar agora" — assim ele nunca perde a tela no meio do serviço.
+  function ligarAtualizacao() {
+    if (!('serviceWorker' in navigator)) return;
+    let pedidoDeTroca = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (pedidoDeTroca) location.reload();
+    });
+    navigator.serviceWorker.register('sw.js').then((reg) => {
+      const avisar = (sw) => {
+        if (!sw || !navigator.serviceWorker.controller) return; // 1ª instalação: nada a avisar
+        mostrarBarraAtualizar(() => { pedidoDeTroca = true; sw.postMessage({ tipo: 'ATUALIZAR_AGORA' }); });
+      };
+      if (reg.waiting) avisar(reg.waiting);
+      reg.addEventListener('updatefound', () => {
+        const novo = reg.installing;
+        if (!novo) return;
+        novo.addEventListener('statechange', () => { if (novo.state === 'installed') avisar(novo); });
+      });
+      try { reg.update(); } catch (e) {}
+    }).catch(() => {});
+  }
+
+  function mostrarBarraAtualizar(aoAceitar) {
+    if (document.getElementById('barraAtualizar')) return;
+    const barra = el('div', { class: 'barra-atualizar', id: 'barraAtualizar' },
+      el('span', null, ico('sincronizar', 'ic-sm'), ' Tem uma versão nova do app.'),
+      el('div', { class: 'row gap8' },
+        el('button', { class: 'btn-mini', onclick: () => barra.remove() }, 'Depois'),
+        el('button', { class: 'btn-mini verde', onclick: aoAceitar }, 'Atualizar agora')));
+    document.body.appendChild(barra);
+  }
+
   document.addEventListener('DOMContentLoaded', async () => {
     aplicarTema(localStorage.getItem('ns_tema') || 'ouro');
     $$('#tabs button').forEach(b => b.addEventListener('click', () => nav(b.dataset.v)));
     $('#fab').addEventListener('click', () => window.NSPedido.novo());
-    if ('serviceWorker' in navigator) {
-      // autoatualização: quando uma versão nova assume, recarrega uma única vez
-      const tinhaControlador = !!navigator.serviceWorker.controller;
-      let recarregou = false;
-      navigator.serviceWorker.addEventListener('controllerchange', () => {
-        if (!tinhaControlador || recarregou) return;
-        recarregou = true; location.reload();
-      });
-      navigator.serviceWorker.register('sw.js').then(r => { try { r.update(); } catch (e) {} }).catch(() => {});
-    }
+    ligarAtualizacao();
     if (!DB.configured()) {
       $('#view').innerHTML = '<div class="login-box"><h1>Configuração</h1>' +
         '<p class="sub">Preencha FIREBASE_PROJECT_ID e FIREBASE_API_KEY no bloco NS_CONFIG do index.html (projeto Firebase com Firestore ativado). Depois use "Primeira instalação" na tela de login para carregar os 255 clientes, o catálogo e os usuários.</p></div>';

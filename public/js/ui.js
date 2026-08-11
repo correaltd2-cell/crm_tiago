@@ -57,6 +57,8 @@
     relogio: '<circle cx="12" cy="12" r="9"/><path d="M12 6.8v5.4l3.4 2"/>',
     nota: '<path d="M13.2 3.4H6.8A1.6 1.6 0 0 0 5.2 5v14A1.6 1.6 0 0 0 6.8 20.6h10.4A1.6 1.6 0 0 0 18.8 19V9Z"/><path d="M13.2 3.4V9h5.6"/><path d="M8.4 13.2h7.2M8.4 16.6h4.6"/>',
     alvo: '<circle cx="12" cy="12" r="8.6"/><circle cx="12" cy="12" r="4.6"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/>',
+    // nota fiscal: documento serrilhado embaixo com o "$" no meio
+    notaFiscal: '<path d="M5.4 4.2a1 1 0 0 1 1-1h11.2a1 1 0 0 1 1 1v16.6l-2.2-1.3-2.2 1.3-2.2-1.3-2.2 1.3-2.2-1.3-2.2 1.3Z"/><path d="M8.6 7.4h6.8"/><path d="M12 9.6v6M13.9 11.1a1.9 1.9 0 0 0-3.8.2c0 1.9 3.8.7 3.8 2.6a1.9 1.9 0 0 1-3.8.2"/>',
     documento: '<path d="M13.4 3.2H7A1.6 1.6 0 0 0 5.4 4.8v14.4A1.6 1.6 0 0 0 7 20.8h10a1.6 1.6 0 0 0 1.6-1.6V8.4Z"/><path d="M13.4 3.2v5.2h5.2"/><path d="M8.6 13h6.8M8.6 16.4h4.4"/>',
     paleta: '<path d="M12 20.8a8.8 8.8 0 1 1 8.8-8.8c0 1.7-1.4 3-3.1 3h-1.6a2 2 0 0 0-1.5 3.3 1.9 1.9 0 0 1-1.5 2.5Z"/><circle cx="7.8" cy="12.2" r="1.1" fill="currentColor" stroke="none"/><circle cx="10" cy="7.9" r="1.1" fill="currentColor" stroke="none"/><circle cx="15" cy="8.2" r="1.1" fill="currentColor" stroke="none"/>',
     offline: '<path d="m3 3 18 18"/><path d="M8.7 15.4a4.8 4.8 0 0 1 6.2-.3M5.4 12a9.6 9.6 0 0 1 3.1-2M18.6 12a9.6 9.6 0 0 0-4.4-2.4M2.2 8.6a14.4 14.4 0 0 1 3.9-2.4M21.8 8.6a14.4 14.4 0 0 0-9.4-2.8"/><circle cx="12" cy="18.9" r=".95" fill="currentColor" stroke="none"/>',

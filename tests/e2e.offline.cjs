@@ -87,6 +87,20 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
     window.NS_SEED.clientes.filter(c => ['Sábado', 'Domingo'].includes(c.dia_semana_padrao)).length);
   check('atendimento só de segunda a sexta (0 clientes no fim de semana)', finaisSemana === 0);
 
+  // nomes padronizados do catálogo (valem no pedido e na rota — vêm da mesma tabela)
+  const nomesPadrao = ['LUXO DOURADO', 'LUXO PRATA', 'BRP - BRINCO PEQUENO CLASSIC',
+    'PONTO DE LUZ - ZIRCÔNIA', 'BRAG - BRINCO ARGOLINHA', 'PARIS - GARGANTILHA',
+    'NEW YORK - GARGANTILHA', 'PULA - PULSEIRA ADULTA', 'PUL - PULSEIRA INFANTIL'];
+  const catalogo = await page.evaluate(() => window.NS_SEED.produtos.map(p => ({
+    nome: p.nome, variacao: p.variacao, preco: p.preco_simples })));
+  check('os 9 produtos usam a nomenclatura padronizada',
+    nomesPadrao.every(n => catalogo.some(p => p.nome === n)));
+  check('e sem variação repetida no nome (LUXO DOURADO, não "LUXO (Dourado)")',
+    catalogo.filter(p => nomesPadrao.includes(p.nome)).every(p => !p.variacao));
+  check('a troca de nome não mexeu nos preços',
+    catalogo.find(p => p.nome === 'BRAG - BRINCO ARGOLINHA').preco === 12.6 &&
+    catalogo.find(p => p.nome === 'LUXO DOURADO').preco === 25.5);
+
   await page.fill('input[type=email]', 'denilson@newstar.com.br');
   await page.fill('input[type=password]', '123456');
   await page.click('text=Entrar');
@@ -352,6 +366,25 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page.locator('.ns-overlay').last().locator('.btn-icon').first().click(); // fecha modal do pedido
   await page.click('#tabs button[data-v=pedidos]');
   check('pedido aparece no histórico', await page.isVisible('text=FARMACIA TESTE LTDA'));
+
+  // ── faturado no New Star (sistema externo) ──
+  check('pedido novo começa SEM a bolinha de faturado',
+    (await page.locator('#view .card-pedido .selo-nf').count()) === 0);
+  await page.locator('#view .card-pedido button:has-text("Marcar como faturado")').first().click();
+  await page.waitForTimeout(300);
+  check('bolinha laranja com a nota fiscal aparece no card do pedido',
+    (await page.locator('#view .card-pedido .selo-nf').count()) === 1);
+  check('e o botão passa a dizer que já está faturado',
+    (await page.textContent('#view')).includes('Faturado no New Star'));
+  check('a marca fica gravada no pedido',
+    await page.evaluate(() => window.NSDB.all('pedidos').some(p => p.faturado_ns === true &&
+      typeof p.faturado_ns_em === 'string')));
+  await page.locator('#view .card-pedido button:has-text("Faturado no New Star")').first().click();
+  await page.waitForTimeout(300);
+  check('dá para desmarcar se marcou errado',
+    (await page.locator('#view .card-pedido .selo-nf').count()) === 0);
+  await page.locator('#view .card-pedido button:has-text("Marcar como faturado")').first().click();
+  await page.waitForTimeout(300);
 
   // 2º pedido do mesmo cliente = reposição 10% (testar via lógica local)
   const com2 = await page.evaluate(() => {
@@ -633,39 +666,65 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   check('a ordem manual fica gravada (1, 2, 3…)',
     ordemGravada.join(',') === ordemGravada.map((_, i) => i + 1).join(','));
 
-  // arrastar com toque longo: segurar no cartão (não num botão) e puxar
+  // o arrastar foi REMOVIDO: segurar o cartão não pode mais mexer na ordem
   const cards = page.locator('#view .card-visita');
-  const antesDrag = await nomesNaRota();
+  const antesToque = await nomesNaRota();
   const cx1 = await cards.first().boundingBox();
   const cx3 = await cards.nth(2).boundingBox();
   await page.mouse.move(cx1.x + cx1.width / 2, cx1.y + 24);
   await page.mouse.down();
-  await page.waitForTimeout(400);                     // segura para virar arraste
-  const segurando = await page.locator('#view .card-visita.arrastando').count();
-  check('segurar o cartão inicia o arraste (não aciona botão)', segurando === 1);
-  check('aparece o espaço tracejado mostrando onde vai cair',
-    (await page.locator('#view .solta-aqui').count()) === 1);
+  await page.waitForTimeout(400);
+  check('segurar o cartão não inicia arraste nenhum',
+    (await page.locator('#view .card-visita.arrastando, #view .solta-aqui').count()) === 0);
   await page.mouse.move(cx1.x + cx1.width / 2, cx3.y + cx3.height - 10, { steps: 8 });
   await page.mouse.up();
   await page.waitForTimeout(350);
-  const depoisDrag = await nomesNaRota();
-  if (process.env.DBG) console.log('DRAG antes:', antesDrag.join('|'), '→ depois:', depoisDrag.join('|'));
-  check('arrastar reordena de verdade', depoisDrag[0] !== antesDrag[0] &&
-    depoisDrag.length === antesDrag.length);
-  check('e a nova ordem fica gravada', (await page.evaluate(() =>
-    Array.from(document.querySelectorAll('#view .card-visita'))
-      .map(x => window.NSDB.byId('clientes', x.getAttribute('data-id')).rota_ordem)
-      .join(','))) === antesDrag.map((_, i) => i + 1).join(','));
-  // deslizar sem segurar = rolagem, não pode reordenar
-  const ordemAntesScroll = await nomesNaRota();
-  const c1 = await cards.first().boundingBox();
-  await page.mouse.move(c1.x + c1.width / 2, c1.y + 24);
-  await page.mouse.down();
-  await page.mouse.move(c1.x + c1.width / 2, c1.y + 120, { steps: 5 });
-  await page.mouse.up();
+  check('e a ordem continua exatamente a mesma',
+    (await nomesNaRota()).join('|') === antesToque.join('|'));
+  check('a alça de arrastar sumiu da tela', (await page.locator('#view .arrasta').count()) === 0);
+
+  // a ordem tem de sobreviver ao fechar e abrir o app. Ao reabrir, os clientes
+  // voltam do armazenamento/servidor numa ordem qualquer — a rota tem de continuar
+  // exatamente na sequência que o vendedor deixou.
+  const ordemAntesReload = await nomesNaRota();
+  await page.evaluate(() => {
+    const arr = JSON.parse(localStorage.getItem('ns_c_clientes'));
+    localStorage.setItem('ns_c_clientes', JSON.stringify(arr.slice().reverse()));
+    window.NSDB.recarregarCache();
+    window.NSApp.nav('hoje');
+  });
   await page.waitForTimeout(300);
-  check('deslizar rápido é rolagem — não reordena',
-    (await nomesNaRota()).join('|') === ordemAntesScroll.join('|'));
+  check('a rota volta na MESMA ordem depois de fechar e abrir o app',
+    (await nomesNaRota()).join('|') === ordemAntesReload.join('|'));
+  check('a aba aberta fica gravada para o app reabrir onde parou',
+    (await page.evaluate(() => localStorage.getItem('ns_view'))) === 'hoje');
+
+  // filtro de prospecção dentro da rota
+  await page.evaluate(() => {
+    const naRota = window.NSDB.all('clientes').find(c => /^ORDEM /.test(c.nome) && c.rota_dia);
+    window.NSDB.insert('clientes', { representante_id: naRota.representante_id,
+      nome: 'ORDEM PROSPEC', cidade: 'PF', uf: 'RS', status: 'prospect', classe: 'B',
+      rota_dia: naRota.rota_dia, rota_ordem: 99 });
+    window.NSApp.nav('hoje');
+  });
+  await page.waitForTimeout(300);
+  const comProspec = await nomesNaRota();
+  check('a prospecção entra na rota junto dos demais', comProspec.length === ordemAntesReload.length + 1);
+  await page.click('#view .chip.prospec');
+  await page.waitForTimeout(300);
+  const soProspec = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('#view .card-visita:not(.historico)'))
+      .map(x => x.classList.contains('prospec')));
+  check('filtro de prospecção mostra só as prospecções',
+    soProspec.length === 1 && soProspec.every(Boolean));
+  await page.locator('#view .dias-scroll .chip:not(.prospec)').last().click();
+  await page.waitForTimeout(300);
+  check('e o filtro "Todos" traz a rota inteira de volta',
+    (await nomesNaRota()).join('|') === comProspec.join('|'));
+
+  // CNPJ destacado no cartão da rota
+  check('CNPJ aparece destacado no cartão da rota',
+    (await page.locator('#view .card-visita .cnpj-chip').count()) > 0);
 
   // limpa a rota montada nos testes de ordem para o cenário seguinte começar do zero
   await page.evaluate(() => {
@@ -691,8 +750,9 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
       rotaTxt.includes('FARMACIA TESTE LTDA') && rotaTxt.includes('Editar rota'));
     check('e já entra marcado como atendido (conta na meta de visitação)',
       rotaTxt.includes('pedido') && rotaTxt.includes('1 de 1 visitados'));
-    check('cartão da rota mostra o CNPJ sem abrir o cadastro',
-      rotaTxt.includes('CNPJ 11.222.333/0001-44'));
+    check('cartão da rota mostra o CNPJ destacado, sem abrir o cadastro',
+      rotaTxt.includes('11.222.333/0001-44') &&
+      (await page.locator('#view .card-visita .cnpj-chip').count()) > 0);
     const bolinhas = await page.locator('#view .card-visita .st-tag').count();
     check('uma única bolinha de status por cliente (sem duplicar)', bolinhas === 1);
     // tira da rota para o cenário seguinte começar do zero
