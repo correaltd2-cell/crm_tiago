@@ -162,6 +162,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page.fill('.ns-modal input[placeholder*="Nome de quem assina"]', 'João da Silva');
   await page.click('button:has-text("Assinar em tela cheia")');
   await page.waitForSelector('.assina-full canvas');
+  await page.waitForTimeout(400);   // espera a tela assentar em modo deitado
   check('assinatura abre em TELA CHEIA', await page.isVisible('.assina-full'));
   const cv = page.locator('.assina-full canvas');
   const bb = await cv.boundingBox();
@@ -169,6 +170,11 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page.mouse.down();
   for (let i = 0; i < 12; i++) await page.mouse.move(bb.x + 40 + i * 20, bb.y + bb.height / 2 + Math.sin(i) * 40);
   await page.mouse.up();
+  const antesConfirmar = await page.evaluate(() => ({
+    girado: document.querySelector('.assina-full').classList.contains('deitada'),
+    tracos: 1
+  }));
+  check('assinatura abre DEITADA quando o aparelho está em pé', antesConfirmar.girado);
   await page.click('.assina-full button:has-text("Confirmar assinatura")');
   await page.waitForTimeout(300);
   check('após confirmar, volta para a tela do pedido', !(await page.isVisible('.assina-full')));
@@ -372,20 +378,173 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   });
   check('mês sem meta própria não tem chave dele (usa o padrão geral)', herda === null);
 
-  // rota manual: criar rota do dia, adicionar cliente, registrar visita sem pedido
-  await page.locator('.ns-overlay').last().locator('.btn-icon').first().click();
+  // ── painel: metas na primeira tela, com meta do dia dinâmica ──
+  await page.locator('.ns-overlay').last().locator('.ns-modal-head button').click();
   await page.waitForTimeout(200);
+  await page.evaluate((ms) => window.NSDB.upsertConfig('meta_mes_' + ms, 200000), mesAgora);
+  await page.click('#tabs button[data-v=dash]');
+  await page.waitForTimeout(300);
+  const painel = (await page.textContent('#view')).replace(/\u00a0/g, ' ');
+  check('painel abre já com a meta do mês (sem entrar em Mais)',
+    painel.includes('Meta do mês') && painel.includes('200.000,00'));
+  check('painel mostra vendido, falta vender e dias úteis restantes',
+    painel.includes('Vendido no mês') && painel.includes('Falta vender') && painel.includes('Dias úteis restantes'));
+  check('painel mostra meta de hoje, vendido hoje e falta hoje',
+    painel.includes('Meta de hoje') && painel.includes('Vendido hoje') && painel.includes('Falta vender hoje'));
+  const metaConfere = await page.evaluate(() => {
+    const hoje = new Date().toISOString().slice(0, 10);
+    const rest = window.NSCalc.diasUteisRestantes(hoje);
+    const md = window.NSCalc.metaDinamica({ metaMes: 200000, vendidoMes: 594.5, vendidoHoje: 594.5, hoje });
+    return { rest, metaDia: md.metaDia, esperado: Math.round((200000 - 594.5) / rest * 100) / 100 };
+  });
+  check('meta do dia = (meta − vendido no mês) ÷ dias úteis restantes',
+    metaConfere.metaDia === metaConfere.esperado);
+
+  // ── prospecção ──
+  await page.click('#tabs button[data-v=clientes]');
+  await page.waitForTimeout(250);
+  await page.click('#view button:has-text("Nova prospecção")');
+  await page.waitForSelector('.ns-overlay');
+  const mp = page.locator('.ns-overlay').last();
+  await mp.locator('input').nth(0).fill('DROGARIA NOVA PROSPEC');
+  await mp.locator('input').nth(1).fill('Chapecó');
+  await mp.locator('input').nth(2).fill('SC');
+  await mp.locator('input').nth(3).fill('Rua Teste, 100');
+  await mp.locator('button:has-text("Salvar prospecção")').click();
+  await page.waitForTimeout(300);
+  const prospec = await page.evaluate(() =>
+    window.NSDB.all('clientes').find(c => c.nome === 'DROGARIA NOVA PROSPEC'));
+  check('prospecção salva com o mínimo (nome, cidade, endereço)',
+    !!prospec && prospec.status === 'prospect' && prospec.cidade === 'Chapecó');
+  await page.fill('#view input', 'PROSPEC');
+  await page.waitForTimeout(250);
+  check('prospecção aparece na lista com selo próprio',
+    (await page.textContent('#view')).includes('PROSPECÇÃO'));
+  check('prospecção tem cor própria (classe .prospec)',
+    (await page.locator('#view .item-lista.prospec').count()) === 1);
+
+  // entra na rota como qualquer cliente
+  await page.click('#tabs button[data-v=hoje]');
+  await page.waitForTimeout(250);
+  await page.locator('#view button:has-text("rota de")').first().click();
+  await page.waitForSelector('.ns-overlay');
+  const mr = page.locator('.ns-overlay').last();
+  await mr.locator('input').first().fill('PROSPEC');
+  await page.waitForTimeout(250);
+  check('prospecção aparece na lista para montar a rota',
+    (await mr.textContent()).includes('DROGARIA NOVA PROSPEC'));
+  await mr.locator('button:has-text("Adicionar à rota")').first().click();
+  await page.waitForTimeout(200);
+  await mr.locator('button:has-text("Concluir")').click();
+  await page.waitForTimeout(300);
+  const rotaComProspec = await page.textContent('#view');
+  check('prospecção entra na rota e fica marcada', rotaComProspec.includes('PROSPECÇÃO'));
+
+  // transformar em cliente mantém o histórico (mesmo id)
+  await page.evaluate((id) => window.NSApp.__testTransformar
+    ? null : null, prospec.id);
+  await page.evaluate((id) => {
+    window.NSDB.insert('visitas', { cliente_id: id, representante_id: window.NSDB.all('representantes')[0].id,
+      data_visita: '2026-01-05', realizada: true, fez_pedido: false });
+  }, prospec.id);
+  await page.click('#tabs button[data-v=clientes]');
+  await page.fill('#view input', 'PROSPEC');
+  await page.waitForTimeout(250);
+  await page.locator('#view .item-lista').first().click();
+  await page.waitForSelector('.ns-overlay');
+  await page.locator('.ns-overlay').last().locator('button:has-text("Transformar em cliente")').click();
+  await page.waitForSelector('.ns-overlay button:has-text("Confirmar")');
+  await page.locator('.ns-overlay').last().locator('button:has-text("Confirmar")').click();
+  await page.waitForTimeout(400);
+  const virouCliente = await page.evaluate((id) => {
+    const c = window.NSDB.byId('clientes', id);
+    return { status: c.status, visitas: window.NSDB.all('visitas').filter(v => v.cliente_id === id).length };
+  }, prospec.id);
+  check('transformar em cliente troca o status para ativo', virouCliente.status === 'ativo');
+  check('e mantém o histórico de visitas da prospecção', virouCliente.visitas >= 1);
+  await page.evaluate(() => document.querySelectorAll('.ns-overlay').forEach(o => o.remove()));
+
+  // ── ordem manual da rota ──
+  await page.evaluate(() => {
+    const reps = window.NSDB.all('representantes')[0];
+    ['ORDEM A', 'ORDEM B', 'ORDEM C'].forEach((nome, i) => {
+      window.NSDB.insert('clientes', { representante_id: reps.id, nome, cidade: 'PF', uf: 'RS',
+        status: 'ativo', classe: 'B', rota_dia: null });
+    });
+  });
+  await page.click('#tabs button[data-v=hoje]');
+  await page.waitForTimeout(250);
+  await page.locator('#view button:has-text("rota de")').first().click();
+  await page.waitForSelector('.ns-overlay');
+  const mo = page.locator('.ns-overlay').last();
+  for (const n of ['ORDEM A', 'ORDEM B', 'ORDEM C']) {
+    await mo.locator('input').first().fill(n);
+    await page.waitForTimeout(200);
+    await mo.locator('button:has-text("Adicionar à rota")').first().click();
+    await page.waitForTimeout(150);
+  }
+  await mo.locator('button:has-text("Concluir")').click();
+  await page.waitForTimeout(350);
+  const nomesNaRota = () => page.evaluate(() =>
+    Array.from(document.querySelectorAll('#view .card-visita strong')).map(x => x.textContent.replace(/^\d+/, '')));
+  const antes = await nomesNaRota();
+  check('ordem inicial é a de inclusão', antes.length >= 3);
+  await page.locator('#view .card-visita').last().locator('button:has-text("Primeiro")').click();
+  await page.waitForTimeout(300);
+  const depois = await nomesNaRota();
+  check('mover para "Primeiro" muda a ordem de verdade', depois[0] === antes[antes.length - 1]);
+  await page.locator('#view button:has-text("Inverter ordem")').click();
+  await page.waitForTimeout(300);
+  const invertido = await nomesNaRota();
+  check('inverter ordem vira a rota de ponta-cabeça',
+    invertido[0] === depois[depois.length - 1] && invertido[invertido.length - 1] === depois[0]);
+  const ordemGravada = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('#view .card-visita'))
+      .map(x => window.NSDB.byId('clientes', x.getAttribute('data-id')).rota_ordem));
+  check('a ordem manual fica gravada (1, 2, 3…)',
+    ordemGravada.join(',') === ordemGravada.map((_, i) => i + 1).join(','));
+
+  // limpa a rota montada nos testes de ordem para o cenário seguinte começar do zero
+  await page.evaluate(() => {
+    // tira só os clientes criados para o teste de ordem/prospecção — o cliente do
+    // pedido precisa continuar na rota, é o que o próximo bloco verifica
+    window.NSDB.all('clientes')
+      .filter(c => c.rota_dia && /^ORDEM |PROSPEC/.test(c.nome))
+      .forEach(c => window.NSDB.update('clientes', c.id, { rota_dia: null, rota_ordem: null }));
+  });
+  // rota manual: criar rota do dia, adicionar cliente, registrar visita sem pedido
+  await page.evaluate(() => document.querySelectorAll('.ns-overlay').forEach(o => o.remove()));
   await page.click('#tabs button[data-v=hoje]');
   await page.waitForTimeout(300);
   const rotaTxt = await page.textContent('#view');
-  check('rota manual: abas dos dias e botão Criar rota (sem otimizar/estou aqui)',
-    rotaTxt.includes('Segunda') && rotaTxt.includes('Sexta') && rotaTxt.includes('Criar rota') &&
+  check('rota manual: abas dos dias, sem rota automática',
+    rotaTxt.includes('Segunda') && rotaTxt.includes('Sexta') &&
     !rotaTxt.includes('Otimizar rota') && !rotaTxt.includes('Estou aqui'));
+
+  // pedido digitado fora da rota entra sozinho na rota do dia, já atendido
+  const diaUtilHoje = [1, 2, 3, 4, 5].includes(new Date().getDay());
+  if (diaUtilHoje) {
+    check('pedido fora da rota inclui o cliente na rota de hoje',
+      rotaTxt.includes('FARMACIA TESTE LTDA') && rotaTxt.includes('Editar rota'));
+    check('e já entra marcado como atendido (conta na meta de visitação)',
+      rotaTxt.includes('pedido') && rotaTxt.includes('1 de 1 visitados'));
+    check('cartão da rota mostra o CNPJ sem abrir o cadastro',
+      rotaTxt.includes('CNPJ 11.222.333/0001-44'));
+    const bolinhas = await page.locator('#view .card-visita .st-tag').count();
+    check('uma única bolinha de status por cliente (sem duplicar)', bolinhas === 1);
+    // tira da rota para o cenário seguinte começar do zero
+    await page.locator('#view button:has-text("Remover da rota")').click();
+    await page.waitForTimeout(250);
+  }
+  check('botão grande de Criar rota aparece quando o dia está vazio',
+    (await page.textContent('#view')).includes('Criar rota'));
   await page.locator('#view button:has-text("Criar rota")').click();
   await page.waitForSelector('.ns-overlay');
   const selTxt = await page.locator('.ns-overlay').last().textContent();
   check('seleção mostra filtros e clientes disponíveis por prioridade',
     selTxt.includes('disponível') && selTxt.includes('Todas as cidades') && selTxt.includes('Dias sem pedido'));
+  await page.locator('.ns-overlay').last().locator('input').first().fill('FARMACIA TESTE');
+  await page.waitForTimeout(250);
   await page.locator('.ns-overlay').last().locator('button:has-text("Adicionar à rota")').first().click();
   await page.waitForTimeout(250);
   const depoisAdd = await page.locator('.ns-overlay').last().textContent();
@@ -443,7 +602,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page.waitForSelector('.ns-overlay');
   await page.locator('.ns-overlay button:has-text("C · 90d")').click();
   await page.waitForTimeout(250);
-  const cliClasse = await page.evaluate(() => JSON.parse(localStorage.getItem('ns_c_clientes'))[0]);
+  const cliClasse = await page.evaluate((id) => window.NSDB.byId('clientes', id), CLI_ID);
   check('classe C aplica ciclo de 90 dias', cliClasse.classe === 'C' && cliClasse.frequencia_dias === 90);
   await page.locator('.ns-overlay').last().locator('.btn-icon').first().click();
 
@@ -488,7 +647,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
     pedidos: JSON.parse(localStorage.getItem('ns_c_pedidos')).length,
     itens: JSON.parse(localStorage.getItem('ns_c_pedido_itens')).length,
     visita: JSON.parse(localStorage.getItem('ns_c_visitas'))[0],
-    cli: JSON.parse(localStorage.getItem('ns_c_clientes'))[0]
+    cli: window.NSDB.byId('clientes', '22222222-2222-4222-8222-222222222222')
   }));
   check('excluir pedido remove pedido e itens', posDel.pedidos === 0 && posDel.itens === 0);
   check('visita revertida (sem pedido/comissão)', posDel.visita.fez_pedido === false && !posDel.visita.comissao_valor);
@@ -520,6 +679,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page.fill('.ns-modal input[placeholder*="Nome de quem assina"]', 'Maria Souza');
   await page.click('button:has-text("Assinar em tela cheia")');
   await page.waitForSelector('.assina-full canvas');
+  await page.waitForTimeout(400);
   const cvR = page.locator('.assina-full canvas');
   const bbR = await cvR.boundingBox();
   await page.mouse.move(bbR.x + 40, bbR.y + bbR.height / 2);

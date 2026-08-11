@@ -106,7 +106,9 @@ console.log('Metas (dias úteis, % e projeção):');
 eq('julho/2026 tem 23 dias úteis', C.diasUteisDoMes('2026-07'), 23);
 eq('úteis decorridos até 28/07 (terça)', C.diasUteisAte('2026-07-28'), 20);
 let mt = C.calcMeta({ metaMes: 200000, hoje: '2026-07-28', vendidoMes: 100000, metaDiaManual: 0 });
-eq('meta/dia útil = 200000 ÷ 23', mt.metaDia, 8695.65);
+// meta do dia é DINÂMICA: falta 100.000 e restam 4 dias úteis (28,29,30,31/07) → 25.000
+eq('restam 4 dias úteis a partir de 28/07', mt.uteisRestantes, 4);
+eq('meta do dia = o que falta ÷ dias úteis restantes', mt.metaDia, 25000);
 eq('50% da meta batida', mt.pct, 50);
 eq('ritmo de 5000/dia útil', mt.ritmoDia, 5000);
 eq('nesse ritmo fecha em 115000', mt.projecao, 115000);
@@ -215,6 +217,27 @@ console.log('Classe A/B/C (prioridade no reencaixe):');
 eq('A antes de B, C e D por último', [{classe:'C'},{classe:'D'},{classe:'A'},{},{classe:'B'}]
   .sort((a,b) => C.classeRank(a) - C.classeRank(b)).map(c => c.classe || 'B').join(''), 'ABBCD');
 eq('sem classe = B', C.classeRank({}), 1);
+
+console.log('\nMeta diária dinâmica (o exemplo do gestor):');
+// meta 200.000 · vendido 10.000 · restam 10 dias úteis → 190.000 ÷ 10 = 19.000/dia
+let md = C.metaDinamica({ metaMes: 200000, vendidoMes: 10000, vendidoHoje: 0, hoje: '2026-08-18' });
+eq('10 dias úteis restantes (18 a 31/08)', md.uteisRestantes, 10);
+eq('falta vender no mês: 190.000', md.faltaMes, 190000);
+eq('meta de hoje: 190.000 ÷ 10 = 19.000', md.metaDia, 19000);
+eq('falta vender hoje: 19.000', md.faltaHoje, 19000);
+md = C.metaDinamica({ metaMes: 200000, vendidoMes: 15000, vendidoHoje: 5000, hoje: '2026-08-18' });
+eq('vendeu 5.000 hoje → falta 14.000 hoje', md.faltaHoje, 13500);
+eq('a meta do dia cai conforme o mês avança', md.metaDia, 18500);
+md = C.metaDinamica({ metaMes: 200000, vendidoMes: 210000, vendidoHoje: 0, hoje: '2026-08-18' });
+eq('mês batido: falta 0 (nunca negativo)', md.faltaMes, 0);
+eq('mês batido: meta do dia 0', md.metaDia, 0);
+eq('mês batido sinalizado', md.batidaMes, true);
+md = C.metaDinamica({ metaMes: 200000, vendidoMes: 190000, vendidoHoje: 0, hoje: '2026-08-31' });
+eq('último dia útil: 1 dia restante', md.uteisRestantes, 1);
+eq('último dia útil: meta do dia = tudo o que falta', md.metaDia, 10000);
+md = C.metaDinamica({ metaMes: 200000, vendidoMes: 10000, vendidoHoje: 0, hoje: '2026-08-18', metaDiaManual: 8000 });
+eq('meta do dia manual manda', md.metaDia, 8000);
+eq('dias úteis restantes: fim de semana não conta', C.diasUteisRestantes('2026-08-29'), 1);
 
 console.log('\nPorcentagem no padrão brasileiro:');
 eq('vírgula decimal, não ponto', C.fmtPct(59.45), '59,5%');

@@ -31,6 +31,7 @@ window.NS_CONFIG = {
   --grad-ouro-txt:linear-gradient(120deg,#e79a25,#f8b13c 60%,#c9861a);
   --azul:#241b52; --azul2:#eaeff8; --dourado:#f8b13c; --fundo:var(--bg0); --card:var(--vidro);
   --ok:#1e7e34; --erro:#e8474c; --aviso:#f0a020;
+  --prospec:#8e44d0; --prospec-esc:#6a2ca8; --prospec-bg:#f4ebfd;
   --r-lg:20px; --r-md:14px; --r-sm:10px;
   --sombra-1:0 1px 2px rgba(36,27,82,.07),0 8px 20px -12px rgba(36,27,82,.22);
   --sombra-2:0 2px 8px rgba(36,27,82,.10),0 20px 44px -20px rgba(36,27,82,.32);
@@ -217,9 +218,14 @@ select.input,select.input.big{appearance:none;-webkit-appearance:none;
 .chip.ativo{background:var(--ouro);color:#2b1c00;border-color:var(--ouro-escuro);
   box-shadow:0 6px 16px -6px rgba(201,134,26,.6)}
 .chip:active{transform:scale(.96)}
-.alerta-obs{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;
-  margin-right:5px;vertical-align:-4px;background:#f5c518;color:#111;font-weight:900;font-size:.72rem;
-  clip-path:polygon(50% 0,100% 100%,0 100%);padding-top:5px;line-height:1}
+/* triângulo de observação interna — bem visível, com brilho pulsante */
+.alerta-obs{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;
+  flex:0 0 auto;margin-right:6px;vertical-align:-6px;background:#ffc61a;color:#111;
+  font-weight:900;font-size:.9rem;line-height:1;padding-top:7px;
+  -webkit-clip-path:polygon(50% 0,100% 100%,0 100%);clip-path:polygon(50% 0,100% 100%,0 100%);
+  filter:drop-shadow(0 2px 4px rgba(214,158,0,.55));animation:pisca-obs 2.4s ease-in-out infinite}
+@keyframes pisca-obs{0%,100%{filter:drop-shadow(0 2px 4px rgba(214,158,0,.55))}
+  50%{filter:drop-shadow(0 2px 9px rgba(255,198,26,.95))}}
 .st-tag{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;vertical-align:0;
   flex:0 0 auto;box-shadow:0 0 0 3px rgba(255,255,255,.95),0 0 0 4px rgba(36,27,82,.07)}
 .row>.st-tag,.chip>.st-tag{margin-right:0}
@@ -234,6 +240,21 @@ select.input,select.input.big{appearance:none;-webkit-appearance:none;
 .item-menu>.ic:last-child{color:var(--sub2)}
 .st-tag.vermelho{background:var(--erro)}.st-tag.amarelo{background:var(--aviso)}
 .st-tag.verde{background:var(--ok)}.st-tag.cinza{background:#98a4b8}
+/* alça de arrastar da rota + numeração da ordem */
+.arrasta{flex:0 0 auto;width:30px;align-self:stretch;display:flex;align-items:center;justify-content:center;
+  color:var(--sub2);font-size:1.25rem;letter-spacing:-.1em;cursor:grab;touch-action:none;
+  border-radius:8px;background:var(--bg2)}
+.arrasta:active{cursor:grabbing;background:var(--az1);color:#fff}
+.card-visita.arrastando{opacity:.75;transform:scale(1.02);box-shadow:var(--sombra-2);border-color:var(--az2)}
+.ordem-num{flex:0 0 auto;min-width:22px;height:22px;padding:0 5px;border-radius:7px;
+  background:var(--navy);color:#fff;font-size:.72rem;font-weight:800;
+  display:inline-flex;align-items:center;justify-content:center}
+/* prospecção: roxo, para não confundir com cliente que já compra */
+.card-visita.prospec{border-left:4px solid var(--prospec) !important;
+  background:linear-gradient(100deg,var(--prospec-bg),#fff 55%)}
+.badge.prospec{background:var(--prospec);color:#fff;border-color:var(--prospec-esc);
+  letter-spacing:.08em;font-weight:800}
+.item-lista.prospec{border-left:3px solid var(--prospec);background:linear-gradient(100deg,var(--prospec-bg),#fff 60%)}
 .card-visita.st-vermelho{border-left:4px solid var(--erro)}
 .card-visita.st-amarelo{border-left:4px solid var(--aviso)}
 .card-visita.st-verde{border-left:4px solid var(--ok)}
@@ -243,6 +264,15 @@ select.input,select.input.big{appearance:none;-webkit-appearance:none;
 .assina-full .topo{padding:14px 16px;padding-top:calc(14px + env(safe-area-inset-top));border-bottom:1px solid var(--borda)}
 .assina-full .area{flex:1;margin:10px;border:2px dashed var(--borda2);border-radius:14px;background:#fdfdfb;overflow:hidden}
 .assina-full canvas{display:block;width:100%;height:100%;touch-action:none}
+/* tela de assinatura deitada: o aparelho continua em pé, a interface é que gira.
+   A posição de cada faixa é calculada no JS (pedido.js) e entra como estilo inline. */
+.assina-full.deitada{overflow:hidden}
+.assina-full.deitada .topo{z-index:2;background:var(--navy);color:#fff;border:none;
+  padding:0 16px;display:flex;align-items:center;gap:12px;white-space:nowrap;overflow:hidden}
+.assina-full.deitada .topo .sub{color:#b9c4e6}
+.assina-full.deitada .acoes{z-index:2;padding:0 14px;background:transparent;align-items:center}
+.assina-full.deitada .acoes .btn{padding:9px 12px;font-size:.85rem}
+.assina-full.deitada .area{z-index:1}
 .assina-full .acoes{padding:12px 16px;padding-bottom:calc(12px + env(safe-area-inset-bottom));display:flex;gap:8px}
 .vazio{color:var(--sub);text-align:center;padding:30px 12px;font-weight:500;font-size:.88rem;line-height:1.6}
 .badge{font-size:.68rem;font-weight:700;letter-spacing:.02em;background:var(--bg2);color:var(--navy);font-weight:800;
@@ -319,6 +349,24 @@ select.input,select.input.big{appearance:none;-webkit-appearance:none;
 .calc-live .aviso{color:#ffb3b6;font-weight:700;background:rgba(255,120,126,.14);
   border-left:3px solid #ff8a8f;border-radius:8px;padding:8px 10px;margin-top:2px}
 
+/* ── painel de metas: primeira coisa que o vendedor vê ao abrir o app ── */
+.painel-meta{background:linear-gradient(165deg,var(--navy2),var(--navy3));color:#fff;
+  border-radius:var(--r-lg);padding:16px 18px;box-shadow:var(--sombra-2);position:relative;overflow:hidden}
+.painel-meta::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--grad-ouro)}
+.painel-meta-topo{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.painel-meta-topo span{font-size:.7rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#b6c0e6}
+.painel-meta-topo strong{font-size:1.5rem;font-weight:900;color:var(--ouro-claro);font-variant-numeric:tabular-nums}
+.painel-meta .progresso-barra{background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.2);box-shadow:none}
+.meta-corpo{display:flex;flex-direction:column;gap:7px}
+.meta-linha{font-size:.92rem}
+.meta-linha>span{color:#c3cdec;font-weight:600}
+.meta-linha>strong{font-weight:800;color:#fff;font-variant-numeric:tabular-nums;white-space:nowrap}
+.meta-linha>strong.destaque{color:var(--ouro-claro);font-size:1.06rem}
+.meta-linha>strong.ok{color:#8ef0bb}
+.meta-sep{height:1px;background:rgba(255,255,255,.2);margin:3px 0}
+.meta-selo{text-align:center;font-weight:800;font-size:.85rem;padding:8px;border-radius:10px;
+  background:rgba(46,194,126,.2);color:#8ef0bb;border:1px solid rgba(46,194,126,.45)}
+
 /* ── KPIs: azulejos de vidro com profundidade ── */
 .kpis{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .kpi{background:var(--vidro);backdrop-filter:blur(10px);border:1px solid var(--borda);
@@ -343,6 +391,24 @@ select.input,select.input.big{appearance:none;-webkit-appearance:none;
 .tabela th{background:var(--navy);font-size:.66rem;white-space:nowrap;color:#fff;
   text-transform:uppercase;letter-spacing:.05em}
 .tabela tr:last-child td{border-bottom:none}
+
+/* ── fechamento do pedido: cada bloco com cor e rótulo próprios ── */
+.campo-box{border:1.5px solid var(--borda2);border-left-width:5px;border-radius:var(--r-md);
+  padding:13px 15px;background:#fff;box-shadow:var(--sombra-1)}
+.campo-box.azul{border-left-color:var(--az2);background:linear-gradient(100deg,#eef5fe,#fff 60%)}
+.campo-box.ouro{border-left-color:var(--ouro);background:linear-gradient(100deg,#fff7e8,#fff 60%)}
+.campo-box.roxo{border-left-color:var(--prospec);background:linear-gradient(100deg,var(--prospec-bg),#fff 60%)}
+.campo-box.cinza{border-left-color:var(--sub2);background:linear-gradient(100deg,#f3f4f9,#fff 60%)}
+.campo-box-tit{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  font-size:.76rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--navy);margin-bottom:9px}
+.campo-box-tit .obrig{background:var(--erro);color:#fff;font-size:.6rem;letter-spacing:.06em;
+  padding:2px 7px;border-radius:999px}
+.campo-box-tit .so-interno{background:var(--bg2);color:var(--sub);font-size:.6rem;letter-spacing:.06em;
+  padding:2px 7px;border-radius:999px;border:1px solid var(--borda)}
+.campo-box-ajuda{font-size:.76rem;color:var(--sub);margin-top:7px;line-height:1.45}
+.campo-box .input{background:#fff}
+.chk-grande{font-weight:700;font-size:.92rem;color:var(--navy)}
 
 /* ── assinatura: papel claro para tinta escura (vai pro PDF) ── */
 .assinatura-area{border:2px dashed rgba(var(--glow-rgb),.45);border-radius:var(--r-lg);

@@ -321,17 +321,30 @@
         el('div', { class: 'total-bar mt8' },
           el('span', null, `${tot.colocadas} colocadas · ${tot.devDisplay} display · ${tot.devQuebrada} quebradas · ${tot.vendidas} vendidas`),
           el('strong', null, C.fmtMoney(tot.valor))),
-        el('h3', { class: 'mt12' }, 'Data do pedido'),
-        dataIn,
-        el('p', { class: 'sub mt4' }, 'Esqueceu de lançar ontem? Troque a data — o pedido entra na meta e na comissão do dia certo.'),
-        el('h3', { class: 'mt12' }, 'Condição de pagamento (prazo) *'),
-        prazoIn,
-        cli.condicao_pagamento_padrao ? el('p', { class: 'sub mt4' },
-          'Último prazo deste cliente: ' + cli.condicao_pagamento_padrao) : null,
-        el('h3', { class: 'mt12' }, 'Material deixado no cliente'),
-        el('label', { class: 'row gap8 mt4' }, chkDisplay, el('span', null, 'Deixei display/mostruário neste cliente')),
-        el('div', { class: 'mt4' }, materialIn),
-        el('div', { class: 'mt8' }, obsIn),
+        // cada informação do fechamento numa caixa própria, com cor e rótulo
+        // grandes — antes era campo branco em cima de campo branco
+        el('div', { class: 'campo-box azul mt12' },
+          el('div', { class: 'campo-box-tit' }, 'Data do pedido'),
+          dataIn,
+          el('p', { class: 'campo-box-ajuda' },
+            'Esqueceu de lançar ontem? Troque a data — o pedido entra na meta e na comissão do dia certo.')),
+        el('div', { class: 'campo-box ouro mt12' },
+          el('div', { class: 'campo-box-tit' }, 'Condição de pagamento (prazo)',
+            el('span', { class: 'obrig' }, 'obrigatório')),
+          prazoIn,
+          cli.condicao_pagamento_padrao ? el('p', { class: 'campo-box-ajuda' },
+            'Último prazo deste cliente: ' + cli.condicao_pagamento_padrao) : null),
+        el('div', { class: 'campo-box roxo mt12' },
+          el('div', { class: 'campo-box-tit' }, 'Material deixado no cliente'),
+          el('label', { class: 'row gap8 chk-grande' }, chkDisplay,
+            el('span', null, 'Deixei display/mostruário neste cliente')),
+          el('div', { class: 'mt8' }, materialIn)),
+        el('div', { class: 'campo-box cinza mt12' },
+          el('div', { class: 'campo-box-tit' }, 'Observações internas',
+            el('span', { class: 'so-interno' }, 'só no sistema')),
+          obsIn,
+          el('p', { class: 'campo-box-ajuda' },
+            'Isto NÃO sai no talão, no PDF nem no cupom — é só para você e o gestor.')),
         editando ? el('p', { class: 'sub mt8' },
           'A assinatura já colhida será mantida — as alterações só recalculam valores e comissão.') : null,
         el('div', { class: 'row gap8 mt12' },
@@ -343,7 +356,7 @@
               return toast('Escreva a CONDIÇÃO DE PAGAMENTO (prazo) antes de ' + (editando ? 'salvar' : 'assinar') + '.', 'erro');
             }
             if (editando) salvarConcluido(); else passoAssinatura();
-          } }, editando ? rot('salvar', 'Salvar alterações') : rot('setaDir', 'Assinar')))));
+          } }, editando ? rot('salvar', 'Salvar alterações') : el('span', { class: 'row gap8' }, 'Assinar', ico('setaDir'))))));
 
       function guardar() {
         ped.obs = obsIn.value;
@@ -391,7 +404,7 @@
           area,
           el('div', { class: 'acoes' },
             el('button', { class: 'btn btn-sec grow', onclick: () => { st.length = 0; pinta(); } }, 'Limpar'),
-            el('button', { class: 'btn btn-sec grow', onclick: () => { tela.remove(); } }, 'Cancelar'),
+            el('button', { class: 'btn btn-sec grow', onclick: () => { liberarTela(); } }, 'Cancelar'),
             el('button', {
               class: 'btn grow', onclick: () => {
                 if (!st.length || st.every(x => x.length < 2)) return toast('Colete a assinatura antes de confirmar.', 'erro');
@@ -399,21 +412,77 @@
                 ped.assinante_nome = nomeAssinante.value.trim();
                 imgPrev.src = ped.assinatura; imgPrev.style.display = 'block';
                 previa.textContent = 'Assinatura colhida — toque no botão para refazer.';
-                tela.remove();
+                liberarTela();
                 toast('Assinatura salva. Agora toque em "Confirmar e concluir".');
               }
             }, rot('check', 'Confirmar assinatura'))));
         document.body.appendChild(tela);
+
+        // ── assinatura SEMPRE deitada (paisagem) ──
+        // No Android dá para travar a orientação de verdade. No iPhone o Safari
+        // não deixa, então giramos a própria tela de assinatura 90° por CSS —
+        // o cliente assina na horizontal do mesmo jeito, sem virar o aparelho.
+        let girado = false, tr = null;
+        (async () => {
+          try {
+            if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();
+            if (screen.orientation && screen.orientation.lock) await screen.orientation.lock('landscape');
+          } catch (e) { /* iOS e navegadores sem suporte caem no giro por CSS */ }
+          ajustar();
+        })();
+        function emRetrato() { return window.innerHeight > window.innerWidth; }
+        // Monta o "papel deitado": o comprimento do papel é a altura da tela e a
+        // espessura é a largura. Reservamos duas faixas (cabeçalho e botões) para
+        // que o quadro de assinatura não cubra os botões depois de girar.
+        const FAIXA_TOPO = 46, FAIXA_ACOES = 84, MARGEM = 16;
+        function ajustar() {
+          girado = emRetrato();
+          tela.classList.toggle('deitada', girado);
+          const alvos = [tela.querySelector('.topo'), area, tela.querySelector('.acoes')];
+          if (!girado) { alvos.forEach(x => { if (x) { x.style.cssText = ''; } }); medirCanvas(); return; }
+          const L = window.innerHeight;                  // comprimento do papel
+          const E = window.innerWidth;                   // espessura do papel
+          const base = 'position:absolute;top:50%;left:50%;margin:0;transform-origin:center center;';
+          // translateY(D) no espaço local move D px para a ESQUERDA na tela
+          const giro = (D) => 'translate(-50%,-50%) rotate(90deg) translateY(' + D + 'px)';
+          const topo = tela.querySelector('.topo'), acoes = tela.querySelector('.acoes');
+          if (topo) topo.style.cssText = base + 'width:' + L + 'px;height:' + FAIXA_TOPO +
+            'px;transform:' + giro(E / 2 - FAIXA_TOPO / 2) + ';';
+          if (acoes) acoes.style.cssText = base + 'width:' + L + 'px;height:' + FAIXA_ACOES +
+            'px;transform:' + giro(-(E / 2 - FAIXA_ACOES / 2)) + ';';
+          const alturaUtil = E - FAIXA_TOPO - FAIXA_ACOES - MARGEM * 2;
+          area.style.cssText = base + 'width:' + (L - MARGEM * 2) + 'px;height:' + alturaUtil +
+            'px;transform:' + giro(-(FAIXA_TOPO - FAIXA_ACOES) / 2) + ';';
+          medirCanvas();
+        }
+        // não remexer no layout no meio de um traço (o dedo está desenhando)
+        const reajustar = () => { if (!tr) ajustar(); };
+        window.addEventListener('resize', reajustar);
+        window.addEventListener('orientationchange', reajustar);
+
+        function liberarTela() {
+          window.removeEventListener('resize', reajustar);
+          window.removeEventListener('orientationchange', reajustar);
+          try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (e) {}
+          try { if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen(); } catch (e) {}
+          tela.remove();
+        }
+
         const cx = cvF.getContext('2d');
         const st = [];
-        let tr = null;
         const dpr = window.devicePixelRatio || 1;
-        setTimeout(() => {
-          const r = area.getBoundingClientRect();
-          cvF.width = r.width * dpr; cvF.height = r.height * dpr;
+        // tamanho lógico do canvas (o desenho é feito neste espaço)
+        let logW = 0, logH = 0;
+        function medirCanvas() {
+          const larg = area.clientWidth || area.getBoundingClientRect().width;
+          const alt = area.clientHeight || area.getBoundingClientRect().height;
+          if (!larg || !alt) return;
+          logW = larg; logH = alt;
+          cvF.width = Math.round(larg * dpr); cvF.height = Math.round(alt * dpr);
           cx.setTransform(dpr, 0, 0, dpr, 0, 0);
           pinta();
-        }, 40);
+        }
+        setTimeout(medirCanvas, 40);
         function pinta() {
           cx.clearRect(0, 0, cvF.width, cvF.height);
           cx.lineWidth = 3.2; cx.lineCap = 'round'; cx.lineJoin = 'round'; cx.strokeStyle = '#16233b';
@@ -423,7 +492,17 @@
             cx.stroke();
           }
         }
-        const posF = (e) => { const r = cvF.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+        // Ponto do dedo → coordenada dentro do canvas. Quando a tela está girada
+        // 90° por CSS, o retângulo que o navegador devolve já vem transformado;
+        // desfazemos a rotação na mão para o traço sair no lugar certo.
+        const posF = (e) => {
+          const r = cvF.getBoundingClientRect();
+          if (!girado) return { x: e.clientX - r.left, y: e.clientY - r.top };
+          const cxr = r.left + r.width / 2, cyr = r.top + r.height / 2;
+          const dx = e.clientX - cxr, dy = e.clientY - cyr;
+          // rotate(90°) leva (lx,ly) → (−ly, lx); invertendo: lx = dy, ly = −dx
+          return { x: logW / 2 + dy, y: logH / 2 - dx };
+        };
         cvF.addEventListener('pointerdown', (e) => { e.preventDefault(); cvF.setPointerCapture(e.pointerId); tr = [posF(e)]; st.push(tr); });
         cvF.addEventListener('pointermove', (e) => { if (tr) { tr.push(posF(e)); pinta(); } });
         const fimF = () => { tr = null; };

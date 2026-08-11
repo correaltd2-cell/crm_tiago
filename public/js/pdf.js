@@ -139,7 +139,7 @@
     pg.text(M + 10, y - 20, 'NEW STAR', 16, true);
     pg.text(M + 10, y - 36, Number(pedido.total_valor) < 0
       ? 'Talão de Pedido — Recolhimento com Crédito do Cliente'
-      : 'Talão de Pedido — Consignação', 8.5);
+      : 'Talão de Pedido', 8.5);
     pg.text(W - M - 10, y - 20, 'PEDIDO Nº ' + (pedido.numero || 'PENDENTE'), 12, true, 'right');
     pg.text(W - M - 10, y - 36, 'Data: ' + dataBR(pedido.data_pedido), 9, false, 'right');
     y -= 58;

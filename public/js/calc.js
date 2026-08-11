@@ -364,16 +364,53 @@
     }
     return n;
   }
+  // dias úteis que ainda restam no mês CONTANDO o dia de hoje
+  // (se hoje é sábado/domingo, sobram só os dias úteis daqui pra frente)
+  function diasUteisRestantes(diaISO) {
+    const [a, m, dd] = diaISO.split('-').map(Number);
+    const ultimo = new Date(a, m, 0).getDate();
+    let n = 0;
+    for (let i = dd; i <= ultimo; i++) {
+      const dw = new Date(a, m - 1, i).getDay();
+      if (dw >= 1 && dw <= 5) n++;
+    }
+    return n;
+  }
+
+  // Meta do dia DINÂMICA: o que falta para a meta do mês dividido pelos dias
+  // úteis que ainda restam (contando hoje). Vendeu bem hoje? amanhã a meta cai.
+  // Ficou devendo? a meta dos dias seguintes sobe sozinha.
+  function metaDinamica({ metaMes, vendidoMes, vendidoHoje, hoje, metaDiaManual }) {
+    metaMes = Number(metaMes) || 0;
+    vendidoMes = Number(vendidoMes) || 0;
+    vendidoHoje = Number(vendidoHoje) || 0;
+    const uteisRestantes = diasUteisRestantes(hoje);
+    const faltaMes = round2(Math.max(0, metaMes - vendidoMes));
+    // meta de hoje: manual (se o gestor fixou) ou o que falta ÷ dias úteis restantes
+    const metaDia = (Number(metaDiaManual) > 0) ? round2(Number(metaDiaManual))
+      : (uteisRestantes > 0 ? round2(faltaMes / uteisRestantes) : faltaMes);
+    const faltaHoje = round2(Math.max(0, metaDia - vendidoHoje));
+    const pctMes = metaMes > 0 ? round2(vendidoMes / metaMes * 100) : 0;
+    const pctDia = metaDia > 0 ? round2(vendidoHoje / metaDia * 100) : 0;
+    return { uteisRestantes, faltaMes, metaDia, faltaHoje, pctMes, pctDia,
+      batidaMes: metaMes > 0 && vendidoMes >= metaMes,
+      batidaHoje: metaDia > 0 && vendidoHoje >= metaDia };
+  }
+
   function calcMeta({ metaMes, hoje, vendidoMes, metaDiaManual }) {
     const uteisTotal = diasUteisDoMes(hoje.slice(0, 7));
     const uteisDecorridos = Math.max(1, diasUteisAte(hoje));
+    const uteisRestantes = diasUteisRestantes(hoje);
+    // a meta do dia é dinâmica: o que falta ÷ dias úteis que sobraram
+    const faltaMes = round2(Math.max(0, (metaMes || 0) - vendidoMes));
     const metaDia = (metaDiaManual > 0) ? metaDiaManual
-      : round2((metaMes || 0) / (uteisTotal || 1));
+      : (uteisRestantes > 0 ? round2(faltaMes / uteisRestantes) : faltaMes);
     const pct = metaMes > 0 ? round2(vendidoMes / metaMes * 100) : 0;
     const ritmoDia = round2(vendidoMes / uteisDecorridos);
     const projecao = round2(ritmoDia * uteisTotal);
     const projecaoPct = metaMes > 0 ? round2(projecao / metaMes * 100) : 0;
-    return { uteisTotal, uteisDecorridos, metaDia, pct, ritmoDia, projecao, projecaoPct };
+    return { uteisTotal, uteisDecorridos, uteisRestantes, faltaMes,
+      metaDia, pct, ritmoDia, projecao, projecaoPct };
   }
 
   // ---------- Rede do cliente (para relatórios por rede) ----------
@@ -449,7 +486,7 @@
     DIAS_SEMANA, normDia, mesmoDia, clienteJaComprou, classeRank,
     haversineKm, matrizHaversine, nearestNeighbor, comprimentoRota, doisOpt,
     otimizarRota, detourInsercao, decidirPernoite, sugestaoFrequencia,
-    diasUteisDoMes, diasUteisAte, calcMeta, redeDoCliente,
+    diasUteisDoMes, diasUteisAte, diasUteisRestantes, calcMeta, metaDinamica, redeDoCliente,
     REGIOES, regiaoDoCliente, planejarPorRegioes,
     parseCSV, toCSV, CICLOS
   };
