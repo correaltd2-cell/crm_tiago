@@ -89,11 +89,11 @@ function montarLinhas({ pedido, itens, cliente, rep, produtos, observacoes, base
   t((negativo ? 'CREDITO ' : 'TOTAL ') + fmtBR(pedido.total_valor), { bold: 1, align: 2, format: 1 });
   if (observacoes) t(observacoes);
   t('--------------------------------', { align: 1 });
-  if (pedido.assinatura && baseURL)
-    L.push({ type: 1, path: baseURL + '/api/assinatura?id=' + pedido.id, align: 1 });
-  t('________________________________', { align: 1 });
-  t((pedido.assinante_nome ? pedido.assinante_nome + ' - ' : '') + (cliente.nome || ''), { align: 1 });
-  t('Assinatura do cliente', { align: 1 });
+  // O cupom NAO leva a imagem da assinatura — ela fica só no PDF do talao.
+  // Aqui entra apenas o nome de quem recebeu a mercadoria.
+  t('RECEBIDO POR', { bold: 1, align: 1 });
+  t(pedido.assinante_nome || '________________________________', { bold: 1, align: 1, format: 1 });
+  t(cliente.nome || '', { align: 1 });
   t(' ');
   t(' ');
   return L;

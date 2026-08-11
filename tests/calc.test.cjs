@@ -138,8 +138,10 @@ eq('todas as linhas têm type válido (0 texto ou 1 imagem)',
 eq('contato do vendedor presente', linhasBt.some(l => String(l.content).includes('(54) 9999-0000')), true);
 eq('item com TOTAL em negrito à direita',
   linhasBt.some(l => l.content === 'TOTAL R$ 493,00' && l.bold === 1 && l.align === 2), true);
-eq('assinatura vira imagem apontando para o endpoint',
-  linhasBt.some(l => l.type === 1 && l.path === 'https://app-newstar.vercel.app/api/assinatura?id=ped-1' && l.align === 1), true);
+eq('cupom NÃO leva a imagem da assinatura (fica só no PDF)',
+  linhasBt.some(l => l.type === 1), false);
+eq('cupom traz o campo RECEBIDO POR', linhasBt.some(l => l.content === 'RECEBIDO POR' && l.bold === 1), true);
+eq('cupom traz o nome de quem recebeu', linhasBt.some(l => l.content === 'Raissa'), true);
 eq('CNPJ formatado no cupom', linhasBt.some(l => String(l.content).includes('10.768.389/0014-98')), true);
 
 console.log('CNPJ/CPF formatado:');
