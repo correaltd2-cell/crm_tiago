@@ -66,6 +66,11 @@ FAZER UM PEDIDO (talão digital)
 NOMES DOS PRODUTOS (catálogo padronizado)
 Os produtos aparecem com o mesmo nome no pedido, no talão, no cupom e na ficha do cliente: LUXO DOURADO · LUXO PRATA · BRP - BRINCO PEQUENO CLASSIC · PONTO DE LUZ - ZIRCÔNIA · BRAG - BRINCO ARGOLINHA · PARIS - GARGANTILHA · NEW YORK - GARGANTILHA · PULA - PULSEIRA ADULTA · PUL - PULSEIRA INFANTIL. Os demais itens do catálogo (BRG, BRAG Zircônia, BRP M. Encantado, DIVA, FOR MEN, PRATA 925 e TORNOZELEIRA) continuam com o nome antigo. Para mudar qualquer nome ou preço: MAIS → Admin → Produtos.
 
+SINCRONIZAÇÃO E O SELO DO TOPO
+O selo no alto da tela mostra como está a ligação com o banco de dados: VERDE "sincronizado" (tudo em dia), "sincronizando…", "X pendente(s)" (tem coisa na fila esperando sinal), "offline" (sem sinal — pode trabalhar normal, nada se perde) e VERMELHO "SEM ATUALIZAR". Esse último é novo e importante: quer dizer que o app está online e não perdeu nada, mas NÃO está conseguindo baixar as novidades do servidor. Toque no selo para ver o motivo.
+LIMITE DIÁRIO DO BANCO: o banco de dados tem um limite de leituras por dia. Se ele estourar, o app avisa no selo vermelho e explica no painel de sincronização. NADA É PERDIDO: tudo que o vendedor digitar continua sendo salvo e enviado normalmente (a gravação não para); o que fica parado é só o download das novidades, que volta sozinho depois da virada do dia.
+ECONOMIA DE LEITURA: no dia a dia o app baixa SÓ O QUE MUDOU desde a última vez, em vez de baixar a base inteira toda hora. A base completa é baixada na primeira instalação, uma vez a cada 12 horas e sempre que você tocar em "SINCRONIZAR AGORA" no painel do selo. Se desconfiar que algum dado não chegou, é esse botão que resolve.
+
 O APP NÃO FECHA MAIS SOZINHO
 Antes, quando saía uma versão nova, o aplicativo se recarregava sozinho ao voltar do bolso e parecia que tinha fechado. Agora ele NUNCA se recarrega no meio do serviço: quando existe versão nova, aparece uma faixa escura embaixo dizendo "Tem uma versão nova do app" com os botões DEPOIS e ATUALIZAR AGORA — quem decide a hora é você. O app também guarda em que aba e em que dia de rota você estava: se o celular fechar o app por falta de memória ou a bateria acabar, ao abrir de novo ele volta na mesma tela.
 

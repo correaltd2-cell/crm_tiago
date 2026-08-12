@@ -297,6 +297,11 @@ select.input,select.input.big{appearance:none;-webkit-appearance:none;
 .card-pedido:has(.selo-nf) .grow{padding-right:42px}
 .btn-mini.laranja,.btn.laranja{background:linear-gradient(180deg,#ffa229,#e5760a);color:#fff;
   border-color:#c8690a;box-shadow:0 6px 14px -8px rgba(200,105,10,.9)}
+/* caixa de aviso (ex.: dados sem atualizar por limite do banco) */
+.aviso-box{background:#fff4e0;border:1px solid rgba(240,160,32,.55);border-left:4px solid var(--aviso);
+  border-radius:12px;padding:11px 13px;color:#6b4405}
+.aviso-box strong{display:flex;align-items:center;gap:7px;color:#8a5606;font-size:.9rem}
+.aviso-box .sub{color:#7a4f06}
 /* aviso de versão nova — o app nunca se recarrega sozinho */
 .barra-atualizar{position:fixed;left:10px;right:10px;bottom:calc(76px + env(safe-area-inset-bottom));
   z-index:70;display:flex;align-items:center;justify-content:space-between;gap:10px;

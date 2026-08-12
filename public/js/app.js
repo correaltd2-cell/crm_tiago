@@ -173,6 +173,8 @@
     else if (!st.online) { chip.textContent = 'offline' + (st.pendentes ? ' · ' + st.pendentes : ''); chip.className = 'sync-chip off'; }
     else if (st.syncing) { chip.textContent = 'sincronizando…'; chip.className = 'sync-chip'; }
     else if (st.pendentes) { chip.textContent = st.pendentes + ' pendente(s)'; chip.className = 'sync-chip off'; }
+    // online, sem fila, mas a última puxada falhou: não pode dizer "sincronizado"
+    else if (st.pullErro) { chip.textContent = 'sem atualizar'; chip.className = 'sync-chip erro'; }
     else { chip.textContent = 'sincronizado'; chip.className = 'sync-chip ok'; }
   }
   DB.onStatus(atualizarSyncChip);
@@ -184,13 +186,28 @@
         st.online ? 'Online' : 'Offline — tudo continua funcionando; as alterações entram na fila.'),
       el('p', { class: 'sub mt4' }, 'Escrituras pendentes: ' + st.pendentes),
       st.lastSync ? el('p', { class: 'sub' }, 'Última sincronização: ' + new Date(st.lastSync).toLocaleString('pt-BR')) : null,
+      // sem isto o app dizia "Online / 0 pendentes" mesmo passando horas sem baixar nada
+      st.pullErro ? el('div', { class: 'aviso-box mt8' },
+        el('strong', null, ico('alerta', 'ic-erro'), 'Os dados não estão sendo atualizados'),
+        el('p', { class: 'sub mt4' }, st.pullErro.cota
+          ? 'O banco de dados atingiu o limite diário de leitura do plano gratuito. ' +
+            'NADA FOI PERDIDO: tudo o que você digitou já foi salvo (as escrituras continuam ' +
+            'funcionando) e o app segue trabalhando normalmente com os dados do aparelho. ' +
+            'A atualização volta sozinha depois da virada do dia.'
+          : st.pullErro.msg),
+        el('p', { class: 'sub mt4' }, 'Última tentativa: ' + new Date(st.pullErro.em).toLocaleString('pt-BR'))) : null,
       st.erros.length ? el('div', { class: 'mt8' },
         el('strong', null, ico('alerta', 'ic-erro'), st.erros.length + ' erro(s) de sincronização'),
         el('div', { class: 'sub', style: 'max-height:120px;overflow:auto' },
           st.erros.map(e => el('div', null, e.erro))),
         el('button', { class: 'btn-link', onclick: () => { DB.clearErros(); } }, 'limpar erros')) : null,
       el('button', {
-        class: 'btn w100 mt12', onclick: async () => { await DB.sync(); toast('Sincronização executada.'); }
+        class: 'btn w100 mt12', onclick: async () => {
+          await DB.sync(true);
+          const d = DB.status();
+          toast(d.pullErro ? 'Não deu para baixar os dados agora: ' + d.pullErro.msg
+            : 'Sincronização executada.', d.pullErro ? 'erro' : '');
+        }
       }, 'Sincronizar agora')), { titulo: 'Sincronização' });
   }
 
@@ -2124,14 +2141,21 @@
   // toca em "Atualizar agora" — assim ele nunca perde a tela no meio do serviço.
   function ligarAtualizacao() {
     if (!('serviceWorker' in navigator)) return;
-    let pedidoDeTroca = false;
+    let pedidoDeTroca = false, jaRecarregou = false;
+    const recarregar = () => { if (!jaRecarregou) { jaRecarregou = true; location.reload(); } };
+    // a troca de versão sozinha NÃO recarrega a tela; só recarrega se o
+    // vendedor pedir no botão "Atualizar agora"
     navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (pedidoDeTroca) location.reload();
+      if (pedidoDeTroca) recarregar();
     });
     navigator.serviceWorker.register('sw.js').then((reg) => {
       const avisar = (sw) => {
-        if (!sw || !navigator.serviceWorker.controller) return; // 1ª instalação: nada a avisar
-        mostrarBarraAtualizar(() => { pedidoDeTroca = true; sw.postMessage({ tipo: 'ATUALIZAR_AGORA' }); });
+        if (!navigator.serviceWorker.controller) return; // 1ª instalação: nada a avisar
+        mostrarBarraAtualizar(() => {
+          pedidoDeTroca = true;
+          if (sw && sw.state === 'installed') sw.postMessage({ tipo: 'ATUALIZAR_AGORA' });
+          setTimeout(recarregar, 700); // rede de segurança: recarrega de qualquer jeito
+        });
       };
       if (reg.waiting) avisar(reg.waiting);
       reg.addEventListener('updatefound', () => {

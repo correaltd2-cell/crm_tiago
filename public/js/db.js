@@ -146,14 +146,28 @@
   const listeners = [];
   function notify() { listeners.forEach(fn => { try { fn(DB.status()); } catch (e) {} }); }
 
-  // Leituras custam cota do plano gratuito do Firestore: puxadas completas
-  // são raras (na abertura, ao voltar ao app e a cada 1 h) e nunca a menos
-  // de 60 s da anterior.
+  // ---------- Puxada de dados (cota de leitura) ----------
+  // O plano gratuito do Firestore dá 50 mil LEITURAS por dia. Baixar as 13
+  // tabelas inteiras a cada volta ao app (são 300+ clientes, mais pedidos,
+  // itens e visitas) gastava ~700 leituras por vez e estourava a cota antes do
+  // fim do dia — o app ficava horas sem atualizar, sem avisar ninguém. Agora:
+  //   • puxada COMPLETA: só quando o cache está vazio, no botão "Sincronizar
+  //     agora" e uma vez a cada 12 h;
+  //   • puxada INCREMENTAL: traz só o que mudou desde a última vez (campo
+  //     atualizado_em), o que custa pouquíssimas leituras.
+  const PULL_COMPLETO_MS = 12 * 3600000;
+  const PULL_MIN_MS = 120000;   // nunca duas puxadas automáticas a menos de 2 min
+  const FOLGA_RELOGIO_MS = 300000; // 5 min de folga: relógios de aparelhos diferentes
   let ultimaPuxada = 0;
-  const PODE_PUXAR = () => Date.now() - ultimaPuxada > 60000;
-  async function trySync(forcarPull) {
+  const PODE_PUXAR = () => Date.now() - ultimaPuxada > PULL_MIN_MS;
+  const precisaCompleta = () =>
+    !lsGet('ns_ultimo_pull_iso', null) ||
+    Date.now() - Number(lsGet('ns_ultimo_pull_completo', 0)) > PULL_COMPLETO_MS;
+
+  async function trySync(forcarPull, completa) {
     if (syncing || !navigator.onLine || !configured()) { notify(); return; }
-    if (!outbox.length && !(forcarPull && PODE_PUXAR())) { notify(); return; }
+    const vaiPuxar = (forcarPull && (completa || PODE_PUXAR()));
+    if (!outbox.length && !vaiPuxar) { notify(); return; }
     syncing = true; notify();
     const erros = lsGet('ns_sync_erros', []);
     try {
@@ -172,18 +186,78 @@
         }
         outbox.shift(); lsSet('ns_outbox', outbox);
       }
-      if (forcarPull && PODE_PUXAR()) await pullAll();
     } catch (e) { /* offline ou instabilidade — fica na fila */ }
+    if (vaiPuxar) {
+      try {
+        await pullAll({ completa: completa || precisaCompleta() });
+      } catch (e) {
+        // guardar o motivo: sem isso o app parecia "online e sincronizado"
+        // enquanto na verdade não baixava nada havia horas
+        lsSet('ns_pull_erro', {
+          em: Date.now(),
+          cota: e.status === 429,
+          msg: e.status === 429 ? 'Limite diário de leitura do banco atingido.' : String(e.message || e).slice(0, 200)
+        });
+        // falha que não é de cota (consulta recusada, por exemplo): na próxima
+        // vez tenta a puxada completa, que não depende da consulta incremental
+        if (e.status !== 429) lsSet('ns_ultimo_pull_completo', 0);
+      }
+    }
     syncing = false; notify();
   }
 
-  async function pullAll() {
+  // traz só os documentos alterados depois de `desdeISO`
+  async function fsMudancasDesde(table, desdeISO) {
+    const pk = PK[table] || 'id';
+    const LIMITE = 300;
+    const r = await fs(':runQuery', {
+      method: 'POST', body: {
+        structuredQuery: {
+          from: [{ collectionId: table }],
+          where: { fieldFilter: { field: { fieldPath: 'atualizado_em' }, op: 'GREATER_THAN', value: { stringValue: desdeISO } } },
+          limit: LIMITE
+        }
+      }
+    });
+    const rows = [];
+    for (const linha of (r || [])) {
+      if (!linha.document) continue;
+      const row = decFields(linha.document.fields);
+      row[pk] = linha.document.name.split('/').pop();
+      rows.push(row);
+    }
+    // veio cheio: mudou muita coisa, mais seguro baixar a tabela inteira
+    if (rows.length >= LIMITE) return { rows: await fsListAll(table), completa: true };
+    return { rows, completa: false };
+  }
+
+  function mesclar(table, rows) {
+    if (!rows.length) return;
+    const pk = PK[table] || 'id';
+    const mapa = new Map(load(table).map(r => [r[pk], r]));
+    for (const row of rows) mapa.set(row[pk], row);
+    mem[table] = Array.from(mapa.values());
+    save(table);
+  }
+
+  async function pullAll(opts) {
     if (!navigator.onLine || !configured()) return false;
-    for (const t of TABLES) {
-      mem[t] = await fsListAll(t); save(t);
+    const completa = !opts || opts.completa !== false;
+    const marca = new Date(Date.now() - FOLGA_RELOGIO_MS).toISOString();
+    if (completa) {
+      for (const t of TABLES) { mem[t] = await fsListAll(t); save(t); }
+      lsSet('ns_ultimo_pull_completo', Date.now());
+    } else {
+      const desde = lsGet('ns_ultimo_pull_iso', null);
+      for (const t of TABLES) {
+        const r = await fsMudancasDesde(t, desde);
+        if (r.completa) { mem[t] = r.rows; save(t); } else mesclar(t, r.rows);
+      }
     }
     ultimaPuxada = Date.now();
+    lsSet('ns_ultimo_pull_iso', marca);
     lsSet('ns_last_sync', Date.now());
+    lsSet('ns_pull_erro', null);
     notify();
     return true;
   }
@@ -202,6 +276,8 @@
       const pk = PK[table] || 'id';
       if (!row[pk]) row[pk] = uuid();
       if (!row.criado_em && table !== 'configuracoes') row.criado_em = new Date().toISOString();
+      // carimbo usado pela puxada incremental (baixar só o que mudou)
+      row.atualizado_em = new Date().toISOString();
       load(table).unshift(row); save(table);
       queue({ table, method: 'set', docId: row[pk], body: Object.assign({}, row) });
       return row;
@@ -209,6 +285,7 @@
     update(table, id, patch) {
       const pk = PK[table] || 'id';
       const arr = load(table);
+      patch = Object.assign({}, patch, { atualizado_em: new Date().toISOString() });
       const r = arr.find(x => x[pk] === id);
       if (r) { Object.assign(r, patch); save(table); }
       queue({ table, method: 'patch', docId: id, body: patch });
@@ -218,8 +295,9 @@
       const arr = load('configuracoes');
       const r = arr.find(x => x.chave === chave);
       if (r) {
-        r.valor = valor; save('configuracoes');
-        queue({ table: 'configuracoes', method: 'patch', docId: chave, body: { valor } });
+        const em = new Date().toISOString();
+        r.valor = valor; r.atualizado_em = em; save('configuracoes');
+        queue({ table: 'configuracoes', method: 'patch', docId: chave, body: { valor, atualizado_em: em } });
       } else DB.insert('configuracoes', { chave, valor });
     },
     remove(table, id) {
@@ -258,11 +336,14 @@
         online: navigator.onLine, configured: configured(), syncing,
         pendentes: outbox.length,
         lastSync: lsGet('ns_last_sync', null),
+        pullErro: lsGet('ns_pull_erro', null),
         erros: lsGet('ns_sync_erros', [])
       };
     },
     onStatus(fn) { listeners.push(fn); },
-    sync: () => trySync(true), pullAll,
+    // sync() na abertura do app = leve (só o que mudou, respeitando o intervalo).
+    // sync(true), do botão "Sincronizar agora", força a puxada completa.
+    sync: (completa) => trySync(true, completa === true), pullAll,
     clearErros() { lsSet('ns_sync_erros', []); notify(); }
   };
 

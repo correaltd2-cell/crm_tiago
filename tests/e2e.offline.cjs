@@ -1137,6 +1137,83 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
     (await page5.locator('.ns-modal .card-escolha').count()) === 2);
   await page5.close();
 
+  // ── sincronização econômica (cota de leitura do Firestore) ──
+  // O app baixava as 13 tabelas inteiras a cada volta e estourava o limite
+  // diário de leitura. Agora a puxada de rotina é incremental.
+  const page6 = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  const chamadas = [];
+  await page6.route('**/firestore.googleapis.com/**', async (r) => {
+    const url = r.request().url();
+    chamadas.push(url);
+    if (url.includes(':runQuery')) {
+      // devolve 1 documento alterado na tabela consultada
+      const tabela = JSON.parse(r.request().postData()).structuredQuery.from[0].collectionId;
+      const corpo = tabela === 'clientes' ? [{ document: {
+        name: 'projects/p/databases/(default)/documents/clientes/' + CLI_ID,
+        fields: { nome: { stringValue: 'FARMACIA RENOMEADA PELO SERVIDOR' },
+          representante_id: { stringValue: REP_ID }, status: { stringValue: 'ativo' },
+          atualizado_em: { stringValue: new Date().toISOString() } } } }] : [];
+      return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(corpo) });
+    }
+    return r.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+  });
+  await page6.addInitScript((s) => {
+    for (const [k, v] of Object.entries(s)) localStorage.setItem(k, JSON.stringify(v));
+    // já houve puxada completa há pouco: a próxima tem de ser incremental
+    localStorage.setItem('ns_ultimo_pull_iso', JSON.stringify(new Date(Date.now() - 3600000).toISOString()));
+    localStorage.setItem('ns_ultimo_pull_completo', JSON.stringify(Date.now()));
+  }, seed);
+  await page6.goto('http://localhost:8899/');
+  await page6.waitForSelector('.login-box input[type=email]');
+  await page6.fill('input[type=email]', 'denilson@newstar.com.br');
+  await page6.fill('input[type=password]', '123456');
+  await page6.click('text=Entrar');
+  await page6.waitForSelector('#tabs', { state: 'visible' });
+  chamadas.length = 0;
+  await page6.evaluate(() => window.NSDB.sync());
+  await page6.waitForTimeout(400);
+  check('a sincronização de rotina não baixa tabela inteira (só o que mudou)',
+    chamadas.length > 0 && chamadas.every(u => u.includes(':runQuery')));
+  check('e traz a alteração feita em outro aparelho',
+    await page6.evaluate((id) => (window.NSDB.byId('clientes', id) || {}).nome ===
+      'FARMACIA RENOMEADA PELO SERVIDOR', CLI_ID));
+  check('escrituras carimbam a data de alteração (base da puxada incremental)',
+    await page6.evaluate((id) => {
+      window.NSDB.update('clientes', id, { cidade: 'Marau' });
+      const fila = JSON.parse(localStorage.getItem('ns_outbox'));
+      return typeof fila[fila.length - 1].body.atualizado_em === 'string';
+    }, CLI_ID));
+
+  await page6.close();
+
+  // limite diário de leitura atingido: o app precisa AVISAR, não dizer que
+  // está tudo certo enquanto passa horas sem baixar nada
+  const page7 = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  await page7.route('**/firestore.googleapis.com/**', (r) => r.fulfill({
+    status: 429, contentType: 'application/json',
+    body: JSON.stringify({ error: { code: 429, message: 'Quota exceeded.' } })
+  }));
+  await page7.addInitScript((s) => {
+    for (const [k, v] of Object.entries(s)) localStorage.setItem(k, JSON.stringify(v));
+  }, seed);
+  await page7.goto('http://localhost:8899/');
+  await page7.waitForSelector('.login-box input[type=email]');
+  await page7.fill('input[type=email]', 'denilson@newstar.com.br');
+  await page7.fill('input[type=password]', '123456');
+  await page7.click('text=Entrar');
+  await page7.waitForSelector('#tabs', { state: 'visible' });
+  await page7.waitForFunction(() => !!window.NSDB.status().pullErro, null, { timeout: 15000 });
+  check('erro de cota fica registrado no status',
+    await page7.evaluate(() => !!(window.NSDB.status().pullErro || {}).cota));
+  check('e o selo do topo para de dizer "sincronizado"',
+    (await page7.textContent('#syncChip')).includes('sem atualizar'));
+  await page7.click('#syncChip');
+  await page7.waitForSelector('.ns-overlay');
+  const txtSync = await page7.textContent('.ns-overlay');
+  check('o painel de sincronização explica o que houve e que nada foi perdido',
+    txtSync.includes('não estão sendo atualizados') && txtSync.includes('NADA FOI PERDIDO'));
+  await page7.close();
+
   await browser.close();
   server.close();
   console.log(`\nE2E: ${ok} ok, ${fail} falhas`);

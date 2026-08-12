@@ -1,5 +1,5 @@
 /* NEW STAR — service worker: app shell cache-first (offline 100%) */
-const VERSAO = 'newstar-v52';
+const VERSAO = 'newstar-v53';
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './icon.svg',
   './icon-192.png', './icon-512.png',
@@ -7,14 +7,13 @@ const SHELL = [
   './js/pdf.js', './js/pedido.js', './js/ajuda.js', './js/app.js'
 ];
 
-// IMPORTANTE: nada de skipWaiting() automático aqui.
-// Antes, uma versão nova assumia sozinha assim que o vendedor voltava para o
-// app e o aplicativo se recarregava no meio do uso — parecia que ele "fechava
-// sozinho" e perdia a tela. Agora a versão nova fica esperando; quem manda
-// trocar é o próprio app (mensagem ATUALIZAR_AGORA), quando o usuário toca no
-// aviso de atualização.
+// O skipWaiting fica ligado: sem ele, a versão nova ficava PARADA esperando o
+// app fechar em todos os lugares e o vendedor nunca recebia a atualização.
+// Quem causava o "app fechando sozinho" não era isto, e sim o recarregamento
+// automático no app — esse continua desligado: a página só recarrega quando o
+// vendedor toca em "Atualizar agora".
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(VERSAO).then((c) => c.addAll(SHELL)));
+  e.waitUntil(caches.open(VERSAO).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('message', (e) => {
