@@ -19,12 +19,147 @@
     catch (e) { return dft; }
   }
   function lsSet(k, v) { localStorage.setItem(k, JSON.stringify(v)); }
+  // gravação de informação pequena (marcadores de sincronização): se o aparelho
+  // estiver sem espaço não pode derrubar o resto do app
+  function lsTenta(k, v) { try { lsSet(k, v); } catch (e) {} }
+
+  // ---------- espaço no aparelho ----------
+  // A assinatura é uma IMAGEM dentro do pedido e passa fácil de 100 KB. O
+  // localStorage do iPhone tem cerca de 5 MB no total: com algumas dezenas de
+  // pedidos assinados o espaço acabava, o gravador do cache passava a dar erro
+  // ("The quota has been exceeded") e o app parava de atualizar os dados.
+  // Agora o localStorage guarda SÓ TEXTO e as assinaturas vão para o
+  // IndexedDB, que tem espaço de sobra.
+  const TABELAS_COM_IMAGEM = { pedidos: true };
+  const ehImagem = (v) => typeof v === 'string' && v.slice(0, 11) === 'data:image/';
+
+  function semImagens(linhas) {
+    let achou = false;
+    const out = linhas.map(r => {
+      let copia = null;
+      for (const k in r) {
+        if (!ehImagem(r[k])) continue;
+        copia = copia || Object.assign({}, r);
+        delete copia[k];
+        achou = true;
+      }
+      return copia || r;
+    });
+    return achou ? out : linhas;
+  }
+
+  let liberando = false;
+  // último recurso: reescreve os caches sem imagem nenhuma para destravar o
+  // aparelho (as assinaturas continuam no IndexedDB e no servidor)
+  function liberarEspaco() {
+    if (liberando) return false;
+    liberando = true;
+    let mexeu = false;
+    for (const t of TABLES) {
+      try {
+        const bruto = localStorage.getItem('ns_c_' + t);
+        if (!bruto || bruto.indexOf('data:image/') < 0) continue;
+        const linhas = mem[t] || lsGet('ns_c_' + t, []);
+        try { lsSet('ns_c_' + t, semImagens(linhas)); }
+        catch (e) { localStorage.removeItem('ns_c_' + t); }
+        mexeu = true;
+      } catch (e) {}
+    }
+    try { localStorage.removeItem('ns_sync_erros'); } catch (e) {}
+    liberando = false;
+    return mexeu;
+  }
 
   function load(table) {
     if (!mem[table]) mem[table] = lsGet('ns_c_' + table, []);
     return mem[table];
   }
-  function save(table) { lsSet('ns_c_' + table, mem[table] || []); }
+  function save(table) {
+    const linhas = mem[table] || [];
+    const paraDisco = TABELAS_COM_IMAGEM[table] ? semImagens(linhas) : linhas;
+    if (TABELAS_COM_IMAGEM[table] && paraDisco !== linhas) guardarImagens(linhas);
+    try { lsSet('ns_c_' + table, paraDisco); }
+    catch (e) {
+      if (!liberarEspaco()) throw e;
+      lsSet('ns_c_' + table, paraDisco);
+    }
+  }
+
+  // ---------- assinaturas em IndexedDB ----------
+  const IDB_BANCO = 'ns_arquivos', IDB_LOJA = 'assinaturas';
+  let idbAberto = null;
+  function idbAbrir() {
+    if (idbAberto) return idbAberto;
+    idbAberto = new Promise((ok) => {
+      try {
+        if (!window.indexedDB) return ok(null);
+        const req = indexedDB.open(IDB_BANCO, 1);
+        req.onupgradeneeded = () => {
+          const b = req.result;
+          if (!b.objectStoreNames.contains(IDB_LOJA)) b.createObjectStore(IDB_LOJA);
+        };
+        req.onsuccess = () => ok(req.result);
+        req.onerror = () => ok(null);
+        req.onblocked = () => ok(null);
+      } catch (e) { ok(null); }
+    });
+    return idbAberto;
+  }
+  function idbTx(modo, fn) {
+    return idbAbrir().then((b) => {
+      if (!b) return null;
+      return new Promise((ok) => {
+        try {
+          const tx = b.transaction(IDB_LOJA, modo);
+          const r = fn(tx.objectStore(IDB_LOJA));
+          tx.oncomplete = () => ok(r && 'result' in r ? r.result : null);
+          tx.onerror = () => ok(null);
+          tx.onabort = () => ok(null);
+        } catch (e) { ok(null); }
+      });
+    }).catch(() => null);
+  }
+  const jaGravadas = new Set();
+  function guardarImagens(linhas) {
+    for (const r of linhas) {
+      if (!ehImagem(r.assinatura) || jaGravadas.has(r.id)) continue;
+      jaGravadas.add(r.id);
+      idbTx('readwrite', (loja) => loja.put(r.assinatura, r.id));
+    }
+  }
+  function apagarImagem(id) {
+    jaGravadas.delete(id);
+    idbTx('readwrite', (loja) => loja.delete(id));
+  }
+  // na abertura do app, devolve as assinaturas guardadas para a memória
+  function hidratarImagens() {
+    return idbAbrir().then((b) => {
+      if (!b) return;
+      return new Promise((ok) => {
+        const mapa = new Map();
+        try {
+          const tx = b.transaction(IDB_LOJA, 'readonly');
+          const req = tx.objectStore(IDB_LOJA).openCursor();
+          req.onsuccess = () => {
+            const c = req.result;
+            if (c) { mapa.set(c.key, c.value); c.continue(); }
+          };
+          tx.oncomplete = () => ok(mapa);
+          tx.onerror = () => ok(mapa);
+          tx.onabort = () => ok(mapa);
+        } catch (e) { ok(mapa); }
+      }).then((mapa) => {
+        if (!mapa.size) return;
+        mapa.forEach((_, k) => jaGravadas.add(k));
+        const arr = load('pedidos');
+        let mudou = false;
+        for (const r of arr) {
+          if (!ehImagem(r.assinatura) && mapa.has(r.id)) { r.assinatura = mapa.get(r.id); mudou = true; }
+        }
+        if (mudou) notify();
+      });
+    }).catch(() => {});
+  }
 
   function uuid() {
     if (crypto.randomUUID) return crypto.randomUUID();
@@ -136,13 +271,22 @@
 
   // ---------- Outbox ----------
   let outbox = lsGet('ns_outbox', []);
+  // a fila não pode se perder: se faltar espaço, libera o que dá e tenta de novo
+  function gravarFila() {
+    try { lsSet('ns_outbox', outbox); }
+    catch (e) { if (liberarEspaco()) lsTenta('ns_outbox', outbox); }
+  }
   function queue(op) {
     op.opId = uuid(); op.ts = Date.now();
-    outbox.push(op); lsSet('ns_outbox', outbox);
+    outbox.push(op); gravarFila();
     notify(); trySync();
   }
 
   let syncing = false;
+  // o erro da última puxada também fica em MEMÓRIA: quando o aparelho está sem
+  // espaço, nem o aviso conseguia ser gravado no localStorage e o app ficava
+  // mudo justamente na hora em que mais precisava avisar
+  let erroPuxada = lsGet('ns_pull_erro', null);
   const listeners = [];
   function notify() { listeners.forEach(fn => { try { fn(DB.status()); } catch (e) {} }); }
 
@@ -181,10 +325,10 @@
           if (e.status && e.status >= 400 && e.status < 500 && e.status !== 429) {
             // erro de dados/permissão: registrar e descartar para não travar a fila
             erros.push({ op: { table: op.table, method: op.method, docId: op.docId }, erro: String(e.message), em: new Date().toISOString() });
-            lsSet('ns_sync_erros', erros.slice(-50));
+            lsTenta('ns_sync_erros', erros.slice(-50));
           } else throw e; // rede/5xx/429: parar e tentar depois
         }
-        outbox.shift(); lsSet('ns_outbox', outbox);
+        outbox.shift(); gravarFila();
       }
     } catch (e) { /* offline ou instabilidade — fica na fila */ }
     if (vaiPuxar) {
@@ -193,14 +337,22 @@
       } catch (e) {
         // guardar o motivo: sem isso o app parecia "online e sincronizado"
         // enquanto na verdade não baixava nada havia horas
-        lsSet('ns_pull_erro', {
-          em: Date.now(),
-          cota: e.status === 429,
-          msg: e.status === 429 ? 'Limite diário de leitura do banco atingido.' : String(e.message || e).slice(0, 200)
-        });
-        // falha que não é de cota (consulta recusada, por exemplo): na próxima
-        // vez tenta a puxada completa, que não depende da consulta incremental
-        if (e.status !== 429) lsSet('ns_ultimo_pull_completo', 0);
+        // três motivos bem diferentes, e cada um pede uma explicação própria:
+        // limite do banco, falta de espaço no aparelho, ou falha de rede
+        const cota = e.status === 429;
+        const semEspaco = !e.status && (e.name === 'QuotaExceededError' || e.code === 22 ||
+          /quota/i.test(String(e.message || '')));
+        erroPuxada = {
+          em: Date.now(), cota, espaco: semEspaco,
+          msg: cota ? 'Limite diário de leitura do banco atingido.'
+            : semEspaco ? 'O armazenamento do aparelho ficou sem espaço.'
+              : String(e.message || e).slice(0, 200)
+        };
+        lsTenta('ns_pull_erro', erroPuxada);
+        // falha de rede/consulta: na próxima vez tenta a puxada completa, que
+        // não depende da consulta incremental. (Cota e falta de espaço não —
+        // insistir na puxada completa só gastaria mais leitura à toa.)
+        if (!cota && !semEspaco) lsTenta('ns_ultimo_pull_completo', 0);
       }
     }
     syncing = false; notify();
@@ -246,7 +398,7 @@
     const marca = new Date(Date.now() - FOLGA_RELOGIO_MS).toISOString();
     if (completa) {
       for (const t of TABLES) { mem[t] = await fsListAll(t); save(t); }
-      lsSet('ns_ultimo_pull_completo', Date.now());
+      lsTenta('ns_ultimo_pull_completo', Date.now());
     } else {
       const desde = lsGet('ns_ultimo_pull_iso', null);
       for (const t of TABLES) {
@@ -255,9 +407,10 @@
       }
     }
     ultimaPuxada = Date.now();
-    lsSet('ns_ultimo_pull_iso', marca);
-    lsSet('ns_last_sync', Date.now());
-    lsSet('ns_pull_erro', null);
+    lsTenta('ns_ultimo_pull_iso', marca);
+    lsTenta('ns_last_sync', Date.now());
+    erroPuxada = null;
+    lsTenta('ns_pull_erro', null);
     notify();
     return true;
   }
@@ -303,6 +456,7 @@
     remove(table, id) {
       const pk = PK[table] || 'id';
       mem[table] = load(table).filter(x => x[pk] !== id); save(table);
+      if (TABELAS_COM_IMAGEM[table]) apagarImagem(id);
       queue({ table, method: 'delete', docId: id });
     },
     removeWhere(table, predicate) {
@@ -336,7 +490,7 @@
         online: navigator.onLine, configured: configured(), syncing,
         pendentes: outbox.length,
         lastSync: lsGet('ns_last_sync', null),
-        pullErro: lsGet('ns_pull_erro', null),
+        pullErro: erroPuxada,
         erros: lsGet('ns_sync_erros', [])
       };
     },
@@ -344,8 +498,18 @@
     // sync() na abertura do app = leve (só o que mudou, respeitando o intervalo).
     // sync(true), do botão "Sincronizar agora", força a puxada completa.
     sync: (completa) => trySync(true, completa === true), pullAll,
-    clearErros() { lsSet('ns_sync_erros', []); notify(); }
+    clearErros() { lsTenta('ns_sync_erros', []); notify(); }
   };
+
+  // 1) devolve as assinaturas guardadas no IndexedDB para a memória;
+  // 2) tira do localStorage qualquer imagem que tenha sobrado de versões
+  //    antigas do app — é o que destrava o aparelho que já está sem espaço
+  hidratarImagens().then(() => {
+    try {
+      const bruto = localStorage.getItem('ns_c_pedidos');
+      if (bruto && bruto.indexOf('data:image/') >= 0) { load('pedidos'); save('pedidos'); }
+    } catch (e) { liberarEspaco(); }
+  });
 
   window.addEventListener('online', () => trySync(true));
   setInterval(() => { if (outbox.length) trySync(); }, 30000);

@@ -231,7 +231,19 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   }));
   check('pedido salvo concluído, total 594,50', dados.pedido.status === 'concluido' && dados.pedido.total_valor === 594.5);
   check('nº do pedido atribuído no app (nº 1)', dados.pedido.numero === 1);
-  check('assinatura salva no pedido (PNG base64)', String(dados.pedido.assinatura || '').startsWith('data:image/png'));
+  const ass = await page.evaluate((id) => {
+    const p = window.NSDB.all('pedidos')[0];
+    return { img: String(p.assinatura || ''), id: p.id,
+      noDisco: (localStorage.getItem('ns_c_pedidos') || '').indexOf('data:image/') >= 0 };
+  });
+  check('assinatura salva no pedido (imagem)', ass.img.startsWith('data:image/'));
+  check('assinatura em JPEG comprimido (ocupa pouco espaço)',
+    ass.img.startsWith('data:image/jpeg') && ass.img.length < 120000);
+  // a imagem NÃO pode ir para o localStorage: era isso que enchia o iPhone
+  check('a imagem fica FORA do armazenamento de texto do aparelho', !ass.noDisco);
+  check('e a assinatura vai inteira para o servidor (fila de escrituras)',
+    await page.evaluate((id) => JSON.parse(localStorage.getItem('ns_outbox'))
+      .some(op => op.docId === id && String((op.body || {}).assinatura || '').startsWith('data:image/')), ass.id));
   check('nome de quem assina gravado no pedido', dados.pedido.assinante_nome === 'João da Silva');
   const cliPrazo = await page.evaluate(() => JSON.parse(localStorage.getItem('ns_c_clientes'))[0].condicao_pagamento_padrao);
   check('prazo usado vira o prazo padrão do cliente', cliPrazo === '30 dias');
@@ -946,7 +958,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page.click('text=Salvar altera\u00e7\u00f5es');
   await page.waitForTimeout(400);
   const ed = await page.evaluate(() => ({
-    p: JSON.parse(localStorage.getItem('ns_c_pedidos'))[0],
+    p: window.NSDB.all('pedidos')[0],
     v: JSON.parse(localStorage.getItem('ns_c_visitas')).find(x => x.pedido_id),
     nItens: JSON.parse(localStorage.getItem('ns_c_pedido_itens')).length
   }));
@@ -1213,6 +1225,82 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   check('o painel de sincronização explica o que houve e que nada foi perdido',
     txtSync.includes('não estão sendo atualizados') && txtSync.includes('NADA FOI PERDIDO'));
   await page7.close();
+
+  // ── aparelho que JÁ estava com o armazenamento cheio ──
+  // Versões antigas gravavam a assinatura (imagem) junto do resto no
+  // localStorage do celular. Ao abrir, o app tem de mover essas imagens para o
+  // armazenamento de arquivos e liberar o espaço sozinho.
+  const page8 = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  await page8.route('**/firestore.googleapis.com/**', (r) => r.abort());
+  const PED_ID = '44444444-4444-4444-8444-444444444444';
+  await page8.addInitScript((args) => {
+    for (const [k, v] of Object.entries(args.s)) localStorage.setItem(k, JSON.stringify(v));
+    localStorage.setItem('ns_c_pedidos', JSON.stringify([{
+      id: args.pedId, representante_id: args.rep, cliente_id: args.cli, numero: 7,
+      data_pedido: '2026-08-10', status: 'concluido', tabela: 'simples',
+      total_valor: 500, total_unid_vendidas: 40, assinante_nome: 'Raissa',
+      assinatura: 'data:image/png;base64,' + 'A'.repeat(60000)
+    }]));
+  }, { s: seed, pedId: PED_ID, rep: REP_ID, cli: CLI_ID });
+  await page8.goto('http://localhost:8899/');
+  await page8.waitForSelector('.login-box input[type=email]');
+  await page8.fill('input[type=email]', 'denilson@newstar.com.br');
+  await page8.fill('input[type=password]', '123456');
+  await page8.click('text=Entrar');
+  await page8.waitForSelector('#tabs', { state: 'visible' });
+  await page8.waitForFunction(() =>
+    (localStorage.getItem('ns_c_pedidos') || '').indexOf('data:image/') < 0, null, { timeout: 8000 });
+  check('ao abrir, o app tira as imagens do armazenamento de texto e libera espaço',
+    await page8.evaluate(() => (localStorage.getItem('ns_c_pedidos') || '').indexOf('data:image/') < 0));
+  check('mas a assinatura continua no pedido (foi para o armazenamento de arquivos)',
+    await page8.evaluate((id) => String((window.NSDB.byId('pedidos', id) || {}).assinatura || '')
+      .startsWith('data:image/'), PED_ID));
+  // e continua lá depois de fechar e abrir o app
+  await page8.reload();
+  await page8.waitForSelector('#tabs', { state: 'visible' });
+  await page8.waitForFunction((id) => String((window.NSDB.byId('pedidos', id) || {}).assinatura || '')
+    .startsWith('data:image/'), PED_ID, { timeout: 8000 }).catch(() => {});
+  check('a assinatura volta sozinha quando o app é aberto de novo',
+    await page8.evaluate((id) => String((window.NSDB.byId('pedidos', id) || {}).assinatura || '')
+      .startsWith('data:image/'), PED_ID));
+
+  await page8.close();
+
+  // aparelho realmente sem espaço: o app tem de dizer QUE FOI ISSO — o
+  // servidor responde normalmente, quem falha é a gravação no celular
+  const page9 = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  await page9.route('**/firestore.googleapis.com/**', (r) =>
+    r.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
+  await page9.addInitScript((s) => {
+    for (const [k, v] of Object.entries(s)) localStorage.setItem(k, JSON.stringify(v));
+    // Storage tem setter de propriedade nomeada: só dá para trocar no prototype
+    const original = Storage.prototype.setItem;
+    window.__semEspaco = false;
+    Storage.prototype.setItem = function (k, v) {
+      if (!window.__semEspaco) return original.call(this, k, v);
+      const e = new Error('The quota has been exceeded.');
+      e.name = 'QuotaExceededError';
+      throw e;
+    };
+  }, seed);
+  await page9.goto('http://localhost:8899/');
+  await page9.waitForSelector('.login-box input[type=email]');
+  await page9.fill('input[type=email]', 'denilson@newstar.com.br');
+  await page9.fill('input[type=password]', '123456');
+  await page9.click('text=Entrar');
+  await page9.waitForSelector('#tabs', { state: 'visible' });
+  await page9.evaluate(() => { window.__semEspaco = true; });
+  await page9.evaluate(() => window.NSDB.sync(true)).catch(() => {});
+  await page9.waitForTimeout(600);
+  if (process.env.DBG) console.log('ESPACO', JSON.stringify(await page9.evaluate(() => window.NSDB.status())));
+  check('falta de espaço é identificada como problema do aparelho, não do banco',
+    await page9.evaluate(() => { const p = window.NSDB.status().pullErro; return !!(p && p.espaco && !p.cota); }));
+  await page9.click('#syncChip');
+  await page9.waitForSelector('.ns-overlay');
+  check('e o painel explica que foi o espaço do celular e que nada foi perdido',
+    (await page9.textContent('.ns-overlay')).includes('sem espaço'));
+  await page9.close();
+
 
   await browser.close();
   server.close();

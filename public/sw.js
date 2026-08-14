@@ -1,5 +1,5 @@
 /* NEW STAR — service worker: app shell cache-first (offline 100%) */
-const VERSAO = 'newstar-v53';
+const VERSAO = 'newstar-v54';
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './icon.svg',
   './icon-192.png', './icon-512.png',

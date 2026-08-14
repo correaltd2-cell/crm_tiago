@@ -68,6 +68,7 @@ Os produtos aparecem com o mesmo nome no pedido, no talão, no cupom e na ficha 
 
 SINCRONIZAÇÃO E O SELO DO TOPO
 O selo no alto da tela mostra como está a ligação com o banco de dados: VERDE "sincronizado" (tudo em dia), "sincronizando…", "X pendente(s)" (tem coisa na fila esperando sinal), "offline" (sem sinal — pode trabalhar normal, nada se perde) e VERMELHO "SEM ATUALIZAR". Esse último é novo e importante: quer dizer que o app está online e não perdeu nada, mas NÃO está conseguindo baixar as novidades do servidor. Toque no selo para ver o motivo.
+ESPAÇO DO CELULAR: a assinatura é uma IMAGEM e ocupa espaço. Ela agora fica guardada num lugar separado do aparelho, com espaço de sobra, e não atrapalha mais o resto. Se ainda assim aparecer "sem espaço" no painel, o app libera sozinho e é só tocar em "Sincronizar agora".
 LIMITE DIÁRIO DO BANCO: o banco de dados tem um limite de leituras por dia. Se ele estourar, o app avisa no selo vermelho e explica no painel de sincronização. NADA É PERDIDO: tudo que o vendedor digitar continua sendo salvo e enviado normalmente (a gravação não para); o que fica parado é só o download das novidades, que volta sozinho depois da virada do dia.
 ECONOMIA DE LEITURA: no dia a dia o app baixa SÓ O QUE MUDOU desde a última vez, em vez de baixar a base inteira toda hora. A base completa é baixada na primeira instalação, uma vez a cada 12 horas e sempre que você tocar em "SINCRONIZAR AGORA" no painel do selo. Se desconfiar que algum dado não chegou, é esse botão que resolve.
 

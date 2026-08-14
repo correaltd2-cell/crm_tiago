@@ -194,7 +194,11 @@
             'NADA FOI PERDIDO: tudo o que você digitou já foi salvo (as escrituras continuam ' +
             'funcionando) e o app segue trabalhando normalmente com os dados do aparelho. ' +
             'A atualização volta sozinha depois da virada do dia.'
-          : st.pullErro.msg),
+          : st.pullErro.espaco
+            ? 'O armazenamento do aparelho ficou sem espaço (as assinaturas dos pedidos são ' +
+              'imagens e ocupavam muito). NADA FOI PERDIDO: o app já moveu as assinaturas para ' +
+              'outro lugar e liberou espaço. Toque em "Sincronizar agora" logo abaixo.'
+            : st.pullErro.msg),
         el('p', { class: 'sub mt4' }, 'Última tentativa: ' + new Date(st.pullErro.em).toLocaleString('pt-BR'))) : null,
       st.erros.length ? el('div', { class: 'mt8' },
         el('strong', null, ico('alerta', 'ic-erro'), st.erros.length + ' erro(s) de sincronização'),

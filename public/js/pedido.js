@@ -536,6 +536,22 @@
     }
   }
 
+  // A assinatura é gravada no pedido, viaja para o servidor e fica no aparelho.
+  // Em PNG, na resolução da tela do celular, passava de 100 KB e enchia o
+  // armazenamento local. Aqui ela é reduzida e gravada em JPEG (~20 KB), com
+  // fundo branco — o traço continua nítido no talão.
+  function comprimirAssinatura(canvas) {
+    const LARG = 1000;
+    const larg = Math.min(canvas.width, LARG) || 1;
+    const alt = Math.max(1, Math.round(canvas.height * (larg / (canvas.width || 1))));
+    const c2 = document.createElement('canvas');
+    c2.width = larg; c2.height = alt;
+    const x2 = c2.getContext('2d');
+    x2.fillStyle = '#ffffff'; x2.fillRect(0, 0, larg, alt);
+    x2.drawImage(canvas, 0, 0, larg, alt);
+    return c2.toDataURL('image/jpeg', 0.82);
+  }
+
   // ============ COLETAR ASSINATURA (tela cheia) ============
   // Usada no fim do processo, na tela do pedido pronto. Recebe o nome de quem
   // assina e devolve o PNG da assinatura em `aoConfirmar`.
@@ -553,7 +569,7 @@
         el('button', {
           class: 'btn grow', onclick: () => {
             if (!st.length || st.every(x => x.length < 2)) return toast('Colete a assinatura antes de confirmar.', 'erro');
-            const png = cvF.toDataURL('image/png');
+            const png = comprimirAssinatura(cvF);
             liberarTela();
             if (aoConfirmar) aoConfirmar(png);
           }
