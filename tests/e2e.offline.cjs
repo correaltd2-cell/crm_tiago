@@ -79,8 +79,8 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
     roteirizados: window.NS_SEED.clientes.filter(c => c.semana_padrao != null).length,
     comEndereco: window.NS_SEED.clientes.filter(c => c.endereco && c.cep).length
   }));
-  check('seed: 314 clientes da lista nova, 25 Clamed, 17 produtos',
-    seedInfo.clientes === 314 && seedInfo.clamed === 25 && seedInfo.produtos === 17);
+  check('seed: 314 clientes da lista nova, 25 Clamed, 18 produtos',
+    seedInfo.clientes === 314 && seedInfo.clamed === 25 && seedInfo.produtos === 18);
   check('plano por urgência: 210 com dia fixo (6/dia × 35 dias úteis), todos com endereço',
     seedInfo.roteirizados === 210 && seedInfo.comEndereco === 314);
   const finaisSemana = await page.evaluate(() =>
@@ -97,6 +97,13 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
     nomesPadrao.every(n => catalogo.some(p => p.nome === n)));
   check('e sem variação repetida no nome (LUXO DOURADO, não "LUXO (Dourado)")',
     catalogo.filter(p => nomesPadrao.includes(p.nome)).every(p => !p.variacao));
+  const anel = catalogo.find(p => p.nome === 'ANEL REGULÁVEL');
+  check('ANEL REGULÁVEL no catálogo, com os dois preços', !!anel && anel.preco === 27.5);
+  check('e com placa P de 48 e placa G de 72 unidades',
+    await page.evaluate(() => {
+      const p = window.NS_SEED.produtos.find(x => x.nome === 'ANEL REGULÁVEL');
+      return !!p && p.unid_placa_p === 48 && p.unid_placa_g === 72 && p.preco_lucro === 29.9;
+    }));
   check('a troca de nome não mexeu nos preços',
     catalogo.find(p => p.nome === 'BRAG - BRINCO ARGOLINHA').preco === 12.6 &&
     catalogo.find(p => p.nome === 'LUXO DOURADO').preco === 25.5);
@@ -1043,7 +1050,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page3.waitForSelector('text=Primeira instalação', { state: 'detached', timeout: 10000 }); // tela re-renderizada
   check('instalação carregou 314 clientes no Firestore e no cache',
     (store.clientes && Object.keys(store.clientes).length === 314 &&
-     store.produtos && Object.keys(store.produtos).length === 17 &&
+     store.produtos && Object.keys(store.produtos).length === 18 &&
      store.representantes && Object.keys(store.representantes).length === 2) === true);
 
   await page3.fill('input[type=email]', 'denilson@newstar.com.br');
