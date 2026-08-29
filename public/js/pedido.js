@@ -310,10 +310,6 @@
           el('span', null, 'Valor final'), el('strong', null, C.fmtMoney(d.liquido))));
       };
       descIn.addEventListener('input', atualizaDesc);
-      const recebidoIn = el('input', {
-        class: 'input big', placeholder: 'Nome de quem recebe a mercadoria',
-        value: ped.assinante_nome || cli.contato || ''
-      });
       const chkDisplay = el('input', { type: 'checkbox' });
       if (ped.deixou_display) chkDisplay.checked = true;
       const materialIn = el('input', {
@@ -369,12 +365,6 @@
           el('p', { class: 'campo-box-ajuda' },
             'Ex.: 3 para 3% de desconto à vista. O valor final (já com o abatimento) ' +
             'é o que conta no faturamento, na meta e na comissão.')),
-        el('div', { class: 'campo-box azul mt12' },
-          el('div', { class: 'campo-box-tit' }, 'Recebido por'),
-          recebidoIn,
-          el('p', { class: 'campo-box-ajuda' },
-            'Nome de quem recebeu. Sai no cupom e no talão. A assinatura é colhida ' +
-            'no fim, na tela do pedido pronto.')),
         el('div', { class: 'campo-box roxo mt12' },
           el('div', { class: 'campo-box-tit' }, 'Material deixado no cliente'),
           el('label', { class: 'row gap8 chk-grande' }, chkDisplay,
@@ -404,7 +394,6 @@
       function guardar() {
         ped.obs = obsIn.value;
         ped.desconto_pct = Math.min(100, Math.max(0, Number(descIn.value) || 0));
-        ped.assinante_nome = recebidoIn.value.trim() || null;
         ped.condicao_pagamento = prazoIn.value.trim();
         ped.deixou_display = chkDisplay.checked;
         ped.material_deixado = materialIn.value.trim();
@@ -552,6 +541,46 @@
     return c2.toDataURL('image/jpeg', 0.82);
   }
 
+  // ============ INFORMAR QUEM RECEBEU ============
+  // Registro digital do recebimento: fica gravado no pedido e pode ser
+  // consultado depois. No cupom de 58 mm não sai o nome, só a confirmação.
+  function informarRecebedor(pedidoId, cliente, aoSalvar) {
+    const p = DB.byId('pedidos', pedidoId) || {};
+    const inp = el('input', {
+      class: 'input big', placeholder: 'Nome de quem recebeu a mercadoria',
+      value: p.assinante_nome || (cliente && cliente.contato) || ''
+    });
+    const m = modal(el('div', null,
+      el('p', { class: 'sub' }, 'Quem recebeu a mercadoria em ' +
+        ((cliente && (cliente.nome_fantasia || cliente.nome)) || 'no cliente') + '?'),
+      el('div', { class: 'mt8' }, inp),
+      el('p', { class: 'campo-box-ajuda mt4' },
+        'O nome fica guardado no pedido como comprovante de recebimento. ' +
+        'No cupom de 58 mm sai apenas a confirmação de que o recebimento foi registrado.'),
+      el('button', {
+        class: 'btn big w100 mt12', onclick: () => {
+          const nome = inp.value.trim();
+          if (!nome) return toast('Escreva o nome de quem recebeu.', 'erro');
+          DB.update('pedidos', pedidoId, {
+            assinante_nome: nome, recebido_em: new Date().toISOString()
+          });
+          toast('Recebimento registrado: ' + nome + '.');
+          m.fechar();
+          if (aoSalvar) aoSalvar();
+        }
+      }, rot('check', 'Salvar recebimento')),
+      p.assinante_nome ? el('button', {
+        class: 'btn-link mt8', onclick: () => {
+          DB.update('pedidos', pedidoId, { assinante_nome: null, recebido_em: null });
+          toast('Registro de recebimento apagado.');
+          m.fechar();
+          if (aoSalvar) aoSalvar();
+        }
+      }, 'apagar o registro') : null),
+      { titulo: 'Informar quem recebeu' });
+    setTimeout(() => inp.focus(), 60);
+  }
+
   // ============ COLETAR ASSINATURA (tela cheia) ============
   // Usada no fim do processo, na tela do pedido pronto. Recebe o nome de quem
   // assina e devolve o PNG da assinatura em `aoConfirmar`.
@@ -656,19 +685,6 @@
     return window.NSPDF.gerarCupomImagem({ pedido: p, itens, cliente, rep, produtos: DB.all('produtos'), observacoes, escala });
   }
 
-  // impressão sem vazar memória: um iframe único reaproveitado e URLs
-  // revogadas depois do uso (imprimir vários pedidos seguidos travava o app)
-  let frameImpressao = null;
-  function imprimirBlob(blob) {
-    const url = URL.createObjectURL(blob);
-    if (frameImpressao) { try { frameImpressao.remove(); } catch (e) {} }
-    frameImpressao = el('iframe', { style: 'display:none', src: url });
-    document.body.appendChild(frameImpressao);
-    frameImpressao.onload = () => setTimeout(() => {
-      try { frameImpressao.contentWindow.print(); } catch (e) {}
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
-    }, 200);
-  }
   function abrirBlob(blob, nomeArq) {
     const url = URL.createObjectURL(blob);
     const w = window.open(url, '_blank');
@@ -684,6 +700,20 @@
     const nomeArq = 'pedido-' + (p.numero || String(p.id).slice(0, 8)) + '.pdf';
     // ÚLTIMO passo do processo: coletar a assinatura. O botão muda de cara
     // depois que a assinatura entra no pedido.
+    // Registro digital de quem recebeu a mercadoria: o nome é colhido DEPOIS do
+    // fechamento do pedido e fica guardado no pedido. No cupom sai só a
+    // confirmação de que o recebimento foi registrado.
+    const btnRecebeu = el('button', { onclick: () => informarRecebedor(pedidoId, cli, () => {
+      mAbrir.fechar(); abrir(pedidoId);
+    }) });
+    (function pintarBotaoRecebeu() {
+      const nome = (p.assinante_nome || '').trim();
+      btnRecebeu.className = 'btn big btn-sec' + (nome ? ' recebido-ok' : '');
+      btnRecebeu.replaceChildren(
+        ico(nome ? 'checkCirculo' : 'assinatura'),
+        el('span', null, nome ? 'Recebido por: ' + nome : 'Informar quem recebeu'));
+    })();
+
     const btnAssinar = el('button', { onclick: () => {
       const atual = DB.byId('pedidos', pedidoId) || p;
       coletarAssinatura({
@@ -716,10 +746,7 @@
           await navigator.share({ files: [file], title: 'Pedido New Star' }).catch(() => {});
         else { window.NSUI.baixar(blob, nomeArq); toast('PDF baixado (compartilhamento não suportado neste navegador).'); }
       } }, rot('compartilhar', 'Compartilhar PDF')),
-      el('button', { class: 'btn big btn-sec', onclick: async () => {
-        imprimirBlob(await gerarPDF(pedidoId));
-      } }, rot('impressora', 'Imprimir')),
-      el('button', { class: 'btn big btn-sec', onclick: async () => {
+      el('button', { class: 'btn big btn-cupom', onclick: async () => {
         const blob = await gerarCupom(pedidoId);
         const nomeCupom = 'cupom-' + (p.numero || String(p.id).slice(0, 8)) + '.png';
         const file = new File([blob], nomeCupom, { type: 'image/png' });
@@ -729,7 +756,7 @@
         } else {
           abrirBlob(blob, nomeCupom);
         }
-      } }, rot('recibo', 'Cupom 58mm (imagem)')),
+      } }, rot('impressora', 'Imprimir cupom 58mm')),
       p.status === 'concluido' ? el('button', { class: 'btn big btn-sec', onclick: () => {
         mAbrir.fechar();
         novo(null, p);
@@ -742,6 +769,7 @@
         }
       }, rot('notaFiscal', p.faturado_ns ? 'Faturado no New Star ✓' : 'Marcar como faturado no New Star')),
       // ÚLTIMO passo do processo: a assinatura. Fica por último e bem destacada.
+      btnRecebeu,
       btnAssinar);
 
     const linhas = itens.map(it => {

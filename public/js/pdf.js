@@ -551,13 +551,14 @@
       y += Math.round(8 * k);
       if (observacoes) { hr(); multi(observacoes, F(13), false); }
       hr();
-      // No cupom entra SÓ o nome de quem recebeu. A assinatura fica no PDF.
-      t('RECEBIDO POR', F(16), { b: true, al: 'center' });
+      // O cupom não leva mais o nome de quem recebeu nem a assinatura: os dois
+      // ficam guardados no pedido, dentro do app. Aqui vai só a confirmação.
+      t('RECEBIMENTO CONFIRMADO', F(16), { b: true, al: 'center' });
       y += Math.round(6 * k);
-      multi(pedido.assinante_nome || '____________________', F(20), true, { al: 'center' });
-      if (pintar) { ctx.fillStyle = '#000'; ctx.fillRect(CX - 125, y + 4, 250, 1.5); }
-      y += Math.round(16 * k);
-      multi(cliente.nome || '', F(15), false, { al: 'center' });
+      multi('Pedido recebido e registrado digitalmente no aplicativo do vendedor.',
+        F(14), false, { al: 'center' });
+      y += Math.round(6 * k);
+      multi(cliente.nome || '', F(15), true, { al: 'center' });
       y += 16;
       return y;
     }

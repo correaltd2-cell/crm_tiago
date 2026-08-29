@@ -89,11 +89,11 @@ function montarLinhas({ pedido, itens, cliente, rep, produtos, observacoes, base
   t((negativo ? 'CREDITO ' : 'TOTAL ') + fmtBR(pedido.total_valor), { bold: 1, align: 2, format: 1 });
   if (observacoes) t(observacoes);
   t('--------------------------------', { align: 1 });
-  // O cupom NAO leva a imagem da assinatura — ela fica só no PDF do talao.
-  // Aqui entra apenas o nome de quem recebeu a mercadoria.
-  t('RECEBIDO POR', { bold: 1, align: 1 });
-  t(pedido.assinante_nome || '________________________________', { bold: 1, align: 1, format: 1 });
-  t(cliente.nome || '', { align: 1 });
+  // O cupom NAO leva o nome de quem recebeu nem a assinatura: os dois ficam
+  // guardados no pedido, dentro do app. Aqui vai so a confirmacao do recebimento.
+  t('RECEBIMENTO CONFIRMADO', { bold: 1, align: 1 });
+  t('Pedido recebido e registrado digitalmente no aplicativo do vendedor.', { align: 1 });
+  t(cliente.nome || '', { bold: 1, align: 1 });
   t(' ');
   t(' ');
   return L;

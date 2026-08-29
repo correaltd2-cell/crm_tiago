@@ -116,6 +116,12 @@ eq('projeção = 57,5% da meta', mt.projecaoPct, 57.5);
 mt = C.calcMeta({ metaMes: 200000, hoje: '2026-07-28', vendidoMes: 0, metaDiaManual: 10000 });
 eq('meta do dia manual tem prioridade', mt.metaDia, 10000);
 
+console.log('Ticket médio:');
+eq('3 pedidos somando 900 → ticket 300', C.ticketMedio(900, 3), 300);
+eq('arredonda em 2 casas', C.ticketMedio(1000, 3), 333.33);
+eq('sem pedido nenhum não divide por zero', C.ticketMedio(500, 0), 0);
+eq('valor negativo (crédito) mantém o sinal', C.ticketMedio(-150, 2), -75);
+
 console.log('Endpoint Bluetooth Print (JSON do cupom):');
 const { montarLinhas } = require('../api/cupom.js');
 const linhasBt = montarLinhas({
@@ -140,8 +146,11 @@ eq('item com TOTAL em negrito à direita',
   linhasBt.some(l => l.content === 'TOTAL R$ 493,00' && l.bold === 1 && l.align === 2), true);
 eq('cupom NÃO leva a imagem da assinatura (fica só no PDF)',
   linhasBt.some(l => l.type === 1), false);
-eq('cupom traz o campo RECEBIDO POR', linhasBt.some(l => l.content === 'RECEBIDO POR' && l.bold === 1), true);
-eq('cupom traz o nome de quem recebeu', linhasBt.some(l => l.content === 'Raissa'), true);
+eq('cupom confirma o recebimento sem citar nome de pessoa',
+  linhasBt.some(l => l.content === 'RECEBIMENTO CONFIRMADO' && l.bold === 1) &&
+  linhasBt.some(l => String(l.content).includes('registrado digitalmente')), true);
+eq('e o nome de quem recebeu NÃO sai no cupom',
+  linhasBt.every(l => !String(l.content).includes('Raissa')), true);
 eq('CNPJ formatado no cupom', linhasBt.some(l => String(l.content).includes('10.768.389/0014-98')), true);
 
 console.log('CNPJ/CPF formatado:');

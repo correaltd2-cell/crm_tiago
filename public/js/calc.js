@@ -110,6 +110,14 @@
   }
 
   // ---------- Geo ----------
+  // Ticket médio: total vendido dividido pela quantidade de pedidos do período.
+  // Sem pedido nenhum o ticket é 0 (e não divisão por zero).
+  function ticketMedio(totalVendido, qtdPedidos) {
+    const q = Number(qtdPedidos) || 0;
+    if (q <= 0) return 0;
+    return round2(Number(totalVendido || 0) / q);
+  }
+
   function haversineKm(a, b) {
     const R = 6371, toRad = (x) => x * Math.PI / 180;
     const dLat = toRad(b.lat - a.lat), dLng = toRad(b.lng - a.lng);
@@ -493,6 +501,7 @@
     fmtCNPJ,
     round2, fmtMoney, fmtPct, calcItem, calcTotais, aplicarDesconto, calcComissao, cicloDoDia,
     DIAS_SEMANA, normDia, mesmoDia, clienteJaComprou, classeRank,
+    ticketMedio,
     haversineKm, matrizHaversine, nearestNeighbor, comprimentoRota, doisOpt,
     otimizarRota, detourInsercao, decidirPernoite, sugestaoFrequencia,
     diasUteisDoMes, diasUteisAte, diasUteisRestantes, calcMeta, metaDinamica, redeDoCliente,

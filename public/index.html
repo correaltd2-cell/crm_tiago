@@ -297,6 +297,33 @@ select.input,select.input.big{appearance:none;-webkit-appearance:none;
 .card-pedido:has(.selo-nf) .grow{padding-right:42px}
 .btn-mini.laranja,.btn.laranja{background:linear-gradient(180deg,#ffa229,#e5760a);color:#fff;
   border-color:#c8690a;box-shadow:0 6px 14px -8px rgba(200,105,10,.9)}
+/* cliente PRIORITÁRIO: azul, para não confundir com o roxo da prospecção */
+.card-visita.prioritario{border-left:4px solid var(--az2) !important;
+  background:linear-gradient(100deg,rgba(43,123,212,.14),#fff 58%)}
+.item-lista.prioritario{border-left:3px solid var(--az2);
+  background:linear-gradient(100deg,rgba(43,123,212,.12),#fff 62%)}
+/* prospecção continua mandando na borda quando for os dois */
+.card-visita.prospec.prioritario{border-left:4px solid var(--prospec) !important}
+.badge.prioritario{background:linear-gradient(180deg,var(--az2),var(--az3));color:#fff;
+  border-color:var(--az3);letter-spacing:.06em;font-weight:800}
+.badge.prioritario .ic{width:1em;height:1em}
+.btn-mini.prioritario{background:linear-gradient(180deg,var(--az2),var(--az3));color:#fff;
+  border-color:var(--az3);box-shadow:0 6px 14px -8px rgba(17,80,168,.8)}
+.chip.prioritario{background:linear-gradient(180deg,var(--az2),var(--az3))}
+.chip.prioritario.ativo{background:var(--ouro);color:#2b1c00;border-color:var(--az3)}
+/* GPS: verde-água, para achar de longe no meio dos botões */
+.btn-mini.gps{background:#e6f6f1;color:#0d6b52;border-color:rgba(13,107,82,.35);font-weight:800}
+.btn-gps{background:linear-gradient(180deg,#17a67f,#0d7a5c);color:#fff;
+  box-shadow:0 10px 22px -12px rgba(13,122,92,.9)}
+/* botão principal de impressão do cupom */
+.btn-cupom{background:linear-gradient(180deg,#ffa229,#e5760a) !important;color:#fff !important;
+  border-color:#c8690a !important;box-shadow:0 10px 22px -12px rgba(200,105,10,.95)}
+.btn.recebido-ok{border-color:rgba(30,126,52,.45);background:#e7f6ec;color:#166b2c}
+/* aviso forte do pop-up de pedidos pendentes */
+.aviso-forte{font-weight:900;font-size:1.02rem;color:#8a3b06;background:#fff4e0;
+  border:1px solid rgba(240,160,32,.6);border-left:4px solid #e5760a;
+  border-radius:12px;padding:12px 14px;line-height:1.45}
+.item-lista.resolvido{opacity:.5}
 /* caixa de aviso (ex.: dados sem atualizar por limite do banco) */
 .aviso-box{background:#fff4e0;border:1px solid rgba(240,160,32,.55);border-left:4px solid var(--aviso);
   border-radius:12px;padding:11px 13px;color:#6b4405}

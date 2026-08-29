@@ -172,7 +172,6 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page.waitForTimeout(250);
   check('não deixa concluir sem o prazo (condição de pagamento)', !(await page.isVisible('.sucesso-banner')));
   await page.fill('.ns-modal input[placeholder*="Prazo"]', '30 dias');
-  await page.fill('.ns-modal input[placeholder*="Nome de quem recebe"]', 'João da Silva');
 
   // o pedido conclui SEM assinatura — ela é o último passo, na tela do pedido pronto
   await page.click('button:has-text("Concluir pedido")');
@@ -181,13 +180,27 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   const semAssinaturaAinda = await page.evaluate(() =>
     !JSON.parse(localStorage.getItem('ns_c_pedidos'))[0].assinatura);
   check('pedido nasce sem assinatura', semAssinaturaAinda);
+  // ── quem recebeu: informado depois do fechamento, como registro digital ──
+  const btnRec = page.locator('.ns-overlay').last().locator('button:has-text("Informar quem recebeu")');
+  check('botão "Informar quem recebeu" aparece na tela do pedido pronto',
+    (await btnRec.count()) === 1);
+  await btnRec.click();
+  await page.waitForSelector('.ns-modal input[placeholder*="Nome de quem recebeu"]');
+  await page.fill('.ns-modal input[placeholder*="Nome de quem recebeu"]', 'João da Silva');
+  await page.click('button:has-text("Salvar recebimento")');
+  await page.waitForTimeout(350);
+  check('o nome fica registrado no pedido',
+    await page.evaluate(() => window.NSDB.all('pedidos')[0].assinante_nome === 'João da Silva'));
+  check('e o botão passa a mostrar quem recebeu',
+    (await page.locator('.ns-overlay').last().textContent()).includes('Recebido por: João da Silva'));
+
   const btnAss = page.locator('.ns-overlay').last().locator('.btn-assinar');
   check('botão COLETAR ASSINATURA aparece na tela do pedido',
     (await btnAss.textContent()).includes('COLETAR ASSINATURA'));
   check('e é o último botão da sequência de ações', await page.evaluate(() => {
     const modal = document.querySelectorAll('.ns-overlay')[document.querySelectorAll('.ns-overlay').length - 1];
     const bs = Array.from(modal.querySelectorAll('button'))
-      .filter(b => /PDF|Imprimir|Cupom|Editar pedido|ASSINATURA/.test(b.textContent));
+      .filter(b => /PDF|Imprimir cupom|Editar pedido|quem recebeu|Recebido por|ASSINATURA/.test(b.textContent));
     return bs[bs.length - 1].classList.contains('btn-assinar');
   }));
 
@@ -579,7 +592,6 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   check('desconto mostra bruto, abatimento e valor final',
     resumoDesc.includes('Desconto de 10%') && resumoDesc.includes('Valor final'));
   await page.locator('.ns-modal input[placeholder*="Prazo"]').fill('à vista');
-  await page.locator('.ns-modal input[placeholder*="Nome de quem recebe"]').fill('Teste');
   await page.click('button:has-text("Concluir pedido")');
   await page.waitForSelector('.sucesso-banner');
   const pedDesc = await page.evaluate(() => {
@@ -630,7 +642,10 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
     return { iso, diaSemana: ontem.getDay() };
   });
   const DIAS = ['', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta'];
-  if (histSemana.diaSemana >= 1 && histSemana.diaSemana <= 5) {
+  // no fim de semana o app já planeja a SEMANA QUE VEM, então a aba de ontem
+  // mostra a data da próxima semana e este cenário não se aplica
+  const hojeDia = new Date().getDay();
+  if (histSemana.diaSemana >= 1 && histSemana.diaSemana <= 5 && hojeDia >= 1 && hojeDia <= 5) {
     await page.click('#tabs button[data-v=hoje]');
     await page.waitForTimeout(250);
     await page.locator('#view .chip', { hasText: DIAS[histSemana.diaSemana] }).first().click();
@@ -650,7 +665,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
     const reps = window.NSDB.all('representantes')[0];
     ['ORDEM A', 'ORDEM B', 'ORDEM C'].forEach((nome, i) => {
       window.NSDB.insert('clientes', { representante_id: reps.id, nome, cidade: 'PF', uf: 'RS',
-        status: 'ativo', classe: 'B', rota_dia: null });
+        cnpj_cpf: '1122233300014' + i, status: 'ativo', classe: 'B', rota_dia: null });
     });
   });
   await page.click('#tabs button[data-v=hoje]');
@@ -736,7 +751,12 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
       .map(x => x.classList.contains('prospec')));
   check('filtro de prospecção mostra só as prospecções',
     soProspec.length === 1 && soProspec.every(Boolean));
-  await page.locator('#view .dias-scroll .chip:not(.prospec)').last().click();
+  // filtro de prioritários fica ao lado; o "Todos" é escolhido pelo texto
+  await page.locator('#view .chip.prioritario').click();
+  await page.waitForTimeout(300);
+  check('filtro de prioritários não mostra quem não é prioritário',
+    (await page.locator('#view .card-visita:not(.historico)').count()) === 0);
+  await page.locator('#view .chip', { hasText: /^Todos/ }).first().click();
   await page.waitForTimeout(300);
   check('e o filtro "Todos" traz a rota inteira de volta',
     (await nomesNaRota()).join('|') === comProspec.join('|'));
@@ -744,6 +764,97 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   // CNPJ destacado no cartão da rota
   check('CNPJ aparece destacado no cartão da rota',
     (await page.locator('#view .card-visita .cnpj-chip').count()) > 0);
+
+  // ── botão de GPS / Google Maps ──
+  const gps = await page.evaluate(() => {
+    const b = document.querySelector('#view .card-visita .btn-mini.gps');
+    return { existe: !!b, texto: b ? b.textContent : '' };
+  });
+  check('cada cliente da rota tem botão de GPS', gps.existe && /GPS/.test(gps.texto));
+  const urlMaps = await page.evaluate(() => {
+    const c = window.NSDB.all('clientes').find(x => x.nome === 'ORDEM A');
+    window.NSDB.update('clientes', c.id, { endereco: 'Rua Bento Gonçalves, 155', bairro: 'Centro' });
+    let capturado = '';
+    const abrir = window.open;
+    window.open = (u) => { capturado = u; return null; };
+    window.NSApp.nav('hoje');
+    const card = Array.from(document.querySelectorAll('#view .card-visita'))
+      .find(x => x.textContent.includes('ORDEM A'));
+    card.querySelector('.btn-mini.gps').click();
+    window.open = abrir;
+    return capturado;
+  });
+  if (process.env.DBG) console.log('URLMAPS', urlMaps);
+  check('o GPS monta o endereço completo do cliente no Google Maps',
+    urlMaps.includes('google.com/maps') &&
+    decodeURIComponent(urlMaps).includes('Rua Bento Gonçalves, 155, Centro, PF, RS'));
+
+  // ── cliente prioritário ──
+  await page.evaluate(() => {
+    const c = window.NSDB.all('clientes').find(x => x.nome === 'ORDEM B');
+    window.NSDB.update('clientes', c.id, { prioridade: true });
+    window.NSApp.nav('hoje');
+  });
+  await page.waitForTimeout(300);
+  check('cliente prioritário fica destacado em azul no cartão',
+    (await page.locator('#view .card-visita.prioritario').count()) === 1);
+  check('e ganha o selo PRIORIDADE', (await page.textContent('#view')).includes('PRIORIDADE'));
+  await page.locator('#view .card-visita.prioritario button:has-text("Prioridade")').click();
+  await page.waitForTimeout(300);
+  check('dá para tirar a prioridade num toque, pela própria rota',
+    await page.evaluate(() => !window.NSDB.all('clientes').find(x => x.nome === 'ORDEM B').prioridade));
+
+  // ── atendido vai para o fim da fila ──
+  const antesAtender = await nomesNaRota();
+  await page.evaluate((nome) => {
+    const c = window.NSDB.all('clientes').find(x => x.nome === nome);
+    const rep = window.NSDB.all('representantes')[0];
+    // data da aba aberta = a mesma que a rota usa
+    const el = document.querySelector('#view .chip.ativo');
+    const dm = el.textContent.match(/(\d{2})\/(\d{2})/);
+    const ano = new Date().getFullYear();
+    window.NSDB.insert('visitas', { cliente_id: c.id, representante_id: rep.id,
+      data_visita: ano + '-' + dm[2] + '-' + dm[1], realizada: true, fez_pedido: false });
+    window.NSApp.nav('hoje');
+  }, antesAtender[0].trim());
+  await page.waitForTimeout(300);
+  const depoisAtender = await nomesNaRota();
+  check('cliente atendido desce para o fim da rota',
+    depoisAtender[depoisAtender.length - 1] === antesAtender[0] &&
+    depoisAtender.length === antesAtender.length);
+  check('e o cartão dele fica cinza (compacto de atendido)',
+    (await page.locator('#view .card-visita.feito.compacto').count()) === 1);
+  check('a rota avisa quantos ainda faltam',
+    (await page.textContent('#view')).includes('os já atendidos foram para o fim'));
+
+  // ── organizar por proximidade a partir do cliente nº 1 ──
+  await page.evaluate(() => {
+    // três clientes numa linha: A na ponta, C no meio, B na outra ponta
+    const pos = { 'ORDEM A': [-28.26, -52.40], 'ORDEM B': [-28.26, -52.20], 'ORDEM C': [-28.26, -52.30] };
+    window.NSDB.all('clientes').filter(c => pos[c.nome]).forEach(c =>
+      window.NSDB.update('clientes', c.id, { lat: pos[c.nome][0], lng: pos[c.nome][1] }));
+    // garante ORDEM A em 1º e a sequência fora de ordem geográfica (A, B, C)
+    ['ORDEM A', 'ORDEM B', 'ORDEM C'].forEach((nome, i) => {
+      const c = window.NSDB.all('clientes').find(x => x.nome === nome);
+      window.NSDB.update('clientes', c.id, { rota_ordem: i + 1 });
+    });
+    window.NSDB.removeWhere('visitas', v => {
+      const c = window.NSDB.byId('clientes', v.cliente_id);
+      return c && /^ORDEM /.test(c.nome);
+    });
+    window.NSApp.nav('hoje');
+  });
+  await page.waitForTimeout(300);
+  await page.locator('#view button:has-text("Organizar por proximidade")').click();
+  await page.waitForSelector('.ns-overlay button:has-text("Confirmar")');
+  await page.locator('.ns-overlay').last().locator('button:has-text("Confirmar")').click();
+  await page.waitForTimeout(500);
+  const ordemProx = await page.evaluate(() => ['ORDEM A', 'ORDEM B', 'ORDEM C']
+    .map(n => ({ n, o: window.NSDB.all('clientes').find(x => x.nome === n).rota_ordem }))
+    .sort((a, b) => a.o - b.o).map(x => x.n));
+  check('o cliente nº 1 continua sendo o nº 1', ordemProx[0] === 'ORDEM A');
+  check('e os demais são enfileirados do mais perto para o mais longe',
+    ordemProx.join('|') === 'ORDEM A|ORDEM C|ORDEM B');
 
   // limpa a rota montada nos testes de ordem para o cenário seguinte começar do zero
   await page.evaluate(() => {
@@ -917,9 +1028,13 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   const confRet = (await page.textContent('.ns-modal')).replace(/\u00a0/g, ' ');
   check('confer\u00eancia mostra pedido negativo com aviso de cr\u00e9dito', confRet.includes('-R$ 58,00') && confRet.includes('CR\u00c9DITO'));
   await page.fill('.ns-modal input[placeholder*="Prazo"]', '30 dias');
-  await page.fill('.ns-modal input[placeholder*="Nome de quem recebe"]', 'Maria Souza');
   await page.click('button:has-text("Concluir pedido")');
   await page.waitForSelector('.sucesso-banner');
+  await page.locator('.ns-overlay').last().locator('button:has-text("Informar quem recebeu")').click();
+  await page.waitForSelector('.ns-modal input[placeholder*="Nome de quem recebeu"]');
+  await page.fill('.ns-modal input[placeholder*="Nome de quem recebeu"]', 'Maria Souza');
+  await page.click('button:has-text("Salvar recebimento")');
+  await page.waitForTimeout(300);
   await page.locator('.ns-overlay').last().locator('.btn-assinar').click();
   await page.waitForSelector('.assina-full canvas');
   await page.waitForTimeout(400);
@@ -977,6 +1092,113 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
     !!ed.p.assinatura && ed.p.assinante_nome === 'Maria Souza' && ed.nItens === 1);
   await page.locator('.ns-overlay').last().locator('.btn-icon').first().click();
   await page.waitForTimeout(200);
+
+  // ── aba Clientes: filtros de tipo, prioridade e exclusão de prospecção ──
+  await page.evaluate(() => {
+    const rep = window.NSDB.all('representantes')[0];
+    window.NSDB.insert('clientes', { representante_id: rep.id, nome: 'PROSPEC PARA EXCLUIR',
+      cidade: 'Marau', uf: 'RS', status: 'prospect', classe: 'B' });
+    const c = window.NSDB.all('clientes').find(x => x.nome === 'ORDEM C');
+    window.NSDB.update('clientes', c.id, { prioridade: true });
+  });
+  await page.click('#tabs button[data-v=clientes]');
+  await page.waitForTimeout(350);
+  check('aba Clientes tem os filtros Todos / Só clientes / Só prospecções / Prioritários',
+    (await page.textContent('#view')).includes('Só clientes') &&
+    (await page.textContent('#view')).includes('Só prospecções') &&
+    (await page.textContent('#view')).includes('Prioritários'));
+  await page.locator('#view .chip', { hasText: 'Só prospecções' }).click();
+  await page.waitForTimeout(300);
+  check('filtro "Só prospecções" mostra apenas prospecção',
+    await page.evaluate(() => {
+      const its = Array.from(document.querySelectorAll('#view .item-lista'));
+      return its.length > 0 && its.every(x => x.classList.contains('prospec'));
+    }));
+  await page.locator('#view .chip', { hasText: 'Prioritários' }).click();
+  await page.waitForTimeout(300);
+  check('filtro "Prioritários" mostra apenas quem tem prioridade',
+    await page.evaluate(() => {
+      const its = Array.from(document.querySelectorAll('#view .item-lista'));
+      return its.length === 1 && its[0].classList.contains('prioritario');
+    }));
+  await page.locator('#view .chip', { hasText: 'Só clientes' }).click();
+  await page.waitForTimeout(300);
+  check('filtro "Só clientes" esconde as prospecções',
+    await page.evaluate(() => Array.from(document.querySelectorAll('#view .item-lista'))
+      .every(x => !x.classList.contains('prospec'))));
+
+  // excluir prospecção: rápido, com confirmação, e só para prospecção
+  await page.locator('#view .chip', { hasText: 'Só prospecções' }).click();
+  await page.waitForTimeout(300);
+  await page.fill('#view input', 'PARA EXCLUIR');
+  await page.waitForTimeout(300);
+  await page.locator('#view .item-lista button:has-text("Excluir")').first().click();
+  await page.waitForSelector('.ns-overlay button:has-text("Confirmar")');
+  check('a exclusão pede confirmação antes',
+    (await page.textContent('.ns-overlay')).includes('Deseja realmente excluir esta prospecção?'));
+  await page.locator('.ns-overlay').last().locator('button:has-text("Confirmar")').click();
+  await page.waitForTimeout(400);
+  check('prospecção excluída some da base',
+    await page.evaluate(() => !window.NSDB.all('clientes').some(c => c.nome === 'PROSPEC PARA EXCLUIR')));
+  await page.locator('#view .chip', { hasText: 'Só clientes' }).click();
+  await page.waitForTimeout(300);
+  check('cliente efetivo NÃO tem botão de excluir na lista',
+    (await page.locator('#view .item-lista button:has-text("Excluir")').count()) === 0);
+  await page.locator('#view .chip', { hasText: /^Todos/ }).first().click();
+  await page.waitForTimeout(250);
+
+  // ── ticket médio ──
+  await page.click('#tabs button[data-v=dash]');
+  await page.waitForTimeout(400);
+  const dashTicket = (await page.textContent('#view')).replace(/\u00a0/g, ' ');
+  check('painel mostra o ticket médio', /Ticket médio/.test(dashTicket));
+  const ticketOk = await page.evaluate(() => {
+    const peds = window.NSDB.all('pedidos').filter(p => p.status === 'concluido');
+    const mes = new Date().toISOString().slice(0, 7);
+    const doMes = peds.filter(p => (p.data_pedido || '').slice(0, 7) === mes);
+    const total = doMes.reduce((t, p) => t + Number(p.total_valor || 0), 0);
+    return { esperado: window.NSCalc.ticketMedio(total, doMes.length), n: doMes.length };
+  });
+  if (process.env.DBG) console.log('TICKET', JSON.stringify(ticketOk), dashTicket.slice(0, 300));
+  check('e o valor bate com total ÷ quantidade de pedidos do mês',
+    dashTicket.includes((await page.evaluate((v) => window.NSCalc.fmtMoney(v), ticketOk.esperado))
+      .replace(/\u00a0/g, ' ')));
+  check('o painel diz sobre quantos pedidos é a média',
+    dashTicket.includes('Ticket médio (' + ticketOk.n + ' pedidos)'));
+
+  // ── pop-up de pedidos não faturados no New Star ──
+  await page.evaluate(() => {
+    document.querySelectorAll('.ns-overlay').forEach(o => o.remove());
+    window.NSDB.all('pedidos').forEach(p =>
+      window.NSDB.update('pedidos', p.id, { faturado_ns: false }));
+  });
+  const pendentes = await page.evaluate(() => {
+    try { window.NSApp.avisarPendentesNewStar(); } catch (e) { return 'ERRO: ' + e.message; }
+    const ov = document.querySelectorAll('.ns-overlay');
+    if (!ov.length) return 'SEM MODAL · pendentes=' + JSON.stringify(
+      window.NSDB.all('pedidos').map(p => ({ s: p.status, f: p.faturado_ns, d: p.data_pedido })));
+    return ov[ov.length - 1].textContent;
+  });
+  if (process.env.DBG) console.log('POPUP', pendentes.slice(0, 400));
+  check('ao abrir o app, avisa que existe pedido sem faturar no New Star',
+    /PEDIDO PENDENTE/.test(pendentes) && /n[ãÃ]o (foi|foram) faturad/i.test(pendentes));
+  check('o aviso deixa marcar o pedido como faturado ali mesmo',
+    /Marcar como faturado/.test(pendentes));
+  await page.locator('.ns-overlay').last().locator('button:has-text("Marcar como faturado")').first().click();
+  await page.waitForTimeout(300);
+  check('marcar pelo aviso grava no pedido',
+    await page.evaluate(() => window.NSDB.all('pedidos').some(p => p.faturado_ns === true)));
+  await page.locator('.ns-overlay').last().locator('button:has-text("Fechar")').click();
+  await page.waitForTimeout(250);
+  check('o aviso pode ser fechado', (await page.locator('.ns-overlay').count()) === 0);
+  const semPendentes = await page.evaluate(() => {
+    window.NSDB.all('pedidos').forEach(p =>
+      window.NSDB.update('pedidos', p.id, { faturado_ns: true }));
+    window.NSApp.avisarPendentesNewStar();
+    return document.querySelectorAll('.ns-overlay').length;
+  });
+  check('sem pedido pendente, nenhum aviso aparece', semPendentes === 0);
+
 
   check('sem erros de JavaScript na página', erros.length === 0);
   if (erros.length) console.error(erros.join('\n'));

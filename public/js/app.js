@@ -139,7 +139,60 @@
       Promise.resolve(DB.sync()).then(() => {
         if (!sessao()) return; // representante removido do servidor — mantém a tela atual
         montarTopbar(); nav(viewAtual);
+        avisarPendentesNewStar();
       }).catch(() => {});
+    else avisarPendentesNewStar();
+  }
+
+  // ── aviso de pedidos que faltam faturar no New Star ──
+  // Aparece TODA vez que o app abre, enquanto houver pedido pendente. Olha só os
+  // últimos 30 dias: pedido antigo demais já foi resolvido de outro jeito e viraria
+  // um aviso eterno.
+  const DIAS_ALERTA_FATURAMENTO = 30;
+  function pedidosSemFaturar() {
+    const repId = repEfetivoId();
+    const limite = new Date(Date.now() - DIAS_ALERTA_FATURAMENTO * 86400000).toISOString().slice(0, 10);
+    return DB.all('pedidos')
+      .filter(p => !repId || p.representante_id === repId)
+      .filter(p => p.status === 'concluido' && !p.faturado_ns)
+      .filter(p => (p.data_pedido || '') >= limite)
+      .sort((a, b) => (a.data_pedido || '').localeCompare(b.data_pedido || ''));
+  }
+  function avisarPendentesNewStar() {
+    if (!sessao()) return;
+    const peds = pedidosSemFaturar();
+    if (!peds.length) return;
+    const um = peds.length === 1;
+    const corpo = el('div', null,
+      el('p', { class: 'aviso-forte' },
+        um ? 'Existe 1 pedido que ainda NÃO foi faturado no New Star.'
+          : 'Existem ' + peds.length + ' pedidos que ainda NÃO foram faturados no New Star.'),
+      el('p', { class: 'sub mt8' }, 'Pedidos dos últimos ' + DIAS_ALERTA_FATURAMENTO +
+        ' dias. Marque cada um como faturado assim que lançar no New Star.'),
+      el('div', { class: 'col gap8 mt12' },
+        peds.slice(0, 12).map(p => {
+          const cli = DB.byId('clientes', p.cliente_id) || {};
+          const linha = el('div', { class: 'item-lista' },
+            el('div', { class: 'row space w100' },
+              el('strong', null, 'Nº ' + (p.numero || '—') + ' · ' + nomeExib(cli)),
+              el('strong', null, C.fmtMoney(Number(p.total_valor)))),
+            el('span', { class: 'sub' }, dataBR(p.data_pedido)),
+            el('button', {
+              class: 'btn-mini w100 mt8', onclick: (e) => {
+                marcarFaturado(p.id);
+                e.currentTarget.disabled = true;
+                e.currentTarget.replaceChildren(ico('check'), el('span', null, 'Faturado'));
+                linha.classList.add('resolvido');
+              }
+            }, rot('notaFiscal', 'Marcar como faturado')));
+          return linha;
+        })),
+      peds.length > 12 ? el('p', { class: 'sub mt8' }, 'e mais ' + (peds.length - 12) + ' pedido(s).') : null,
+      el('button', {
+        class: 'btn w100 mt12', onclick: () => { m.fechar(); nav('pedidos'); }
+      }, rot('recibo', 'Ver todos na aba Pedidos')),
+      el('button', { class: 'btn btn-sec w100 mt8', onclick: () => m.fechar() }, 'Fechar'));
+    const m = modal(corpo, { titulo: '⚠️ PEDIDO PENDENTE' });
   }
 
   function montarTopbar() {
@@ -481,8 +534,9 @@
       });
     }
 
-    // ── filtro de prospecção: mostrar a rota inteira ou só os possíveis clientes
+    // ── filtros da rota: prospecção e clientes prioritários
     const nProspec = lista.filter(ehProspec).length;
+    const nPrior = lista.filter(ehPrioritario).length;
     if (lista.length) {
       view.appendChild(el('div', { class: 'dias-scroll mt12' },
         el('button', {
@@ -492,10 +546,14 @@
         el('button', {
           class: 'chip prospec' + (filtroRota === 'prospec' ? ' ativo' : ''),
           onclick: () => { filtroRota = 'prospec'; nav('hoje'); }
-        }, ico('alvo', 'ic-sm'), 'Prospecção ' + nProspec)));
+        }, ico('alvo', 'ic-sm'), 'Prospecção ' + nProspec),
+        el('button', {
+          class: 'chip prioritario' + (filtroRota === 'prioridade' ? ' ativo' : ''),
+          onclick: () => { filtroRota = 'prioridade'; nav('hoje'); }
+        }, ico('estrela', 'ic-sm'), 'Prioritários ' + nPrior)));
     }
 
-    // barra de reordenação: inverter a ordem toda de uma vez (fica ANTES da lista)
+    // barra de reordenação: inverter a ordem toda / organizar por proximidade
     if (lista.length > 1) {
       view.appendChild(el('div', { class: 'row gap8 mt8' },
         el('button', {
@@ -504,7 +562,12 @@
             toast('Ordem invertida.'); nav('hoje');
           }
         }, rot('sincronizar', 'Inverter ordem')),
-        el('span', { class: 'sub' }, 'Use ↑ ↓ para mudar a ordem')));
+        el('button', {
+          class: 'btn-mini grow', onclick: () => organizarPorProximidade(lista)
+        }, rot('rota', 'Organizar por proximidade'))));
+      view.appendChild(el('p', { class: 'sub mt4' },
+        'Use ↑ ↓ para mudar a ordem. "Organizar por proximidade" mantém o cliente nº 1 ' +
+        'e enfileira os demais do mais perto para o mais longe.'));
     }
 
     const listaEl = el('div', { class: 'col gap8 mt12' });
@@ -517,18 +580,31 @@
     }
 
     // o filtro só esconde da tela: a posição (1, 2, 3…) continua sendo a da rota inteira
-    const visiveis = filtroRota === 'prospec' ? lista.filter(ehProspec) : lista;
+    const visiveis = filtroRota === 'prospec' ? lista.filter(ehProspec)
+      : filtroRota === 'prioridade' ? lista.filter(ehPrioritario) : lista;
     if (!visiveis.length)
-      listaEl.appendChild(el('p', { class: 'vazio' }, 'Nenhuma prospecção na rota de ' + diaRota + '.'));
+      listaEl.appendChild(el('p', { class: 'vazio' }, filtroRota === 'prioridade'
+        ? 'Nenhum cliente prioritário na rota de ' + diaRota + '.'
+        : 'Nenhuma prospecção na rota de ' + diaRota + '.'));
 
-    visiveis.forEach((c) => {
+    // quem já foi atendido desce para o fim da fila e não atrapalha mais a
+    // sequência de trabalho — mas guarda o número que tem na rota
+    const naTela = visiveis.slice().sort((a, b) =>
+      (visitaNoDia(a.id, dataDaAba) ? 1 : 0) - (visitaNoDia(b.id, dataDaAba) ? 1 : 0));
+    const restam = naTela.filter(c => !visitaNoDia(c.id, dataDaAba)).length;
+    if (restam && restam < naTela.length)
+      listaEl.appendChild(el('p', { class: 'sub' },
+        'Faltam ' + restam + ' — os já atendidos foram para o fim da lista.'));
+
+    naTela.forEach((c) => {
       const i = lista.indexOf(c);
       const v = visitaNoDia(c.id, dataDaAba);
       const st = statusDoCliente(c);
       // já atendido = cartão compacto (nome, CNPJ e o que foi feito), para
       // sobrar tela para quem ainda falta visitar
       const card = el('div', {
-        class: 'card-visita st-' + st.k + (v ? ' feito compacto' : '') + (ehProspec(c) ? ' prospec' : ''),
+        class: 'card-visita st-' + st.k + (v ? ' feito compacto' : '') +
+          (ehProspec(c) ? ' prospec' : '') + (ehPrioritario(c) ? ' prioritario' : ''),
         'data-id': c.id
       },
         el('div', { class: 'row gap8' },
@@ -536,7 +612,9 @@
             el('strong', { class: 'row gap8' }, el('span', { class: 'ordem-num' }, String(i + 1)),
               // no cartão compacto a bolinha do farol vem aqui (a linha de status some)
               v ? farol(st.k) : null, marcaAlerta(c), nomeExib(c)),
-            ehProspec(c) ? el('span', { class: 'badge prospec mt4' }, 'PROSPECÇÃO') : null,
+            (ehProspec(c) || ehPrioritario(c)) ? el('div', { class: 'row gap8 mt4' },
+              ehPrioritario(c) ? el('span', { class: 'badge prioritario' }, ico('estrela', 'ic-sm'), 'PRIORIDADE') : null,
+              ehProspec(c) ? el('span', { class: 'badge prospec' }, 'PROSPECÇÃO') : null) : null,
             c.cnpj_cpf ? el('div', { class: 'cnpj-chip mt4' },
               el('span', { class: 'cnpj-rot' }, String(c.cnpj_cpf).replace(/\D/g, '').length === 11 ? 'CPF' : 'CNPJ'),
               C.fmtCNPJ(c.cnpj_cpf)) : null,
@@ -560,7 +638,14 @@
           (v.fez_pedido ? ' · ' + C.fmtMoney(Number(v.valor_pedido || 0)) : ' · sem pedido')) : null,
         el('div', { class: 'row gap8 mt8' },
           el('button', { class: 'btn-mini verde grow', onclick: () => dialogoVisita(c, rep) }, rot('check', 'Registrar visita')),
+          botaoMaps(c),
           el('button', { class: 'btn-mini vermelho', onclick: () => removerDaRota(c) }, rot('fechar', 'Remover da rota'))),
+        // prioridade num toque, sem precisar abrir o cadastro
+        el('div', { class: 'row gap8 mt4' },
+          botaoPrioridade(c, () => nav('hoje')),
+          ehProspec(c) ? el('button', {
+            class: 'btn-mini vermelho', onclick: () => excluirProspeccao(c, () => nav('hoje'))
+          }, rot('lixeira', 'Excluir prospecção')) : null),
         // ordem da rota: só pelos botões (o arrastar foi removido a pedido do uso em campo)
         el('div', { class: 'row gap8 mt4' },
           el('button', {
@@ -585,6 +670,23 @@
     pintarHistorico();
   }
 
+  // Reordena a rota do dia partindo do cliente que está em 1º lugar.
+  async function organizarPorProximidade(lista) {
+    if (lista.length < 3) return toast('Precisa de pelo menos 3 clientes na rota.', 'erro');
+    const primeiro = lista[0];
+    if (primeiro.lat == null || primeiro.lng == null)
+      return toast('O cliente nº 1 (' + nomeExib(primeiro) + ') está sem localização. ' +
+        'Coloque outro cliente em 1º lugar ou atualize o GPS em Mais → Roteirização.', 'erro');
+    if (!(await confirmar('Organizar a rota de ' + diaRota + ' por proximidade?\n\n' +
+      'O cliente nº 1 continua sendo ' + nomeExib(primeiro) + ', e os demais são reordenados ' +
+      'do mais perto para o mais longe. A ordem atual será substituída.'))) return;
+    const r = ordenarPorProximidade(lista);
+    gravarOrdem(r.ordem);
+    toast('Rota organizada por proximidade' + (r.km ? ' · ~' + String(r.km).replace('.', ',') + ' km' : '') +
+      (r.semCoord ? ' · ' + r.semCoord + ' sem localização foram para o fim' : '') + '.');
+    nav('hoje');
+  }
+
   function removerDaRota(c) {
     DB.update('clientes', c.id, { rota_dia: null, rota_ordem: null });
     toast(c.nome + ' saiu da rota e voltou para a lista de clientes.');
@@ -595,7 +697,7 @@
   function telaCriarRota(rep) {
     const wrap = el('div');
     const m = modal(wrap, { titulo: 'Rota de ' + diaRota, full: true });
-    const f = { busca: '', cidade: '', regiao: '', classe: '', semPedido: '', semVisita: '' };
+    const f = { busca: '', cidade: '', regiao: '', classe: '', semPedido: '', semVisita: '', tipo: 'todos' };
     render();
 
     function render() {
@@ -629,6 +731,23 @@
       wrap.appendChild(el('div', { class: 'row gap8 mt8' },
         sel('semVisita', 'Dias sem atendimento', [{ v: '30', t: '30+ dias' }, { v: '45', t: '45+ dias' }, { v: '60', t: '60+ dias' }, { v: '90', t: '90+ dias' }])));
 
+      // tipo de cadastro: cliente, prospecção ou só os prioritários
+      const tipoEl = el('div', { class: 'dias-scroll mt8' });
+      wrap.appendChild(tipoEl);
+      const pintarTipo = () => {
+        tipoEl.innerHTML = '';
+        [['todos', 'Todos', null], ['clientes', 'Só clientes', null],
+         ['prospec', 'Só prospecções', 'alvo'], ['prioridade', 'Prioritários', 'estrela']]
+          .forEach(([k, rotulo, icone]) => {
+            tipoEl.appendChild(el('button', {
+              class: 'chip' + (k === 'prospec' ? ' prospec' : k === 'prioridade' ? ' prioritario' : '') +
+                (f.tipo === k ? ' ativo' : ''),
+              onclick: () => { f.tipo = k; pintarTipo(); renderLista(); }
+            }, icone ? ico(icone, 'ic-sm') : null, rotulo));
+          });
+      };
+      pintarTipo();
+
       const infoEl = el('div', { class: 'sub mt8' });
       const listaEl = el('div', { class: 'col gap8 mt8' });
       wrap.appendChild(infoEl); wrap.appendChild(listaEl);
@@ -650,30 +769,44 @@
         if (f.classe) cls = cls.filter(c => (c.classe || 'A') === f.classe);
         if (f.semPedido) cls = cls.filter(c => diasSemPedido(c) >= Number(f.semPedido));
         if (f.semVisita) cls = cls.filter(c => diasSemAtendimento(c) >= Number(f.semVisita));
+        if (f.tipo === 'clientes') cls = cls.filter(c => !ehProspec(c));
+        else if (f.tipo === 'prospec') cls = cls.filter(ehProspec);
+        else if (f.tipo === 'prioridade') cls = cls.filter(ehPrioritario);
         cls = ordenarParaRota(cls);
-        infoEl.textContent = cls.length + ' cliente(s) disponível(is) · ordenados por prioridade e tempo sem pedido';
+        // prioritário sempre no topo da lista de escolha
+        cls.sort((a, b) => (ehPrioritario(b) ? 1 : 0) - (ehPrioritario(a) ? 1 : 0));
+        infoEl.textContent = cls.length + ' cliente(s) disponível(is) · prioritários no topo, depois por classe e tempo sem pedido';
         listaEl.innerHTML = '';
         cls.slice(0, 80).forEach(c => {
           const st = statusDoCliente(c);
           listaEl.appendChild(el('div', {
-            class: 'card-visita st-' + st.k + (ehProspec(c) ? ' prospec' : '')
+            class: 'card-visita st-' + st.k + (ehProspec(c) ? ' prospec' : '') +
+              (ehPrioritario(c) ? ' prioritario' : '')
           },
             el('div', { onclick: () => fichaCliente(c.id) },
               el('strong', { class: 'row gap8' }, marcaAlerta(c), nomeExib(c)),
-              ehProspec(c) ? el('span', { class: 'badge prospec mt4' }, 'PROSPECÇÃO') : null,
+              (ehProspec(c) || ehPrioritario(c)) ? el('div', { class: 'row gap8 mt4' },
+                ehPrioritario(c) ? el('span', { class: 'badge prioritario' }, ico('estrela', 'ic-sm'), 'PRIORIDADE') : null,
+                ehProspec(c) ? el('span', { class: 'badge prospec' }, 'PROSPECÇÃO') : null) : null,
               c.cnpj_cpf ? el('div', { class: 'sub' }, 'CNPJ ' + C.fmtCNPJ(c.cnpj_cpf)) : null,
               el('div', { class: 'sub' }, [c.endereco, c.cidade, c.uf].filter(Boolean).join(' · ')),
               el('div', { class: 'sub' }, farol(st.k), st.rot),
               el('div', { class: 'sub' }, (c.regiao || C.regiaoDoCliente(c) || 'sem região') +
                 ' · Classe ' + (c.classe || 'B') +
                 ' · ' + txtDias(diasSemPedido(c), 'pedido') + ' · ' + txtDias(diasSemAtendimento(c), 'visita'))),
-            el('button', {
-              class: 'btn-mini mt8', onclick: () => {
-                porNaRota(c, diaRota, rep.id);
-                toast(nomeExib(c) + ' entrou na rota de ' + diaRota + '.');
-                render();
-              }
-            }, rot('mais', 'Adicionar à rota'))));
+            el('div', { class: 'row gap8 mt8' },
+              el('button', {
+                class: 'btn-mini grow', onclick: () => {
+                  porNaRota(c, diaRota, rep.id);
+                  toast(nomeExib(c) + ' entrou na rota de ' + diaRota + '.');
+                  render();
+                }
+              }, rot('mais', 'Adicionar à rota')),
+              botaoMaps(c),
+              botaoPrioridade(c, renderLista),
+              ehProspec(c) ? el('button', {
+                class: 'btn-mini vermelho', onclick: () => excluirProspeccao(c, render)
+              }, rot('lixeira', 'Excluir')) : null)));
         });
         if (!cls.length) listaEl.appendChild(el('p', { class: 'vazio' }, 'Nenhum cliente com esses filtros.'));
         else if (cls.length > 80) listaEl.appendChild(el('p', { class: 'sub' }, 'Mostrando os 80 primeiros — use os filtros para refinar.'));
@@ -787,18 +920,80 @@
     return n ? n.texto : null;
   }
 
-  function abrirGPS(c) {
-    // endereço escrito leva à porta certa; coordenada só quando não há endereço
-    // (a coordenada "aproximada" cai no centro da cidade, não no cliente)
+  // ---- GPS / Google Maps ----
+  // O endereço escrito leva à porta certa; a coordenada só entra quando não há
+  // endereço (a coordenada "aproximada" cai no centro da cidade, não no cliente).
+  function linkMaps(c) {
     const dest = (c.endereco && c.cidade)
-      ? encodeURIComponent([c.endereco, c.bairro, c.cidade, c.uf].filter(Boolean).join(', '))
+      ? encodeURIComponent([c.endereco, c.bairro, c.cidade, c.uf].filter(Boolean).join(', ') + ', Brasil')
       : (c.lat != null ? c.lat + ',' + c.lng : encodeURIComponent(R.enderecoCompleto(c)));
-    window.open('https://www.google.com/maps/dir/?api=1&destination=' + dest, '_blank');
+    // este endereço abre o APLICATIVO do Google Maps no celular e o site no computador
+    return 'https://www.google.com/maps/dir/?api=1&destination=' + dest;
+  }
+  function abrirGPS(c) { window.open(linkMaps(c), '_blank'); }
+  const temEndereco = (c) => !!((c.endereco && c.cidade) || c.cidade || c.lat != null);
+  // botão de GPS reaproveitado em todas as telas que mostram o endereço
+  function botaoMaps(c, extra) {
+    if (!temEndereco(c)) return null;
+    return el('button', {
+      class: 'btn-mini gps' + (extra ? ' ' + extra : ''), title: 'Abrir no Google Maps',
+      onclick: (e) => { e.stopPropagation(); abrirGPS(c); }
+    }, rot('mapa', 'GPS'));
+  }
+
+  // ---- cliente prioritário ----
+  const ehPrioritario = (c) => !!(c && c.prioridade);
+  function alternarPrioridade(c, aoMudar) {
+    const novo = !ehPrioritario(c);
+    DB.update('clientes', c.id, { prioridade: novo });
+    c.prioridade = novo;
+    toast(novo ? nomeExib(c) + ' marcado como PRIORIDADE.' : 'Prioridade removida de ' + nomeExib(c) + '.');
+    if (aoMudar) aoMudar();
+  }
+  function botaoPrioridade(c, aoMudar) {
+    return el('button', {
+      class: 'btn-mini' + (ehPrioritario(c) ? ' prioritario' : ''),
+      title: ehPrioritario(c) ? 'Tirar a prioridade' : 'Marcar como prioridade',
+      onclick: (e) => { e.stopPropagation(); alternarPrioridade(c, aoMudar); }
+    }, rot('estrela', ehPrioritario(c) ? 'Prioridade' : 'Priorizar'));
+  }
+
+  // ---- excluir prospecção ----
+  // Só vale para PROSPECÇÃO: cliente que já compra nunca é excluído por aqui.
+  async function excluirProspeccao(c, aoFeito) {
+    if (!ehProspec(c)) return toast('Só prospecção pode ser excluída por aqui.', 'erro');
+    if (!(await confirmar('Deseja realmente excluir esta prospecção?\n\n' + nomeExib(c) +
+      '\nAs visitas e observações dela também serão apagadas.'))) return;
+    DB.removeWhere('visitas', (v) => v.cliente_id === c.id);
+    DB.removeWhere('cliente_notas', (n) => n.cliente_id === c.id);
+    DB.removeWhere('cliente_produtos', (cp) => cp.cliente_id === c.id);
+    DB.removeWhere('pendencias', (p) => p.cliente_id === c.id);
+    DB.remove('clientes', c.id);
+    toast('Prospecção excluída.');
+    if (aoFeito) aoFeito();
+  }
+
+  // ---- ordenar a rota por proximidade a partir do cliente nº 1 ----
+  // Nearest neighbour + 2-opt sobre a distância em linha reta (funciona offline).
+  // Quem não tem coordenada fica no fim, na ordem em que estava.
+  function ordenarPorProximidade(lista) {
+    const comCoord = lista.filter(c => c.lat != null && c.lng != null);
+    const semCoord = lista.filter(c => c.lat == null || c.lng == null);
+    if (comCoord.length < 3) return { ordem: comCoord.concat(semCoord), semCoord: semCoord.length };
+    const fator = Number(DB.config('haversine_fator', 1.3));
+    const pontos = comCoord.map(c => ({ lat: c.lat, lng: c.lng }));
+    const m = C.matrizHaversine(pontos, fator);
+    // o índice 0 é o cliente nº 1 da rota: a otimização parte dele e ele não sai do lugar
+    const seq = C.doisOpt(m, C.nearestNeighbor(m));
+    const ordenados = [comCoord[0]].concat(seq.map(i => comCoord[i]));
+    return { ordem: ordenados.concat(semCoord), semCoord: semCoord.length,
+      km: Math.round(C.comprimentoRota(m, seq) * 10) / 10 };
   }
 
   // ================= VIEW: CLIENTES (farol de prazo) =================
   // verde dentro do prazo · amarelo vence em até X dias · vermelho atrasada · cinza sem registro
   let filtroClientes = 'todos';
+  let filtroTipo = 'todos'; // todos · clientes · prospec · prioridade
 
   // O ciclo que manda é o da CLASSE (A 45 · B 60 · C 90 · D 120). A data prevista
   // é recalculada a partir da última visita/pedido, então mudar a classe do cliente
@@ -825,12 +1020,14 @@
     const hoje = hojeISO();
     const avisoDias = Number(DB.config('alerta_vencendo_dias', 7));
     const busca = el('input', { class: 'input big', placeholder: 'Buscar por CNPJ, nome ou cidade…', oninput: render });
+    const tipoEl = el('div', { class: 'dias-scroll mt8' });
     const chipsEl = el('div', { class: 'dias-scroll mt8' });
     const lista = el('div', { class: 'col gap8 mt8' });
     view.appendChild(el('h2', null, 'Clientes'));
     view.appendChild(el('button', { class: 'btn btn-sec w100 mt8', onclick: () => novaProspeccao(render) },
       rot('mais', 'Nova prospecção (possível cliente)')));
     view.appendChild(el('div', { class: 'mt8' }, busca));
+    view.appendChild(tipoEl);
     view.appendChild(chipsEl);
     view.appendChild(lista);
 
@@ -846,7 +1043,23 @@
         });
       const cont = { todos: todos.length, vermelho: 0, amarelo: 0, verde: 0, cinza: 0 };
       todos.forEach(({ st }) => cont[st.k]++);
+      const nProspec = todos.filter(({ c }) => ehProspec(c)).length;
+      const nPrior = todos.filter(({ c }) => ehPrioritario(c)).length;
 
+      // 1ª fila de botões: que TIPO de cadastro mostrar (cliente × prospecção × prioridade)
+      tipoEl.innerHTML = '';
+      [['todos', 'Todos ' + todos.length, null],
+       ['clientes', 'Só clientes ' + (todos.length - nProspec), null],
+       ['prospec', 'Só prospecções ' + nProspec, 'alvo'],
+       ['prioridade', 'Prioritários ' + nPrior, 'estrela']].forEach(([k, rotulo, icone]) => {
+        tipoEl.appendChild(el('button', {
+          class: 'chip' + (k === 'prospec' ? ' prospec' : k === 'prioridade' ? ' prioritario' : '') +
+            (filtroTipo === k ? ' ativo' : ''),
+          onclick: () => { filtroTipo = k; render(); }
+        }, icone ? ico(icone, 'ic-sm') : null, rotulo));
+      });
+
+      // 2ª fila: o farol de prazo, como sempre foi
       chipsEl.innerHTML = '';
       [['todos', null, 'Todos ' + cont.todos], ['vermelho', 'vermelho', 'Atrasados ' + cont.vermelho],
        ['amarelo', 'amarelo', 'Vencendo ' + cont.amarelo], ['verde', 'verde', 'Em dia ' + cont.verde],
@@ -859,6 +1072,10 @@
 
       // urgência primeiro: atrasados (mais atrasado no topo) → vencendo → em dia → sem registro
       const vis = todos
+        .filter(({ c }) => filtroTipo === 'todos' ||
+          (filtroTipo === 'clientes' && !ehProspec(c)) ||
+          (filtroTipo === 'prospec' && ehProspec(c)) ||
+          (filtroTipo === 'prioridade' && ehPrioritario(c)))
         .filter(({ st }) => filtroClientes === 'todos' || st.k === filtroClientes)
         .sort((a, b) => (a.st.ordem - b.st.ordem) || (a.st.sub - b.st.sub) ||
           (a.c.nome || '').localeCompare(b.c.nome || ''))
@@ -866,20 +1083,29 @@
 
       lista.innerHTML = '';
       for (const { c, st } of vis) {
-        lista.appendChild(el('button', {
-          class: 'item-lista st-' + st.k + (ehProspec(c) ? ' prospec' : ''),
-          onclick: () => fichaCliente(c.id)
+        lista.appendChild(el('div', {
+          class: 'item-lista st-' + st.k + (ehProspec(c) ? ' prospec' : '') +
+            (ehPrioritario(c) ? ' prioritario' : '')
         },
-          el('div', { class: 'row space w100' },
-            el('div', { class: 'row gap8' }, farol(st.k), marcaAlerta(c), el('strong', null, nomeExib(c))),
-            ehProspec(c)
-              ? el('span', { class: 'badge prospec' }, 'PROSPECÇÃO')
-              : el('span', { class: 'badge ' + (st.k === 'vermelho' ? 'erro' : st.k === 'amarelo' ? 'aviso' : st.k === 'verde' ? 'ok' : '') },
-                st.k === 'verde' ? 'em dia' : st.k === 'cinza' ? 'sem registro' : st.rot)),
-          el('span', { class: 'sub' }, 'Classe ' + (c.classe || 'B') + ' · ' +
-            [c.cidade, c.uf].filter(Boolean).join(' - ') +
-            (c.rede ? ' · ' + c.rede : '') + ' · ciclo ' + freqDaClasse(c.classe || 'B') + 'd' +
-            (st.k === 'verde' || st.k === 'cinza' ? '' : ' · ' + st.rot))));
+          el('div', { class: 'grow', onclick: () => fichaCliente(c.id) },
+            el('div', { class: 'row space w100' },
+              el('div', { class: 'row gap8' }, farol(st.k), marcaAlerta(c), el('strong', null, nomeExib(c))),
+              ehProspec(c)
+                ? el('span', { class: 'badge prospec' }, 'PROSPECÇÃO')
+                : el('span', { class: 'badge ' + (st.k === 'vermelho' ? 'erro' : st.k === 'amarelo' ? 'aviso' : st.k === 'verde' ? 'ok' : '') },
+                  st.k === 'verde' ? 'em dia' : st.k === 'cinza' ? 'sem registro' : st.rot)),
+            ehPrioritario(c) ? el('div', { class: 'mt4' },
+              el('span', { class: 'badge prioritario' }, ico('estrela', 'ic-sm'), 'PRIORIDADE')) : null,
+            el('span', { class: 'sub' }, 'Classe ' + (c.classe || 'B') + ' · ' +
+              [c.cidade, c.uf].filter(Boolean).join(' - ') +
+              (c.rede ? ' · ' + c.rede : '') + ' · ciclo ' + freqDaClasse(c.classe || 'B') + 'd' +
+              (st.k === 'verde' || st.k === 'cinza' ? '' : ' · ' + st.rot))),
+          el('div', { class: 'row gap8 mt8' },
+            botaoMaps(c),
+            botaoPrioridade(c, render),
+            ehProspec(c) ? el('button', {
+              class: 'btn-mini vermelho', onclick: (e) => { e.stopPropagation(); excluirProspeccao(c, render); }
+            }, rot('lixeira', 'Excluir')) : null)));
       }
       if (!vis.length) lista.appendChild(el('p', { class: 'vazio' }, 'Nenhum cliente neste filtro.'));
     }
@@ -940,15 +1166,28 @@
         ' · Prazo: ' + (c.condicao_pagamento_padrao || 'a definir no 1º pedido') +
         ' · Tabela: ' + (C.tabelaPermitida(c) === 'ambas'
           ? 'Simples ou Lucro Presumido' : 'somente ' + C.NOME_TABELA[C.tabelaPermitida(c)])),
+      ehPrioritario(c) ? el('div', { class: 'mt8' },
+        el('span', { class: 'badge prioritario' }, ico('estrela', 'ic-sm'), 'CLIENTE PRIORITÁRIO')) : null,
       ehProspec(c) ? el('div', { class: 'mt8' },
         el('span', { class: 'badge prospec' }, 'PROSPECÇÃO — ainda não é cliente'),
         el('button', { class: 'btn w100 mt8', onclick: () => transformarEmCliente(id, () => {
           document.querySelectorAll('.ns-overlay').forEach(o => o.remove()); fichaCliente(id);
-        }) }, rot('checkCirculo', 'Transformar em cliente'))) : null,
+        }) }, rot('checkCirculo', 'Transformar em cliente')),
+        el('button', {
+          class: 'btn btn-sec w100 mt8', onclick: () => excluirProspeccao(c, () => {
+            document.querySelectorAll('.ns-overlay').forEach(o => o.remove()); nav(viewAtual);
+          })
+        }, rot('lixeira', 'Excluir prospecção'))) : null,
+      // GPS em destaque: leva direto ao Google Maps com o endereço do cliente
+      temEndereco(c) ? el('button', {
+        class: 'btn big w100 mt8 btn-gps', onclick: () => abrirGPS(c)
+      }, rot('mapa', 'Abrir no Google Maps')) : null,
       el('div', { class: 'row gap8 mt8' },
-        el('button', { class: 'btn-mini', onclick: () => abrirGPS(c) }, rot('mapa', 'GPS (' + c.geocoding_status + ')')),
         el('button', { class: 'btn-mini', onclick: () => window.NSPedido.novo(c) }, rot('recibo', 'Novo pedido')),
-        el('button', { class: 'btn-mini', onclick: () => editarCliente(c.id) }, rot('lapis', 'Editar'))),
+        el('button', { class: 'btn-mini', onclick: () => editarCliente(c.id) }, rot('lapis', 'Editar')),
+        botaoPrioridade(c, () => {
+          document.querySelectorAll('.ns-overlay').forEach(o => o.remove()); fichaCliente(id);
+        })),
       // material deixado no cliente (display/mostruário) — vira relatório
       el('div', { class: 'row gap8 mt8' },
         el('button', {
@@ -1197,8 +1436,8 @@
     // ── METAS EM PRIMEIRO LUGAR: é o que o vendedor precisa ver ao abrir o app ──
     // Só pedidos DESTE mês entram no mês; só os de HOJE entram no dia.
     const pedsConcl = DB.all('pedidos').filter(doRep).filter(p => p.status === 'concluido');
-    const vendidoMes = pedsConcl.filter(p => noMes(p.data_pedido))
-      .reduce((t, p) => t + Number(p.total_valor || 0), 0);
+    const pedidosMes = pedsConcl.filter(p => noMes(p.data_pedido));
+    const vendidoMes = pedidosMes.reduce((t, p) => t + Number(p.total_valor || 0), 0);
     const vendidoHoje = pedsConcl.filter(p => p.data_pedido === hojeISO())
       .reduce((t, p) => t + Number(p.total_valor || 0), 0);
     const metaMes = metaDoPeriodo('meta_mes', mes);
@@ -1249,6 +1488,8 @@
 
     view.appendChild(el('div', { class: 'kpis mt16' },
       kpi('Faturamento (vendido)', C.fmtMoney(faturamento)),
+      kpi('Ticket médio (' + pedidosMes.length + ' pedidos)',
+        C.fmtMoney(C.ticketMedio(vendidoMes, pedidosMes.length))),
       kpi('Comissão gerada no mês', C.fmtMoney(comissaoGerada)),
       kpi('A receber no próximo mês', C.fmtMoney(aReceber), 'destaque'),
       kpi('Despesas', C.fmtMoney(totDesp)),
@@ -1401,6 +1642,8 @@
         wrap.appendChild(el('div', { class: 'total-bar mt4' },
           el('span', null, pedsHoje.length + ' pedido(s) hoje'),
           el('strong', null, C.fmtMoney(vendHoje))));
+        if (pedsHoje.length) wrap.appendChild(el('div', { class: 'sub mt4' },
+          'Ticket médio de hoje: ' + C.fmtMoney(C.ticketMedio(vendHoje, pedsHoje.length))));
         wrap.appendChild(el('div', { class: 'sub mt4' },
           `Visitas: ${naRota} na rota` + (fora ? ` + ${fora} fora da rota = ${visHoje.length} atendidos` : '')));
         if (mt.metaDia > 0) {
@@ -1417,6 +1660,17 @@
       wrap.appendChild(el('div', { class: 'total-bar mt4' },
         el('span', null, pedsMes.length + ' pedido(s) no mês'),
         el('strong', null, C.fmtMoney(vendMes))));
+      // ticket médio do período escolhido (acompanha o mês e o vendedor filtrados)
+      wrap.appendChild(el('div', { class: 'total-bar mt4' },
+        el('span', null, 'Ticket médio por pedido'),
+        el('strong', null, C.fmtMoney(C.ticketMedio(vendMes, pedsMes.length)))));
+      (() => {
+        const clientesMes = new Set(pedsMes.map(p => p.cliente_id)).size;
+        if (!clientesMes) return;
+        wrap.appendChild(el('div', { class: 'sub mt4' },
+          'Por cliente atendido: ' + C.fmtMoney(C.ticketMedio(vendMes, clientesMes)) +
+          ' (' + clientesMes + ' cliente(s) compraram no mês)'));
+      })();
 
       // meta do ano (do ano do mês escolhido)
       const metaAno = metaDoPeriodo('meta_ano', ano);
@@ -1853,6 +2107,9 @@
       [['A', 'A — prioridade máxima (35d)'], ['B', 'B — normal (60d)'], ['C', 'C — baixa (90d)'], ['D', 'D — mínima (120d; reencaixa por último)']]
         .map(([v, r]) => el('option', { value: v, selected: (c.classe || 'B') === v ? '' : null }, r)));
     // qual tabela de preço o vendedor pode escolher neste cliente (evita erro no pedido)
+    const prioSel = el('select', { class: 'input' },
+      el('option', { value: '', selected: c.prioridade ? null : '' }, 'Não'),
+      el('option', { value: '1', selected: c.prioridade ? '' : null }, 'SIM — cliente prioritário'));
     const tabSel = el('select', { class: 'input' },
       C.TABELAS_PERMITIDAS.map(([v, r]) =>
         el('option', { value: v, selected: C.tabelaPermitida(c) === v ? '' : null }, r)));
@@ -1875,6 +2132,8 @@
       el('label', { class: 'campo' }, el('span', { class: 'sub' }, 'Representante'), repSel),
       el('label', { class: 'campo' }, el('span', { class: 'sub' }, 'Status'), statusSel),
       el('label', { class: 'campo' }, el('span', { class: 'sub' }, 'Classe (A/B/C)'), classeSel),
+      el('label', { class: 'campo' }, el('span', { class: 'sub' }, 'Cliente prioritário'), prioSel,
+        el('span', { class: 'sub' }, 'Prioritário aparece em azul na lista e na rota, e tem filtro próprio.')),
       el('button', {
         class: 'btn big w100', onclick: () => {
           if (!campos.nome.value.trim()) return toast('Nome é obrigatório.', 'erro');
@@ -1882,7 +2141,7 @@
           const body = {
             representante_id: repSel.value, status: statusSel.value,
             dia_semana_padrao: diaSel.value || null, classe: classeSel.value,
-            tabela_permitida: tabSel.value
+            tabela_permitida: tabSel.value, prioridade: prioSel.value === '1'
           };
           for (const [k, elInp] of Object.entries(campos)) {
             let v = elInp.value.trim();
@@ -2122,7 +2381,7 @@
 
   // ================= BOOT =================
   window.NSApp = {
-    sessao, nav, recalcularCicloCliente, marcarFaturado,
+    sessao, nav, recalcularCicloCliente, marcarFaturado, avisarPendentesNewStar,
     // Pedido digitado para quem não estava na rota: o cliente entra na rota de
     // HOJE já atendido, e o atendimento conta na meta de visitação.
     aoConcluirPedido(pedido) {
