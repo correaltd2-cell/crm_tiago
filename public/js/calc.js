@@ -61,16 +61,76 @@
   }
 
   // ---------- Comissão ----------
-  // Regra de recebimento: venda do mês M é recebida no mês M+1 (dia 1);
-  // exceção: cliente com prazo próprio (rede Clamed = 45 dias corridos da venda).
-  function calcComissao({ valor, clienteNovo, pctNovo, pctReposicao, dataPedido, recebimentoDias }) {
-    const pct = clienteNovo ? (pctNovo ?? 15) : (pctReposicao ?? 10);
-    const valorComissao = round2(valor * pct / 100);
-    const d = new Date(dataPedido + 'T12:00:00');
-    if (recebimentoDias > 0) d.setDate(d.getDate() + recebimentoDias);
-    else d.setMonth(d.getMonth() + 1, 1); // mês seguinte ao da venda
-    return { pct, valor: valorComissao, recebimentoEm: d.toISOString().slice(0, 10) };
+  // A porcentagem depende de QUEM é o cliente e de QUAL tabela foi usada:
+  //   cliente novo (1ª compra) ......... 15%
+  //   reposição · Tabela Simples ....... 10%
+  //   reposição · Lucro Presumido ...... 8,75%
+  const PCT_NOVO = 15, PCT_SIMPLES = 10, PCT_LUCRO = 8.75;
+  function pctComissao({ clienteNovo, tabela, pctNovo, pctSimples, pctLucro }) {
+    if (clienteNovo) return Number(pctNovo != null ? pctNovo : PCT_NOVO);
+    return tabela === 'lucro'
+      ? Number(pctLucro != null ? pctLucro : PCT_LUCRO)
+      : Number(pctSimples != null ? pctSimples : PCT_SIMPLES);
   }
+
+  // Data em que a comissão CAI NO CAIXA.
+  // • Clientes normais: dia 1º do mês seguinte ao da venda.
+  // • Rede CLAMED (prazo próprio, 45 dias): o fechamento é no dia 15. Venda
+  //   ATÉ o dia 15 cai no dia 15 do MÊS SEGUINTE; venda DEPOIS do dia 15 passa
+  //   do fechamento e só cai no dia 15 de DOIS MESES depois.
+  function recebimentoComissao(dataPedido, recebimentoDias) {
+    const d = new Date(dataPedido + 'T12:00:00');
+    if (!(Number(recebimentoDias) > 0)) {
+      d.setMonth(d.getMonth() + 1, 1);
+      return d.toISOString().slice(0, 10);
+    }
+    const meses = d.getDate() <= 15 ? 1 : 2;
+    const alvo = new Date(Date.UTC(d.getFullYear(), d.getMonth() + meses, 15, 12));
+    return alvo.toISOString().slice(0, 10);
+  }
+
+  function calcComissao({ valor, clienteNovo, tabela, pctNovo, pctSimples, pctLucro, pctReposicao, dataPedido, recebimentoDias }) {
+    // pctReposicao é o nome antigo do percentual da Tabela Simples
+    const pct = pctComissao({ clienteNovo, tabela, pctNovo,
+      pctSimples: pctSimples != null ? pctSimples : pctReposicao, pctLucro });
+    return {
+      pct, valor: round2(valor * pct / 100),
+      recebimentoEm: recebimentoComissao(dataPedido, recebimentoDias)
+    };
+  }
+
+  // ---------- Classe = ciclo de visita (uma coisa só) ----------
+  // A = 45 dias · B = 60 · C = 90 · D = 120. Não existe mais "frequência"
+  // separada: a classe do cliente É o ciclo dele.
+  const CICLO_CLASSE = { A: 45, B: 60, C: 90, D: 120 };
+  const CLASSES = [
+    ['A', 'A — a cada 45 dias'], ['B', 'B — a cada 60 dias'],
+    ['C', 'C — a cada 90 dias'], ['D', 'D — a cada 120 dias']
+  ];
+  const classeDe = (c) => (CICLO_CLASSE[(c && c.classe) || 'B'] ? (c && c.classe) || 'B' : 'B');
+  const cicloDaClasse = (cl) => CICLO_CLASSE[cl] || CICLO_CLASSE.B;
+  const cicloDoCliente = (c) => cicloDaClasse(classeDe(c));
+
+  // ---------- Potencial do cliente (pelo valor do último pedido) ----------
+  // < 1.000 baixo · 1.000 a 1.500 normal · 1.500 a 2.500 alto · > 2.500 muito alto
+  const POTENCIAIS = [
+    ['baixo', 'Baixo', 'até R$ 1.000'],
+    ['normal', 'Normal', 'R$ 1.000 a R$ 1.500'],
+    ['alto', 'Alto', 'R$ 1.500 a R$ 2.500'],
+    ['muito_alto', 'Muito alto', 'acima de R$ 2.500']
+  ];
+  function potencialCliente(valorUltimoPedido) {
+    const v = Number(valorUltimoPedido);
+    if (!Number.isFinite(v) || v <= 0) return null; // ainda sem pedido
+    if (v < 1000) return 'baixo';
+    if (v <= 1500) return 'normal';
+    if (v <= 2500) return 'alto';
+    return 'muito_alto';
+  }
+  const nomePotencial = (k) => {
+    const p = POTENCIAIS.find(x => x[0] === k);
+    return p ? p[1] : 'Sem pedido';
+  };
 
   // ---------- Ciclo de 7 semanas ----------
   // Na migração o dia vem como texto ('Segunda'…'Sexta') em dia_semana_padrao
@@ -212,20 +272,25 @@
     return { sugerir: economia > economiaMinKm, dVolta, economia };
   }
 
-  // ---------- Frequência que aprende ----------
+  // ---------- Classe que aprende ----------
+  // Como classe e ciclo viraram a mesma coisa, a sugestão agora é de trocar a
+  // CLASSE do cliente (A/B/C/D), não uma "frequência" solta.
   // visitas: mais recentes primeiro [{fez_pedido, dev_ratio?}]
-  const CICLOS = [30, 45, 60, 90];
+  const CICLOS = [45, 60, 90, 120];
+  const classePorCiclo = (dias) =>
+    (Object.keys(CICLO_CLASSE).find(k => CICLO_CLASSE[k] === dias) || 'B');
   function sugestaoFrequencia(visitasRecentes, freqAtual) {
     const ultimas = visitasRecentes.filter(v => v.realizada !== false).slice(0, 3);
     if (ultimas.length >= 3 && ultimas.every(v => !v.fez_pedido)) {
       const maior = CICLOS.find(c => c > freqAtual);
-      return { tipo: 'alongar', para: maior || freqAtual,
+      return { tipo: 'alongar', para: maior || freqAtual, classe: classePorCiclo(maior || freqAtual),
         motivo: '3+ visitas seguidas sem pedido' };
     }
     if (ultimas.length >= 3 && ultimas.every(v => v.fez_pedido)) {
       const menores = CICLOS.filter(c => c < freqAtual);
       if (menores.length)
         return { tipo: 'encurtar', para: menores[menores.length - 1],
+          classe: classePorCiclo(menores[menores.length - 1]),
           motivo: 'comprando em toda visita' };
     }
     return null;
@@ -274,7 +339,7 @@
       const base = c.ultima_visita_em || c.ultimo_pedido_em;
       if (!base) return new Date(hoje + 'T12:00:00');
       const d = new Date(base + 'T12:00:00');
-      d.setDate(d.getDate() + (c.frequencia_dias || 45));
+      d.setDate(d.getDate() + cicloDoCliente(c));
       return d;
     };
     const hojeD = new Date(hoje + 'T12:00:00');
@@ -500,10 +565,13 @@
     TABELAS_PERMITIDAS, NOME_TABELA, tabelaPermitida, tabelasDoCliente,
     fmtCNPJ,
     round2, fmtMoney, fmtPct, calcItem, calcTotais, aplicarDesconto, calcComissao, cicloDoDia,
+    pctComissao, recebimentoComissao, PCT_NOVO, PCT_SIMPLES, PCT_LUCRO,
+    CICLO_CLASSE, CLASSES, classeDe, cicloDaClasse, cicloDoCliente,
+    POTENCIAIS, potencialCliente, nomePotencial,
     DIAS_SEMANA, normDia, mesmoDia, clienteJaComprou, classeRank,
     ticketMedio,
     haversineKm, matrizHaversine, nearestNeighbor, comprimentoRota, doisOpt,
-    otimizarRota, detourInsercao, decidirPernoite, sugestaoFrequencia,
+    otimizarRota, detourInsercao, decidirPernoite, sugestaoFrequencia, classePorCiclo,
     diasUteisDoMes, diasUteisAte, diasUteisRestantes, calcMeta, metaDinamica, redeDoCliente,
     REGIOES, regiaoDoCliente, planejarPorRegioes,
     parseCSV, toCSV, CICLOS

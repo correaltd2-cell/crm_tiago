@@ -3,7 +3,7 @@
  * Conferência → Assinatura → Concluído → PDF/Compartilhar/Imprimir */
 (function () {
   'use strict';
-  const { $, el, escH, toast, modal, confirmar, dataBR, hojeISO, ico, icoHTML, rot } = window.NSUI;
+  const { $, el, escH, toast, modal, confirmar, dataBR, hojeISO, ico, icoHTML, rot, repor } = window.NSUI;
   const C = window.NSCalc, DB = window.NSDB;
 
   const precoDe = (p, tabela) => tabela === 'lucro' ? p.preco_lucro : p.preco_simples;
@@ -439,9 +439,12 @@
         clienteNovo = Number(visOriginal.comissao_pct) === pctNovoRep;
       else clienteNovo = !C.clienteJaComprou(cli,
         DB.all('visitas').filter(v => v.cliente_id === ped.cliente_id));
+      // a % depende da tabela do pedido: Simples 10% · Lucro Presumido 8,75%
+      // (cliente novo continua 15% em qualquer tabela)
       const com = C.calcComissao({
-        valor: desc.liquido, clienteNovo,
-        pctNovo: rep.comissao_pct_novo, pctReposicao: rep.comissao_pct,
+        valor: desc.liquido, clienteNovo, tabela: ped.tabela,
+        pctNovo: rep.comissao_pct_novo, pctSimples: rep.comissao_pct,
+        pctLucro: rep.comissao_pct_lucro,
         dataPedido: ped.data, recebimentoDias: cli.recebimento_dias || 0
       });
       // reaproveita a visita do dia só se ela ainda não carrega OUTRO pedido:
@@ -508,11 +511,29 @@
       if (window.NSApp.aoConcluirPedido) window.NSApp.aoConcluirPedido(salvo);
     }
 
+    // O cabeçalho mostra CNPJ e deixa CORRIGIR O CADASTRO sem sair do pedido:
+    // dá para perceber o CNPJ errado só no fim e arrumar ali mesmo.
     function cabecalhoCliente(cli, p) {
-      return el('div', { class: 'chip-cliente' },
-        el('strong', null, temAlertaCliente(cli.id) ? ico('alerta', 'ic-aviso') : null, cli.nome),
-        el('span', { class: 'sub' }, [cli.cidade, cli.uf].filter(Boolean).join(' - ') +
-          (p && p.tabela ? ' · Tabela ' + (p.tabela === 'lucro' ? 'Lucro Presumido' : 'Simples') : '')));
+      const box = el('div', { class: 'chip-cliente' });
+      const pintar = () => {
+        const c = DB.byId('clientes', cli.id) || cli;
+        repor(box,
+          el('div', { class: 'row space w100' },
+            el('strong', null, temAlertaCliente(c.id) ? ico('alerta', 'ic-aviso') : null,
+              c.nome_fantasia || c.nome),
+            el('button', {
+              class: 'btn-mini', onclick: () => window.NSApp.editarCliente(c.id, () => pintar())
+            }, rot('lapis', 'Editar cadastro'))),
+          c.cnpj_cpf ? el('div', { class: 'cnpj-chip mt4' },
+            el('span', { class: 'cnpj-rot' },
+              String(c.cnpj_cpf).replace(/\D/g, '').length === 11 ? 'CPF' : 'CNPJ'),
+            C.fmtCNPJ(c.cnpj_cpf))
+            : el('div', { class: 'sub-aviso mt4' }, ico('alerta', 'ic-sm'), 'Sem CNPJ no cadastro'),
+          el('span', { class: 'sub mt4' }, [c.cidade, c.uf].filter(Boolean).join(' - ') +
+            (p && p.tabela ? ' · Tabela ' + (p.tabela === 'lucro' ? 'Lucro Presumido' : 'Simples') : '')));
+      };
+      pintar();
+      return box;
     }
     function corpo(conteudo) {
       m.body.innerHTML = '';
@@ -539,6 +560,20 @@
     x2.fillStyle = '#ffffff'; x2.fillRect(0, 0, larg, alt);
     x2.drawImage(canvas, 0, 0, larg, alt);
     return c2.toDataURL('image/jpeg', 0.82);
+  }
+
+  // ============ OBSERVAÇÃO DO PEDIDO ============
+  // Observação é informação interna e importante: abre em vermelho, grande,
+  // para ser lida antes de entregar.
+  function verObservacao(p) {
+    modal(el('div', null,
+      el('div', { class: 'obs-box' },
+        el('div', { class: 'obs-tit' }, el('span', { class: 'obs-emoji' }, '⚠️'), 'Observação do pedido'),
+        el('p', { class: 'obs-texto' }, p.observacoes || '')),
+      el('p', { class: 'sub mt8' },
+        'Anotação interna do pedido nº ' + (p.numero || '—') + '. ' +
+        'Não sai no cupom nem no talão do cliente.')),
+      { titulo: 'Observação' });
   }
 
   // ============ INFORMAR QUEM RECEBEU ============
@@ -689,6 +724,8 @@
     const url = URL.createObjectURL(blob);
     const w = window.open(url, '_blank');
     if (!w) window.NSUI.baixar(blob, nomeArq);
+    // ao voltar da aba do arquivo a página podia ficar preta até arrastar a tela
+    setTimeout(() => window.NSUI.destravarTela(), 120);
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   }
 
@@ -742,20 +779,19 @@
       el('button', { class: 'btn big btn-sec', onclick: async () => {
         const blob = await gerarPDF(pedidoId);
         const file = new File([blob], nomeArq, { type: 'application/pdf' });
-        if (navigator.canShare && navigator.canShare({ files: [file] }))
-          await navigator.share({ files: [file], title: 'Pedido New Star' }).catch(() => {});
-        else { window.NSUI.baixar(blob, nomeArq); toast('PDF baixado (compartilhamento não suportado neste navegador).'); }
+        const foi = await window.NSUI.compartilharArquivo(file, 'Pedido New Star');
+        if (!foi) { window.NSUI.baixar(blob, nomeArq); toast('PDF baixado (compartilhamento não suportado neste navegador).'); }
       } }, rot('compartilhar', 'Compartilhar PDF')),
       el('button', { class: 'btn big btn-cupom', onclick: async () => {
         const blob = await gerarCupom(pedidoId);
         const nomeCupom = 'cupom-' + (p.numero || String(p.id).slice(0, 8)) + '.png';
         const file = new File([blob], nomeCupom, { type: 'image/png' });
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        if (navigator.canShare && navigator.canShare({ files: [file] }))
           toast('Escolha o app da impressora na lista de compartilhar.');
-          await navigator.share({ files: [file], title: 'Cupom New Star' }).catch(() => {});
-        } else {
-          abrirBlob(blob, nomeCupom);
-        }
+        // compartilharArquivo devolve a tela ao normal quando o app de
+        // impressão fecha — antes disso a página ficava preta no iPhone
+        const foi = await window.NSUI.compartilharArquivo(file, 'Cupom New Star');
+        if (!foi) abrirBlob(blob, nomeCupom);
       } }, rot('impressora', 'Imprimir cupom 58mm')),
       p.status === 'concluido' ? el('button', { class: 'btn big btn-sec', onclick: () => {
         mAbrir.fechar();
@@ -768,6 +804,11 @@
           mAbrir.fechar(); abrir(pedidoId);
         }
       }, rot('notaFiscal', p.faturado_ns ? 'Faturado no New Star ✓' : 'Marcar como faturado no New Star')),
+      // observação do pedido: fica no vermelho, perto de imprimir e assinar,
+      // para ninguém entregar a mercadoria sem ler o que foi combinado
+      (p.observacoes || '').trim() ? el('button', {
+        class: 'btn big btn-obs', onclick: () => verObservacao(p)
+      }, el('span', { class: 'obs-emoji' }, '⚠️'), el('span', null, 'Ver observação do pedido')) : null,
       // ÚLTIMO passo do processo: a assinatura. Fica por último e bem destacada.
       btnRecebeu,
       btnAssinar);
@@ -831,5 +872,5 @@
     ), { titulo: 'Pedido ' + (p.numero ? 'nº ' + p.numero : '') });
   }
 
-  window.NSPedido = { novo, abrir, gerarPDF, gerarCupom };
+  window.NSPedido = { novo, abrir, gerarPDF, gerarCupom, verObservacao };
 })();

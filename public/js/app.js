@@ -3,7 +3,7 @@
 (function () {
   'use strict';
   const { $, $$, el, escH, toast, modal, confirmar, dataBR, hojeISO, mesISO, baixar,
-    ico, icoHTML, rot, farol } = window.NSUI;
+    ico, icoHTML, rot, farol, repor } = window.NSUI;
   const C = window.NSCalc, DB = window.NSDB, R = window.NSRota;
 
   // ================= MARCA =================
@@ -192,7 +192,8 @@
         class: 'btn w100 mt12', onclick: () => { m.fechar(); nav('pedidos'); }
       }, rot('recibo', 'Ver todos na aba Pedidos')),
       el('button', { class: 'btn btn-sec w100 mt8', onclick: () => m.fechar() }, 'Fechar'));
-    const m = modal(corpo, { titulo: '⚠️ PEDIDO PENDENTE' });
+    const m = modal(corpo, { titulo: '⚠️ PEDIDO PENDENTE', centro: true, classe: 'modal-pendente' });
+    try { window.NSUI.vibrar([30, 60, 30]); } catch (e) {}
   }
 
   function montarTopbar() {
@@ -490,19 +491,14 @@
         el('div', { class: 'progresso-barra' }, el('div', { class: 'progresso-fill', style: 'width:' + pct + '%' }))));
     }
 
-    view.appendChild(el('button', {
-      class: 'btn big w100 mt12', onclick: () => telaCriarRota(rep)
-    }, lista.length ? rot('lapis', 'Editar rota de ' + diaRota) : rot('mais', 'Criar rota de ' + diaRota)));
-    if (lista.length)
-      view.appendChild(el('button', {
-        class: 'btn btn-sec w100 mt8', onclick: async () => {
-          if (!(await confirmar('Resetar a rota de ' + diaRota + '? Os ' + lista.length +
-            ' cliente(s) voltam para a lista de disponíveis.'))) return;
-          lista.forEach(c => DB.update('clientes', c.id, { rota_dia: null, rota_ordem: null }));
-          toast('Rota de ' + diaRota + ' zerada.');
-          nav('hoje');
-        }
-      }, rot('lixeira', 'Resetar rota de ' + diaRota)));
+    // uma ação principal + um menu com o resto: a tela abre no que importa
+    view.appendChild(el('div', { class: 'row gap8 mt12' },
+      el('button', {
+        class: 'btn big grow', onclick: () => telaCriarRota(rep)
+      }, lista.length ? rot('lapis', 'Editar rota de ' + diaRota) : rot('mais', 'Criar rota de ' + diaRota)),
+      lista.length ? el('button', {
+        class: 'btn big btn-sec', 'aria-label': 'Ferramentas da rota', onclick: () => ferramentasRota(lista)
+      }, ico('menu')) : null));
 
     // ── histórico do dia: quem foi atendido nesta data mas não está mais na rota
     // (mudou de dia, foi removido, ou o pedido entrou fora da rota). Fica no fim,
@@ -553,22 +549,6 @@
         }, ico('estrela', 'ic-sm'), 'Prioritários ' + nPrior)));
     }
 
-    // barra de reordenação: inverter a ordem toda / organizar por proximidade
-    if (lista.length > 1) {
-      view.appendChild(el('div', { class: 'row gap8 mt8' },
-        el('button', {
-          class: 'btn-mini grow', onclick: () => {
-            gravarOrdem(lista.slice().reverse());
-            toast('Ordem invertida.'); nav('hoje');
-          }
-        }, rot('sincronizar', 'Inverter ordem')),
-        el('button', {
-          class: 'btn-mini grow', onclick: () => organizarPorProximidade(lista)
-        }, rot('rota', 'Organizar por proximidade'))));
-      view.appendChild(el('p', { class: 'sub mt4' },
-        'Use ↑ ↓ para mudar a ordem. "Organizar por proximidade" mantém o cliente nº 1 ' +
-        'e enfileira os demais do mais perto para o mais longe.'));
-    }
 
     const listaEl = el('div', { class: 'col gap8 mt12' });
     view.appendChild(listaEl);
@@ -587,67 +567,51 @@
         ? 'Nenhum cliente prioritário na rota de ' + diaRota + '.'
         : 'Nenhuma prospecção na rota de ' + diaRota + '.'));
 
-    // quem já foi atendido desce para o fim da fila e não atrapalha mais a
-    // sequência de trabalho — mas guarda o número que tem na rota
-    const naTela = visiveis.slice().sort((a, b) =>
-      (visitaNoDia(a.id, dataDaAba) ? 1 : 0) - (visitaNoDia(b.id, dataDaAba) ? 1 : 0));
-    const restam = naTela.filter(c => !visitaNoDia(c.id, dataDaAba)).length;
-    if (restam && restam < naTela.length)
-      listaEl.appendChild(el('p', { class: 'sub' },
-        'Faltam ' + restam + ' — os já atendidos foram para o fim da lista.'));
+    // ── quem falta primeiro, quem já foi atendido no fim, separados por título
+    const pendentes = visiveis.filter(c => !visitaNoDia(c.id, dataDaAba));
+    const atendidos = visiveis.filter(c => visitaNoDia(c.id, dataDaAba));
 
-    naTela.forEach((c) => {
+    function cartaoPendente(c) {
       const i = lista.indexOf(c);
-      const v = visitaNoDia(c.id, dataDaAba);
       const st = statusDoCliente(c);
-      // já atendido = cartão compacto (nome, CNPJ e o que foi feito), para
-      // sobrar tela para quem ainda falta visitar
-      const card = el('div', {
-        class: 'card-visita st-' + st.k + (v ? ' feito compacto' : '') +
+      const nota = ultimaNota(c.id);
+      return el('div', {
+        class: 'card-visita st-' + st.k +
           (ehProspec(c) ? ' prospec' : '') + (ehPrioritario(c) ? ' prioritario' : ''),
         'data-id': c.id
       },
-        el('div', { class: 'row gap8' },
-          el('div', { class: 'grow', onclick: () => fichaCliente(c.id) },
-            el('strong', { class: 'row gap8' }, el('span', { class: 'ordem-num' }, String(i + 1)),
-              // no cartão compacto a bolinha do farol vem aqui (a linha de status some)
-              v ? farol(st.k) : null, marcaAlerta(c), nomeExib(c)),
-            (ehProspec(c) || ehPrioritario(c)) ? el('div', { class: 'row gap8 mt4' },
-              ehPrioritario(c) ? el('span', { class: 'badge prioritario' }, ico('estrela', 'ic-sm'), 'PRIORIDADE') : null,
-              ehProspec(c) ? el('span', { class: 'badge prospec' }, 'PROSPECÇÃO') : null) : null,
+        el('div', { class: 'cv-topo', onclick: () => fichaCliente(c.id) },
+          el('span', { class: 'ordem-num' }, String(i + 1)),
+          el('div', { class: 'grow' },
+            el('strong', { class: 'cv-nome' }, marcaAlerta(c), nomeExib(c)),
             c.cnpj_cpf ? el('div', { class: 'cnpj-chip mt4' },
-              el('span', { class: 'cnpj-rot' }, String(c.cnpj_cpf).replace(/\D/g, '').length === 11 ? 'CPF' : 'CNPJ'),
-              C.fmtCNPJ(c.cnpj_cpf)) : null,
-            v ? null : el('div', { class: 'col gap4 mt4' },
-              c.razao_social && c.razao_social !== nomeExib(c)
-                ? el('div', { class: 'sub' }, c.razao_social) : null,
-              el('div', { class: 'sub' }, [c.endereco, c.bairro, c.cidade, c.uf].filter(Boolean).join(' · ')),
-              (c.telefone || c.celular) ? el('div', { class: 'sub' }, c.telefone || c.celular) : null,
-              el('div', { class: 'sub' }, farol(st.k), st.rot),
-              el('div', { class: 'sub' }, 'Classe ' + (c.classe || 'B') +
-                ' · ciclo ' + freqDaClasse(c.classe || 'B') + 'd' +
-                ' · ' + txtDias(diasSemPedido(c), 'pedido') + ' · ' + txtDias(diasSemAtendimento(c), 'visita')),
-              (() => { const n = ultimaNota(c.id); return n ? el('div', { class: 'nota-previa' },
-                n.length > 90 ? n.slice(0, 90) + '…' : n) : null; })())),
-          v ? el('span', { class: 'badge ok' }, ico('check', 'ic-sm'),
-            (v.fez_pedido ? 'pedido' : 'visitado')) : null),
-        // o botão de visita continua sempre (dá para atender o mesmo cliente 2× no dia);
-        // acima dele fica a linha do que já foi registrado naquele dia
-        v ? el('div', { class: 'atendido-linha mt4' }, ico('check', 'ic-sm'),
-          'Atendido em ' + dataBR(v.data_visita) +
-          (v.fez_pedido ? ' · ' + C.fmtMoney(Number(v.valor_pedido || 0)) : ' · sem pedido')) : null,
-        el('div', { class: 'row gap8 mt8' },
-          el('button', { class: 'btn-mini verde grow', onclick: () => dialogoVisita(c, rep) }, rot('check', 'Registrar visita')),
+              el('span', { class: 'cnpj-rot' },
+                String(c.cnpj_cpf).replace(/\D/g, '').length === 11 ? 'CPF' : 'CNPJ'),
+              C.fmtCNPJ(c.cnpj_cpf)) : null),
+          el('span', { class: 'farol-grande ' + st.k, title: st.rot })),
+        (ehProspec(c) || ehPrioritario(c)) ? el('div', { class: 'row gap8 mt8 selos' },
+          ehPrioritario(c) ? el('span', { class: 'badge prioritario' }, ico('estrela', 'ic-sm'), 'PRIORIDADE') : null,
+          ehProspec(c) ? el('span', { class: 'badge prospec' }, 'PROSPECÇÃO') : null) : null,
+        el('div', { class: 'cv-info mt8', onclick: () => fichaCliente(c.id) },
+          el('div', null, ico('pin', 'ic-sm'),
+            [c.endereco, c.bairro, c.cidade].filter(Boolean).join(', ') || 'sem endereço'),
+          (c.telefone || c.celular) ? el('div', null, ico('telefone', 'ic-sm'), c.telefone || c.celular) : null,
+          el('div', null, ico('relogio', 'ic-sm'), st.rot +
+            ' · classe ' + C.classeDe(c) + ' (' + cicloDoCliente(c) + 'd)' +
+            ' · ' + txtDias(diasSemPedido(c), 'pedido'))),
+        nota ? el('div', { class: 'nota-previa mt8' }, nota.length > 90 ? nota.slice(0, 90) + '…' : nota) : null,
+        // ação principal: grande, sozinha, impossível de errar
+        el('button', {
+          class: 'btn big w100 btn-visita mt12', onclick: () => dialogoVisita(c, rep)
+        }, rot('check', 'Registrar visita')),
+        // ações secundárias: ícones pequenos, sem poluir
+        el('div', { class: 'cv-acoes mt8' },
           botaoMaps(c),
-          el('button', { class: 'btn-mini vermelho', onclick: () => removerDaRota(c) }, rot('fechar', 'Remover da rota'))),
-        // prioridade num toque, sem precisar abrir o cadastro
-        el('div', { class: 'row gap8 mt4' },
-          botaoPrioridade(c, () => nav('hoje')),
-          ehProspec(c) ? el('button', {
-            class: 'btn-mini vermelho', onclick: () => excluirProspeccao(c, () => nav('hoje'))
-          }, rot('lixeira', 'Excluir prospecção')) : null),
-        // ordem da rota: só pelos botões (o arrastar foi removido a pedido do uso em campo)
-        el('div', { class: 'row gap8 mt4' },
+          el('button', {
+            class: 'btn-mini' + (ehPrioritario(c) ? ' prioritario' : ''),
+            'aria-label': 'Prioridade', title: ehPrioritario(c) ? 'Tirar a prioridade' : 'Marcar como prioridade',
+            onclick: () => alternarPrioridade(c, () => nav('hoje'))
+          }, ico('estrela')),
           el('button', {
             class: 'btn-mini', disabled: i === 0 ? '' : null, 'aria-label': 'Subir na rota',
             onclick: () => { const n = lista.slice(); n.splice(i - 1, 0, n.splice(i, 1)[0]); gravarOrdem(n); nav('hoje'); }
@@ -657,17 +621,111 @@
             onclick: () => { const n = lista.slice(); n.splice(i + 1, 0, n.splice(i, 1)[0]); gravarOrdem(n); nav('hoje'); }
           }, ico('descer')),
           el('button', {
-            class: 'btn-mini', disabled: i === 0 ? '' : null,
-            onclick: () => { const n = lista.slice(); n.unshift(n.splice(i, 1)[0]); gravarOrdem(n); nav('hoje'); }
-          }, 'Primeiro'),
+            class: 'btn-mini', 'aria-label': 'Mais opções', onclick: () => maisOpcoes(c, i)
+          }, ico('menu'))));
+    }
+
+    // menu com o que raramente se usa — tira 4 botões de cada cartão
+    function maisOpcoes(c, i, jaAtendido) {
+      const m = modal(el('div', { class: 'col gap8' },
+        jaAtendido ? el('button', {
+          class: 'btn btn-sec w100', onclick: () => { m.fechar(); dialogoVisita(c, rep); }
+        }, rot('mais', 'Atender de novo')) : null,
+        el('button', {
+          class: 'btn btn-sec w100', disabled: i === 0 ? '' : null,
+          onclick: () => { const n = lista.slice(); n.unshift(n.splice(i, 1)[0]); gravarOrdem(n); m.fechar(); nav('hoje'); }
+        }, rot('subir', 'Mandar para o 1º lugar')),
+        el('button', {
+          class: 'btn btn-sec w100', disabled: i === lista.length - 1 ? '' : null,
+          onclick: () => { const n = lista.slice(); n.push(n.splice(i, 1)[0]); gravarOrdem(n); m.fechar(); nav('hoje'); }
+        }, rot('descer', 'Mandar para o último lugar')),
+        el('button', {
+          class: 'btn btn-sec w100', onclick: () => { m.fechar(); fichaCliente(c.id); }
+        }, rot('usuario', 'Abrir ficha do cliente')),
+        el('button', {
+          class: 'btn btn-sec w100 btn-perigo', onclick: () => { m.fechar(); removerDaRota(c); }
+        }, rot('fechar', 'Tirar da rota de ' + diaRota)),
+        ehProspec(c) ? el('button', {
+          class: 'btn btn-sec w100 btn-perigo',
+          onclick: () => { m.fechar(); excluirProspeccao(c, () => nav('hoje')); }
+        }, rot('lixeira', 'Excluir esta prospecção')) : null),
+        { titulo: nomeExib(c) });
+    }
+
+    function cartaoAtendido(c) {
+      const i = lista.indexOf(c);
+      const v = visitaNoDia(c.id, dataDaAba);
+      const st = statusDoCliente(c);
+      return el('div', {
+        class: 'card-visita feito compacto st-' + st.k + (ehProspec(c) ? ' prospec' : ''),
+        'data-id': c.id
+      },
+        el('div', { class: 'cv-topo', onclick: () => fichaCliente(c.id) },
+          el('span', { class: 'ordem-num' }, String(i + 1)),
+          el('div', { class: 'grow' },
+            el('strong', { class: 'cv-nome' }, nomeExib(c)),
+            c.cnpj_cpf ? el('div', { class: 'cnpj-chip mt4' },
+              el('span', { class: 'cnpj-rot' },
+                String(c.cnpj_cpf).replace(/\D/g, '').length === 11 ? 'CPF' : 'CNPJ'),
+              C.fmtCNPJ(c.cnpj_cpf)) : null),
+          el('span', { class: 'badge ok' }, ico('check', 'ic-sm'),
+            v.fez_pedido ? 'pedido' : 'visitado')),
+        el('div', { class: 'atendido-linha mt8' }, ico('check', 'ic-sm'),
+          'Atendido em ' + dataBR(v.data_visita) +
+          (v.fez_pedido ? ' · ' + C.fmtMoney(Number(v.valor_pedido || 0)) : ' · sem pedido')),
+        el('div', { class: 'cv-acoes mt8' },
+          botaoMaps(c),
+          // clicou sem querer? dá para desfazer, com confirmação
           el('button', {
-            class: 'btn-mini', disabled: i === lista.length - 1 ? '' : null,
-            onclick: () => { const n = lista.slice(); n.push(n.splice(i, 1)[0]); gravarOrdem(n); nav('hoje'); }
-          }, 'Último')));
-      listaEl.appendChild(card);
-    });
+            class: 'btn-mini vermelho grow', onclick: () => excluirVisita(v, c)
+          }, rot('retorno', 'Desfazer visita')),
+          el('button', {
+            class: 'btn-mini', 'aria-label': 'Mais opções', onclick: () => maisOpcoes(c, i, true)
+          }, ico('menu'))));
+    }
+
+    if (pendentes.length) {
+      listaEl.appendChild(el('div', { class: 'secao-rota' },
+        el('strong', null, 'A visitar'),
+        el('span', { class: 'badge' }, String(pendentes.length))));
+      pendentes.forEach(c => listaEl.appendChild(cartaoPendente(c)));
+    }
+    if (atendidos.length) {
+      listaEl.appendChild(el('div', { class: 'secao-rota feita mt16' },
+        el('strong', null, ico('check', 'ic-sm'), 'Já atendidos'),
+        el('span', { class: 'badge ok' }, String(atendidos.length))));
+      atendidos.forEach(c => listaEl.appendChild(cartaoAtendido(c)));
+    }
 
     pintarHistorico();
+  }
+
+  // tudo o que não é do dia a dia fica aqui, fora da tela principal
+  function ferramentasRota(lista) {
+    const m = modal(el('div', { class: 'col gap8' },
+      el('p', { class: 'sub' }, 'Ordem atual: ' + lista.length + ' cliente(s) em ' + diaRota + '.'),
+      lista.length > 1 ? el('button', {
+        class: 'btn w100', onclick: () => { m.fechar(); organizarPorProximidade(lista); }
+      }, rot('rota', 'Organizar por proximidade')) : null,
+      lista.length > 1 ? el('p', { class: 'sub' },
+        'Mantém quem está em 1º lugar e enfileira os demais do mais perto para o mais longe.') : null,
+      lista.length > 1 ? el('button', {
+        class: 'btn btn-sec w100 mt8', onclick: () => {
+          gravarOrdem(lista.slice().reverse());
+          toast('Ordem invertida.'); m.fechar(); nav('hoje');
+        }
+      }, rot('sincronizar', 'Inverter a ordem')) : null,
+      el('button', {
+        class: 'btn btn-sec w100 mt8 btn-perigo', onclick: async () => {
+          if (!(await confirmar('Resetar a rota de ' + diaRota + '?\n\nOs ' + lista.length +
+            ' cliente(s) voltam para a lista de disponíveis.',
+          { titulo: 'Resetar rota', ok: 'Resetar', perigo: true }))) return;
+          lista.forEach(c => DB.update('clientes', c.id, { rota_dia: null, rota_ordem: null }));
+          toast('Rota de ' + diaRota + ' zerada.');
+          m.fechar(); nav('hoje');
+        }
+      }, rot('lixeira', 'Resetar a rota de ' + diaRota))),
+      { titulo: 'Ferramentas da rota' });
   }
 
   // Reordena a rota do dia partindo do cliente que está em 1º lugar.
@@ -684,6 +742,29 @@
     gravarOrdem(r.ordem);
     toast('Rota organizada por proximidade' + (r.km ? ' · ~' + String(r.km).replace('.', ',') + ' km' : '') +
       (r.semCoord ? ' · ' + r.semCoord + ' sem localização foram para o fim' : '') + '.');
+    nav('hoje');
+  }
+
+  // ---- desfazer visita registrada por engano ----
+  // Visita com PEDIDO não é apagada por aqui: ela carrega comissão e
+  // faturamento. Nesse caso o caminho é excluir o pedido, na aba Pedidos.
+  async function excluirVisita(v, c) {
+    if (!v) return;
+    if (v.pedido_id || v.fez_pedido) {
+      return modal(el('div', null,
+        el('p', null, 'Esta visita tem um PEDIDO ligado a ela, com comissão e faturamento.'),
+        el('p', { class: 'sub mt8' },
+          'Para desfazer, exclua o pedido na aba Pedidos — a visita e a comissão ' +
+          'somem junto, sem deixar número errado no painel.'),
+        el('button', {
+          class: 'btn w100 mt12', onclick: () => { document.querySelectorAll('.ns-overlay').forEach(o => o.remove()); nav('pedidos'); }
+        }, rot('recibo', 'Ir para os pedidos'))), { titulo: 'Visita com pedido' });
+    }
+    if (!(await confirmar('Desfazer a visita de ' + nomeExib(c) + ' em ' + dataBR(v.data_visita) + '?\n\n' +
+      'Ela volta a aparecer como "a visitar" na rota.', { titulo: 'Desfazer visita', ok: 'Desfazer', perigo: true }))) return;
+    DB.remove('visitas', v.id);
+    recalcularCicloCliente(c.id);
+    toast('Visita desfeita. ' + nomeExib(c) + ' voltou para a fila.');
     nav('hoje');
   }
 
@@ -875,16 +956,16 @@
 
   function espelharVisitaLocal(c) {
     const d = new Date(hojeISO() + 'T12:00:00');
-    d.setDate(d.getDate() + (c.frequencia_dias || 60));
+    d.setDate(d.getDate() + cicloDoCliente(c));
     DB.update('clientes', c.id, { ultima_visita_em: hojeISO(), proxima_visita_prevista: d.toISOString().slice(0, 10) });
     DB.all('pendencias').filter(p => p.cliente_id === c.id && !p.resolvida_em)
       .forEach(p => DB.update('pendencias', p.id, { resolvida_em: new Date().toISOString() }));
   }
 
-  // Frequências da lógica do vendedor: A = 45d, B = 60d, C = 90d
-  function freqDaClasse(cl) {
-    return Number(DB.config('freq_classe_' + cl.toLowerCase(), { A: 45, B: 60, C: 90, D: 120 }[cl] || 45));
-  }
+  // CLASSE = CICLO: uma informação só. A 45 · B 60 · C 90 · D 120 dias.
+  // Não existe mais "frequência" separada — quem manda é sempre a classe.
+  const freqDaClasse = (cl) => C.cicloDaClasse(cl);
+  const cicloDoCliente = (c) => C.cicloDoCliente(c);
   function aplicarClasse(clienteId, cl) {
     const c = DB.byId('clientes', clienteId);
     if (!c) return;
@@ -895,7 +976,7 @@
       const d = new Date(base + 'T12:00:00'); d.setDate(d.getDate() + freq);
       prox = d.toISOString().slice(0, 10);
     }
-    DB.update('clientes', clienteId, { classe: cl, frequencia_dias: freq, proxima_visita_prevista: prox });
+    DB.update('clientes', clienteId, { classe: cl, proxima_visita_prevista: prox });
     return freq;
   }
 
@@ -907,7 +988,7 @@
     const ultPed = vs.filter(v => v.fez_pedido && Number(v.valor_pedido) > 0)
       .reduce((m, v) => (v.data_visita > m ? v.data_visita : m), '') || null;
     let prox = null;
-    if (ult) { const d = new Date(ult + 'T12:00:00'); d.setDate(d.getDate() + (c.frequencia_dias || 60)); prox = d.toISOString().slice(0, 10); }
+    if (ult) { const d = new Date(ult + 'T12:00:00'); d.setDate(d.getDate() + cicloDoCliente(c)); prox = d.toISOString().slice(0, 10); }
     DB.update('clientes', clienteId, { ultima_visita_em: ult, ultimo_pedido_em: ultPed, proxima_visita_prevista: prox });
   }
 
@@ -992,8 +1073,9 @@
 
   // ================= VIEW: CLIENTES (farol de prazo) =================
   // verde dentro do prazo · amarelo vence em até X dias · vermelho atrasada · cinza sem registro
-  let filtroClientes = 'todos';
-  let filtroTipo = 'todos'; // todos · clientes · prospec · prioridade
+  // estado dos filtros — fica vivo enquanto o app está aberto
+  const fClientes = {};
+  const fPedidos = {};
 
   // O ciclo que manda é o da CLASSE (A 45 · B 60 · C 90 · D 120). A data prevista
   // é recalculada a partir da última visita/pedido, então mudar a classe do cliente
@@ -1002,7 +1084,7 @@
     const base = c.ultima_visita_em || c.ultimo_pedido_em;
     if (!base) return c.proxima_visita_prevista || null;
     const d = new Date(base + 'T12:00:00');
-    d.setDate(d.getDate() + freqDaClasse(c.classe || 'B'));
+    d.setDate(d.getDate() + cicloDoCliente(c));
     return d.toISOString().slice(0, 10);
   }
   function statusCliente(c, hoje, avisoDias) {
@@ -1015,74 +1097,202 @@
     return { k: 'verde', rot: 'em dia · próxima ' + dataBR(c.proxima_visita_prevista), ordem: 2, sub: dif };
   }
 
+  // ================= FILTROS CENTRALIZADOS =================
+  // Em vez de várias fileiras de bolinhas espalhadas pela tela, existe UM
+  // botão "Filtros" que abre um painel com tudo, e uma linha de etiquetas
+  // mostrando o que está ligado (cada etiqueta sai com um toque).
+  const FILTROS_CLIENTES = [
+    { k: 'tipo', rotulo: 'Tipo de cadastro', padrao: 'todos', opcoes: [
+      ['todos', 'Todos'], ['clientes', 'Só clientes'], ['prospec', 'Só prospecções'] ] },
+    { k: 'prioridade', rotulo: 'Prioridade', padrao: 'todos', opcoes: [
+      ['todos', 'Todos'], ['sim', 'Só prioritários'], ['nao', 'Sem prioridade'] ] },
+    { k: 'potencial', rotulo: 'Potencial (último pedido)', padrao: 'todos', opcoes: [
+      ['todos', 'Todos'], ['muito_alto', 'Muito alto'], ['alto', 'Alto'],
+      ['normal', 'Normal'], ['baixo', 'Baixo'], ['sem', 'Ainda sem pedido'] ] },
+    { k: 'classe', rotulo: 'Classe (ciclo de visita)', padrao: 'todos', opcoes: [
+      ['todos', 'Todas'], ['A', 'A · 45 dias'], ['B', 'B · 60 dias'],
+      ['C', 'C · 90 dias'], ['D', 'D · 120 dias'] ] },
+    { k: 'status', rotulo: 'Status da visita', padrao: 'todos', opcoes: [
+      ['todos', 'Todos'], ['vermelho', 'Atrasados'], ['amarelo', 'Vencendo'],
+      ['verde', 'Em dia'], ['cinza', 'Sem registro'] ] },
+    { k: 'semVisita', rotulo: 'Dias sem visita', padrao: 'todos', opcoes: [
+      ['todos', 'Qualquer'], ['30', '30+ dias'], ['45', '45+ dias'],
+      ['60', '60+ dias'], ['90', '90+ dias'], ['120', '120+ dias'] ] },
+    { k: 'semPedido', rotulo: 'Dias sem pedido', padrao: 'todos', opcoes: [
+      ['todos', 'Qualquer'], ['30', '30+ dias'], ['60', '60+ dias'],
+      ['90', '90+ dias'], ['180', '180+ dias'] ] },
+    { k: 'mix', rotulo: 'Mix de produtos', padrao: 'todos', opcoes: [
+      ['todos', 'Todos'], ['incompleto', 'Sem mix completo'], ['completo', 'Com mix completo'] ] }
+  ];
+
+  const FILTROS_PEDIDOS = [
+    { k: 'faturado', rotulo: 'Faturamento no New Star', padrao: 'todos', opcoes: [
+      ['todos', 'Todos'], ['pendente', 'Falta faturar'], ['sim', 'Já faturado'] ] },
+    { k: 'mes', rotulo: 'Mês do pedido', padrao: 'todos', opcoes: [] }, // preenchido na hora
+    { k: 'tabela', rotulo: 'Tabela de preço', padrao: 'todos', opcoes: [
+      ['todos', 'Todas'], ['simples', 'Simples'], ['lucro', 'Lucro Presumido'] ] },
+    { k: 'obs', rotulo: 'Observação', padrao: 'todos', opcoes: [
+      ['todos', 'Todos'], ['sim', 'Só com observação'] ] },
+    { k: 'recebimento', rotulo: 'Registro de recebimento', padrao: 'todos', opcoes: [
+      ['todos', 'Todos'], ['sim', 'Com quem recebeu'], ['nao', 'Sem registro'] ] }
+  ];
+
+  // todo filtro começa no padrão (senão uma chave vazia esconderia tudo)
+  function zerarFiltros(defs, f) { defs.forEach(d => { if (f[d.k] == null) f[d.k] = d.padrao; }); return f; }
+  zerarFiltros(FILTROS_CLIENTES, fClientes);
+  zerarFiltros(FILTROS_PEDIDOS, fPedidos);
+
+  const filtrosAtivos = (defs, f) =>
+    defs.filter(d => f[d.k] && f[d.k] !== d.padrao);
+  const rotuloOpcao = (def, v) => {
+    const o = (def.opcoes || []).find(x => x[0] === v);
+    return o ? o[1] : v;
+  };
+
+  // linha compacta: botão Filtros (N) + etiquetas do que está ligado
+  function barraFiltros(defs, f, aoMudar) {
+    const box = el('div', { class: 'barra-filtros mt8' });
+    const pintar = () => {
+      const ativos = filtrosAtivos(defs, f);
+      repor(box,
+        el('div', { class: 'row gap8' },
+          el('button', {
+            class: 'btn-filtros' + (ativos.length ? ' ativo' : ''),
+            onclick: () => abrirPainelFiltros(defs, f, () => { pintar(); aoMudar(); })
+          }, ico('ajustes'), el('span', null, 'Filtros'),
+            ativos.length ? el('span', { class: 'cont-filtros' }, String(ativos.length)) : null),
+          ativos.length ? el('button', {
+            class: 'btn-link', onclick: () => {
+              defs.forEach(d => { f[d.k] = d.padrao; });
+              pintar(); aoMudar();
+            }
+          }, 'limpar tudo') : null),
+        ativos.length ? el('div', { class: 'etiquetas mt8' },
+          ativos.map(d => el('button', {
+            class: 'etiqueta', onclick: () => { f[d.k] = d.padrao; pintar(); aoMudar(); }
+          }, el('span', null, rotuloOpcao(d, f[d.k])), ico('fechar', 'ic-sm')))) : null);
+    };
+    pintar();
+    return box;
+  }
+
+  function abrirPainelFiltros(defs, f, aoAplicar) {
+    const wrap = el('div', { class: 'col gap8' });
+    const pintar = () => {
+      repor(wrap,
+        ...defs.map(d => el('div', { class: 'grupo-filtro' },
+          el('div', { class: 'grupo-filtro-tit' }, d.rotulo),
+          el('div', { class: 'opcoes-filtro' },
+            (d.opcoes || []).map(([v, r]) => el('button', {
+              class: 'op-filtro' + ((f[d.k] || d.padrao) === v ? ' ativo' : ''),
+              onclick: () => { f[d.k] = v; pintar(); }
+            }, r))))),
+        el('div', { class: 'row gap8 mt12' },
+          el('button', {
+            class: 'btn btn-sec grow', onclick: () => {
+              defs.forEach(d => { f[d.k] = d.padrao; }); pintar();
+            }
+          }, rot('sincronizar', 'Limpar')),
+          el('button', {
+            class: 'btn grow', onclick: () => { m.fechar(); aoAplicar(); }
+          }, rot('check', 'Aplicar'))));
+    };
+    pintar();
+    const m = modal(wrap, { titulo: 'Filtros' });
+  }
+
+  // ---- mix de produtos: cliente trabalha todas as linhas do catálogo? ----
+  function linhasDoCatalogo() {
+    return Array.from(new Set(DB.all('produtos')
+      .filter(p => p.ativo !== false).map(p => p.linha || 'Outros')));
+  }
+  function mixCompleto(clienteId, linhas) {
+    const meus = new Set(DB.all('cliente_produtos')
+      .filter(cp => cp.cliente_id === clienteId)
+      .map(cp => (DB.byId('produtos', cp.produto_id) || {}).linha || 'Outros'));
+    return linhas.every(l => meus.has(l));
+  }
+
+  // ---- potencial: calculado pelo valor do ÚLTIMO pedido concluído ----
+  function ultimoPedidoValor(clienteId) {
+    const ps = DB.all('pedidos')
+      .filter(p => p.cliente_id === clienteId && p.status === 'concluido')
+      .sort((a, b) => (b.data_pedido || '').localeCompare(a.data_pedido || ''));
+    return ps.length ? Number(ps[0].total_valor || 0) : null;
+  }
+  function potencialDoCliente(clienteId) {
+    return C.potencialCliente(ultimoPedidoValor(clienteId));
+  }
+  function seloPotencial(pot) {
+    if (!pot) return el('span', { class: 'badge pot pot-sem' }, 'SEM PEDIDO');
+    return el('span', { class: 'badge pot pot-' + pot },
+      ico('tendencia', 'ic-sm'), C.nomePotencial(pot).toUpperCase());
+  }
+
   function vClientes(view) {
     const repId = repEfetivoId();
     const hoje = hojeISO();
     const avisoDias = Number(DB.config('alerta_vencendo_dias', 7));
+    const linhas = linhasDoCatalogo();
     const busca = el('input', { class: 'input big', placeholder: 'Buscar por CNPJ, nome ou cidade…', oninput: render });
-    const tipoEl = el('div', { class: 'dias-scroll mt8' });
-    const chipsEl = el('div', { class: 'dias-scroll mt8' });
-    const lista = el('div', { class: 'col gap8 mt8' });
-    view.appendChild(el('h2', null, 'Clientes'));
-    view.appendChild(el('button', { class: 'btn btn-sec w100 mt8', onclick: () => novaProspeccao(render) },
-      rot('mais', 'Nova prospecção (possível cliente)')));
+    const lista = el('div', { class: 'col gap8 mt12' });
+    const resumo = el('div', { class: 'sub mt8' });
+
+    view.appendChild(el('div', { class: 'row space' },
+      el('h2', null, 'Clientes'),
+      el('button', { class: 'btn-mini', onclick: () => novaProspeccao(render) },
+        rot('mais', 'Prospecção'))));
     view.appendChild(el('div', { class: 'mt8' }, busca));
-    view.appendChild(tipoEl);
-    view.appendChild(chipsEl);
+    view.appendChild(barraFiltros(FILTROS_CLIENTES, fClientes, render));
+    view.appendChild(resumo);
     view.appendChild(lista);
 
     function render() {
       const q = busca.value.trim().toLowerCase();
       const qNum = q.replace(/\D/g, '');
+      const f = fClientes;
       const todos = clientesDoRep(repId)
-        .map(c => ({ c, st: statusCliente(c, hoje, avisoDias) }))
+        .map(c => ({ c, st: statusCliente(c, hoje, avisoDias), pot: potencialDoCliente(c.id) }))
         .filter(({ c }) => {
           if (!q) return true;
-          return (c.nome || '').toLowerCase().includes(q) || (c.cidade || '').toLowerCase().includes(q) ||
+          return (c.nome || '').toLowerCase().includes(q) ||
+            (c.nome_fantasia || '').toLowerCase().includes(q) ||
+            (c.razao_social || '').toLowerCase().includes(q) ||
+            (c.cidade || '').toLowerCase().includes(q) ||
             (qNum && (c.cnpj_cpf || '').replace(/\D/g, '').includes(qNum));
         });
-      const cont = { todos: todos.length, vermelho: 0, amarelo: 0, verde: 0, cinza: 0 };
-      todos.forEach(({ st }) => cont[st.k]++);
-      const nProspec = todos.filter(({ c }) => ehProspec(c)).length;
-      const nPrior = todos.filter(({ c }) => ehPrioritario(c)).length;
 
-      // 1ª fila de botões: que TIPO de cadastro mostrar (cliente × prospecção × prioridade)
-      tipoEl.innerHTML = '';
-      [['todos', 'Todos ' + todos.length, null],
-       ['clientes', 'Só clientes ' + (todos.length - nProspec), null],
-       ['prospec', 'Só prospecções ' + nProspec, 'alvo'],
-       ['prioridade', 'Prioritários ' + nPrior, 'estrela']].forEach(([k, rotulo, icone]) => {
-        tipoEl.appendChild(el('button', {
-          class: 'chip' + (k === 'prospec' ? ' prospec' : k === 'prioridade' ? ' prioritario' : '') +
-            (filtroTipo === k ? ' ativo' : ''),
-          onclick: () => { filtroTipo = k; render(); }
-        }, icone ? ico(icone, 'ic-sm') : null, rotulo));
-      });
-
-      // 2ª fila: o farol de prazo, como sempre foi
-      chipsEl.innerHTML = '';
-      [['todos', null, 'Todos ' + cont.todos], ['vermelho', 'vermelho', 'Atrasados ' + cont.vermelho],
-       ['amarelo', 'amarelo', 'Vencendo ' + cont.amarelo], ['verde', 'verde', 'Em dia ' + cont.verde],
-       ['cinza', 'cinza', 'Sem registro ' + cont.cinza]].forEach(([k, cor, rotulo]) => {
-        chipsEl.appendChild(el('button', {
-          class: 'chip' + (filtroClientes === k ? ' ativo' : ''),
-          onclick: () => { filtroClientes = k; render(); }
-        }, cor ? farol(cor) : null, rotulo));
-      });
-
-      // urgência primeiro: atrasados (mais atrasado no topo) → vencendo → em dia → sem registro
-      const vis = todos
-        .filter(({ c }) => filtroTipo === 'todos' ||
-          (filtroTipo === 'clientes' && !ehProspec(c)) ||
-          (filtroTipo === 'prospec' && ehProspec(c)) ||
-          (filtroTipo === 'prioridade' && ehPrioritario(c)))
-        .filter(({ st }) => filtroClientes === 'todos' || st.k === filtroClientes)
+      // os filtros se combinam: potencial alto + sem visita há 60 dias + prioridade
+      const vis = todos.filter(({ c, st, pot }) => {
+        if (f.tipo === 'clientes' && ehProspec(c)) return false;
+        if (f.tipo === 'prospec' && !ehProspec(c)) return false;
+        if (f.prioridade === 'sim' && !ehPrioritario(c)) return false;
+        if (f.prioridade === 'nao' && ehPrioritario(c)) return false;
+        if (f.potencial !== 'todos') {
+          if (f.potencial === 'sem') { if (pot) return false; }
+          else if (pot !== f.potencial) return false;
+        }
+        if (f.classe !== 'todos' && C.classeDe(c) !== f.classe) return false;
+        if (f.status !== 'todos' && st.k !== f.status) return false;
+        if (f.semVisita !== 'todos' && diasSemAtendimento(c) < Number(f.semVisita)) return false;
+        if (f.semPedido !== 'todos' && diasSemPedido(c) < Number(f.semPedido)) return false;
+        if (f.mix !== 'todos') {
+          const completo = mixCompleto(c.id, linhas);
+          if (f.mix === 'completo' && !completo) return false;
+          if (f.mix === 'incompleto' && completo) return false;
+        }
+        return true;
+      })
+        // urgência primeiro: atrasados (mais atrasado no topo) → vencendo → em dia
         .sort((a, b) => (a.st.ordem - b.st.ordem) || (a.st.sub - b.st.sub) ||
           (a.c.nome || '').localeCompare(b.c.nome || ''))
         .slice(0, 300);
 
+      resumo.textContent = vis.length + ' de ' + todos.length + ' cliente(s)' +
+        (filtrosAtivos(FILTROS_CLIENTES, f).length ? ' · filtros aplicados' : '');
+
       lista.innerHTML = '';
-      for (const { c, st } of vis) {
+      for (const { c, st, pot } of vis) {
         lista.appendChild(el('div', {
           class: 'item-lista st-' + st.k + (ehProspec(c) ? ' prospec' : '') +
             (ehPrioritario(c) ? ' prioritario' : '')
@@ -1090,16 +1300,22 @@
           el('div', { class: 'grow', onclick: () => fichaCliente(c.id) },
             el('div', { class: 'row space w100' },
               el('div', { class: 'row gap8' }, farol(st.k), marcaAlerta(c), el('strong', null, nomeExib(c))),
-              ehProspec(c)
-                ? el('span', { class: 'badge prospec' }, 'PROSPECÇÃO')
-                : el('span', { class: 'badge ' + (st.k === 'vermelho' ? 'erro' : st.k === 'amarelo' ? 'aviso' : st.k === 'verde' ? 'ok' : '') },
-                  st.k === 'verde' ? 'em dia' : st.k === 'cinza' ? 'sem registro' : st.rot)),
-            ehPrioritario(c) ? el('div', { class: 'mt4' },
-              el('span', { class: 'badge prioritario' }, ico('estrela', 'ic-sm'), 'PRIORIDADE')) : null,
-            el('span', { class: 'sub' }, 'Classe ' + (c.classe || 'B') + ' · ' +
+              el('span', { class: 'badge ' + (st.k === 'vermelho' ? 'erro' : st.k === 'amarelo' ? 'aviso' : st.k === 'verde' ? 'ok' : '') },
+                st.k === 'verde' ? 'em dia' : st.k === 'cinza' ? 'sem registro' : st.rot)),
+            // CNPJ sempre visível: não precisa abrir o cadastro para conferir
+            c.cnpj_cpf ? el('div', { class: 'cnpj-chip mt4' },
+              el('span', { class: 'cnpj-rot' },
+                String(c.cnpj_cpf).replace(/\D/g, '').length === 11 ? 'CPF' : 'CNPJ'),
+              C.fmtCNPJ(c.cnpj_cpf)) : null,
+            el('div', { class: 'row gap8 mt4 selos' },
+              ehProspec(c) ? el('span', { class: 'badge prospec' }, 'PROSPECÇÃO') : null,
+              ehPrioritario(c) ? el('span', { class: 'badge prioritario' },
+                ico('estrela', 'ic-sm'), 'PRIORIDADE') : null,
+              seloPotencial(pot)),
+            el('span', { class: 'sub mt4' },
+              'Classe ' + C.classeDe(c) + ' · ' + cicloDoCliente(c) + ' dias · ' +
               [c.cidade, c.uf].filter(Boolean).join(' - ') +
-              (c.rede ? ' · ' + c.rede : '') + ' · ciclo ' + freqDaClasse(c.classe || 'B') + 'd' +
-              (st.k === 'verde' || st.k === 'cinza' ? '' : ' · ' + st.rot))),
+              (c.rede ? ' · ' + c.rede : ''))),
           el('div', { class: 'row gap8 mt8' },
             botaoMaps(c),
             botaoPrioridade(c, render),
@@ -1107,7 +1323,8 @@
               class: 'btn-mini vermelho', onclick: (e) => { e.stopPropagation(); excluirProspeccao(c, render); }
             }, rot('lixeira', 'Excluir')) : null)));
       }
-      if (!vis.length) lista.appendChild(el('p', { class: 'vazio' }, 'Nenhum cliente neste filtro.'));
+      if (!vis.length) lista.appendChild(el('p', { class: 'vazio' },
+        'Nenhum cliente com esses filtros. Toque em "limpar tudo" para ver todos.'));
     }
     render();
   }
@@ -1120,7 +1337,7 @@
       .sort((a, b) => (b.data_visita || '').localeCompare(a.data_visita || ''));
     const pedidos = DB.all('pedidos').filter(p => p.cliente_id === id && p.status === 'concluido')
       .sort((a, b) => (b.data_pedido || '').localeCompare(a.data_pedido || ''));
-    const sug = c.frequencia_auto !== false ? C.sugestaoFrequencia(visitas, c.frequencia_dias || 49) : null;
+    const sug = c.frequencia_auto !== false ? C.sugestaoFrequencia(visitas, cicloDoCliente(c)) : null;
 
     // linhas que trabalha (chips com toque)
     const minhas = new Set(DB.all('cliente_produtos').filter(cp => cp.cliente_id === id).map(cp => cp.produto_id));
@@ -1224,26 +1441,27 @@
             e.currentTarget.classList.add('classe-ativa');
             toast(`Classe ${cl}: visita a cada ${freq} dias desde a última visita.`);
           }
-        }, cl + ' · ' + freqDaClasse(cl) + 'd')),
+        }, 'Classe ' + cl + ' · ' + freqDaClasse(cl) + 'd')),
         el('span', { class: 'badge' }, ico('pin', 'ic-sm'), c.regiao || C.regiaoDoCliente(c) || 'sem região')),
 
-      el('h4', { class: 'mt12' }, 'Ciclo de visitas'),
-      el('div', { class: 'sub' },
-        `A cada ${c.frequencia_dias || 49} dias · última: ${dataBR(c.ultima_visita_em)} · próxima: ${dataBR(c.proxima_visita_prevista)}` +
+      el('div', { class: 'sub mt4' },
+        `Classe ${C.classeDe(c)} = visita a cada ${cicloDoCliente(c)} dias · última: ` +
+        `${dataBR(c.ultima_visita_em) || '—'} · próxima: ${dataBR(proximaVisitaDe(c)) || '—'}` +
         (dif != null ? (dif < 0 ? ` · ${-dif}d atrasado` : ` · vence em ${dif}d`) : '')),
       el('label', { class: 'row gap8 mt4 sub' },
         el('input', {
           type: 'checkbox', checked: c.frequencia_auto !== false ? '' : null,
           onchange: (e) => DB.update('clientes', c.id, { frequencia_auto: e.target.checked })
-        }), 'Ajuste automático de frequência'),
+        }), 'Sugerir troca de classe automaticamente'),
 
-      sug ? el('div', { class: 'sugestao mt8' },
-        el('span', { class: 'row gap8' }, ico('lampada', 'ic-sm'), `${sug.motivo} — ${sug.tipo} ciclo para ${sug.para} dias?`),
+      sug && sug.classe && sug.classe !== C.classeDe(c) ? el('div', { class: 'sugestao mt8' },
+        el('span', { class: 'row gap8' }, ico('lampada', 'ic-sm'),
+          `${sug.motivo} — passar para a classe ${sug.classe} (${sug.para} dias)?`),
         el('button', {
           class: 'btn-mini', onclick: (e) => {
-            DB.update('clientes', c.id, { frequencia_dias: sug.para });
+            aplicarClasse(c.id, sug.classe);
             e.currentTarget.closest('.sugestao').remove();
-            toast('Ciclo ajustado para ' + sug.para + ' dias.');
+            toast('Cliente passou para a classe ' + sug.classe + ' (' + sug.para + ' dias).');
           }
         }, 'Aceitar')) : null,
 
@@ -1333,48 +1551,93 @@
   }
   function vPedidos(view) {
     const repId = repEfetivoId();
-    const busca = el('input', { class: 'input big', placeholder: 'Buscar por cliente, nº ou data (aaaa-mm-dd)…', oninput: render });
-    const lista = el('div', { class: 'col gap8 mt8' });
+    const busca = el('input', { class: 'input big', placeholder: 'Buscar por cliente, CNPJ, nº ou data…', oninput: render });
+    const lista = el('div', { class: 'col gap8 mt12' });
+    const resumo = el('div', { class: 'sub mt8' });
+
+    // meses que existem nos pedidos viram opções do filtro
+    const meses = Array.from(new Set(DB.all('pedidos')
+      .filter(p => !repId || p.representante_id === repId)
+      .map(p => (p.data_pedido || '').slice(0, 7)).filter(Boolean))).sort().reverse();
+    const defMes = FILTROS_PEDIDOS.find(d => d.k === 'mes');
+    defMes.opcoes = [['todos', 'Todos']].concat(meses.slice(0, 12).map(m => [m, rotuloMes(m)]));
+
     view.appendChild(el('div', { class: 'row space' },
       el('h2', null, 'Pedidos'),
-      el('button', { class: 'btn', onclick: () => window.NSPedido.novo() }, '+ Novo Pedido')));
+      el('button', { class: 'btn', onclick: () => window.NSPedido.novo() }, rot('mais', 'Novo pedido'))));
     view.appendChild(el('div', { class: 'mt8' }, busca));
+    view.appendChild(barraFiltros(FILTROS_PEDIDOS, fPedidos, render));
+    view.appendChild(resumo);
     view.appendChild(lista);
 
     function render() {
       const q = busca.value.trim().toLowerCase();
+      const qNum = q.replace(/\D/g, '');
+      const f = fPedidos;
       lista.innerHTML = '';
-      const peds = DB.all('pedidos')
+      const base = DB.all('pedidos')
         .filter(p => !repId || p.representante_id === repId)
-        .filter(p => p.status !== 'cancelado')
+        .filter(p => p.status !== 'cancelado');
+      const peds = base
         .filter(p => {
-          if (!q) return true;
           const cli = DB.byId('clientes', p.cliente_id) || {};
-          return (cli.nome || '').toLowerCase().includes(q) ||
-            String(p.numero || '').includes(q) || (p.data_pedido || '').includes(q);
+          if (q && !((cli.nome || '').toLowerCase().includes(q) ||
+            (cli.nome_fantasia || '').toLowerCase().includes(q) ||
+            String(p.numero || '').includes(q) || (p.data_pedido || '').includes(q) ||
+            (qNum && (cli.cnpj_cpf || '').replace(/\D/g, '').includes(qNum)))) return false;
+          if (f.faturado === 'sim' && !p.faturado_ns) return false;
+          if (f.faturado === 'pendente' && p.faturado_ns) return false;
+          if (f.mes !== 'todos' && (p.data_pedido || '').slice(0, 7) !== f.mes) return false;
+          if (f.tabela !== 'todos' && (p.tabela || 'simples') !== f.tabela) return false;
+          if (f.obs === 'sim' && !(p.observacoes || '').trim()) return false;
+          if (f.recebimento === 'sim' && !(p.assinante_nome || '').trim()) return false;
+          if (f.recebimento === 'nao' && (p.assinante_nome || '').trim()) return false;
+          return true;
         })
-        .sort((a, b) => (b.criado_em || '').localeCompare(a.criado_em || ''))
-        .slice(0, 60);
-      for (const p of peds) {
+        .sort((a, b) => (b.data_pedido || '').localeCompare(a.data_pedido || '') ||
+          (b.criado_em || '').localeCompare(a.criado_em || ''));
+
+      const total = peds.reduce((t, p) => t + Number(p.total_valor || 0), 0);
+      repor(resumo,
+        el('span', null, peds.length + ' de ' + base.length + ' pedido(s)'),
+        el('strong', null, ' · ' + C.fmtMoney(total)),
+        peds.length ? el('span', null, ' · ticket ' +
+          C.fmtMoney(C.ticketMedio(total, peds.length))) : null);
+
+      for (const p of peds.slice(0, 80)) {
         const cli = DB.byId('clientes', p.cliente_id) || {};
-        const card = el('div', { class: 'item-lista card-pedido' },
-          // bolinha laranja com a nota fiscal: pedido já faturado no New Star
-          p.faturado_ns ? el('span', { class: 'selo-nf', title: 'Faturado no New Star' },
-            ico('notaFiscal')) : null,
+        const temObs = !!(p.observacoes || '').trim();
+        lista.appendChild(el('div', { class: 'item-lista card-pedido' + (temObs ? ' com-obs' : '') },
+          el('div', { class: 'selos-pedido' },
+            // bolinha laranja com a nota fiscal: pedido já faturado no New Star
+            p.faturado_ns ? el('span', { class: 'selo-nf', title: 'Faturado no New Star' },
+              ico('notaFiscal')) : null,
+            temObs ? el('span', { class: 'selo-obs', title: 'Este pedido tem observação' }, '⚠️') : null),
           el('div', { class: 'grow', onclick: () => window.NSPedido.abrir(p.id) },
             el('div', { class: 'row space w100' },
-              el('strong', null, 'Nº ' + (p.numero || '—') + ' · ' + (cli.nome || '—')),
+              el('strong', null, 'Nº ' + (p.numero || '—') + ' · ' + nomeExib(cli)),
               el('strong', null, C.fmtMoney(Number(p.total_valor)))),
-            el('span', { class: 'sub' }, dataBR(p.data_pedido) + ' · ' + p.status +
-              (p.assinatura ? ' · assinado por ' + (p.assinante_nome || '—') : '') +
-              ` · ${p.total_unid_vendidas} un vendidas`)),
-          el('button', {
-            class: 'btn-mini w100 mt8' + (p.faturado_ns ? ' laranja' : ''),
-            onclick: () => marcarFaturado(p.id, render)
-          }, rot('notaFiscal', p.faturado_ns ? 'Faturado no New Star' : 'Marcar como faturado no New Star')));
-        lista.appendChild(card);
+            cli.cnpj_cpf ? el('div', { class: 'cnpj-chip mt4' },
+              el('span', { class: 'cnpj-rot' },
+                String(cli.cnpj_cpf).replace(/\D/g, '').length === 11 ? 'CPF' : 'CNPJ'),
+              C.fmtCNPJ(cli.cnpj_cpf)) : null,
+            el('span', { class: 'sub mt4' }, dataBR(p.data_pedido) + ' · ' +
+              (p.tabela === 'lucro' ? 'Lucro Presumido' : 'Simples') +
+              ' · ' + p.total_unid_vendidas + ' un' +
+              (p.assinante_nome ? ' · recebido por ' + p.assinante_nome : ''))),
+          el('div', { class: 'row gap8 mt8' },
+            el('button', {
+              class: 'btn-mini grow' + (p.faturado_ns ? ' laranja' : ''),
+              onclick: () => marcarFaturado(p.id, render)
+            }, rot('notaFiscal', p.faturado_ns ? 'Faturado' : 'Marcar faturado')),
+            temObs ? el('button', {
+              class: 'btn-mini obs', onclick: () => window.NSPedido.verObservacao(p)
+            }, el('span', { class: 'obs-emoji' }, '⚠️'), el('span', null, 'Observação')) : null)));
       }
-      if (!peds.length) lista.appendChild(el('p', { class: 'vazio' }, 'Nenhum pedido.'));
+      if (!peds.length) lista.appendChild(el('p', { class: 'vazio' },
+        'Nenhum pedido com esses filtros.'));
+      else if (peds.length > 80) lista.appendChild(el('p', { class: 'sub' },
+        'Mostrando os 80 mais recentes — use os filtros para refinar.'));
     }
     render();
   }
@@ -1544,6 +1807,7 @@
       el('span', { class: 'col' }, el('strong', null, titulo), desc ? el('span', { class: 'sub' }, desc) : null),
       ico('setaDir', 'ic-sm'));
     view.appendChild(item('grafico', 'Relatórios', 'Venda do dia, metas e redes', telaRelatorios));
+    view.appendChild(item('documento', 'Exportar em PDF e Excel', 'Clientes e pedidos, com ou sem filtros', telaExportar));
     view.appendChild(item('dinheiro', 'Financeiro', 'Comissões a receber e despesas', telaFinanceiro));
     view.appendChild(item('pin', 'Geocodificar clientes', 'Localizar endereços no mapa', telaGeocode));
     view.appendChild(item('paleta', 'Aparência', 'Cores do app', telaAparencia));
@@ -1575,10 +1839,282 @@
     meta_mes: 'meta_mes_valor', meta_dia: 'meta_dia_valor',
     meta_ano: 'meta_ano_valor', meta_novos: 'meta_novos_clientes'
   };
+  // meta padrão combinada com o gestor: R$ 200.000 por mês → R$ 2.400.000 no ano
+  const META_MES_PADRAO = 200000;
   function metaDoPeriodo(base, periodo) {
     const v = DB.config(base + '_' + periodo, null);
-    if (v === null || v === undefined || v === '') return Number(DB.config(META_PADRAO[base], 0)) || 0;
-    return Number(v) || 0;
+    if (v !== null && v !== undefined && v !== '' && Number(v)) return Number(v);
+    const geral = Number(DB.config(META_PADRAO[base], 0)) || 0;
+    if (geral) return geral;
+    if (base === 'meta_mes') return META_MES_PADRAO;
+    // a meta do ano é a do mês × 12 quando ninguém cadastrou uma diferente
+    if (base === 'meta_ano') return metaDoPeriodo('meta_mes', String(periodo).slice(0, 4) + '-01') * 12;
+    return 0;
+  }
+
+  // ---------- Excel (.xlsx) sem biblioteca ----------
+  // Um .xlsx é um ZIP com alguns XMLs dentro. Aqui o ZIP é montado sem
+  // compressão (método "store"), o que dispensa qualquer biblioteca e abre
+  // normalmente no Excel, no Google Planilhas e no LibreOffice.
+  const TABELA_CRC = (() => {
+    const t = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      t[n] = c >>> 0;
+    }
+    return t;
+  })();
+  function crc32(bytes) {
+    let c = 0xFFFFFFFF;
+    for (let i = 0; i < bytes.length; i++) c = TABELA_CRC[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+    return (c ^ 0xFFFFFFFF) >>> 0;
+  }
+  function zipStore(arquivos) {
+    const enc = new TextEncoder();
+    const partes = [], central = [];
+    let desloc = 0;
+    const u16 = (n) => [n & 255, (n >>> 8) & 255];
+    const u32 = (n) => [n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255];
+    for (const a of arquivos) {
+      const nome = enc.encode(a.nome);
+      const dados = enc.encode(a.texto);
+      const crc = crc32(dados);
+      const cab = [].concat([0x50, 0x4b, 0x03, 0x04], u16(20), u16(0), u16(0), u16(0), u16(0),
+        u32(crc), u32(dados.length), u32(dados.length), u16(nome.length), u16(0));
+      partes.push(new Uint8Array(cab), nome, dados);
+      central.push({ crc, tam: dados.length, nome, desloc });
+      desloc += cab.length + nome.length + dados.length;
+    }
+    const dirPartes = [];
+    let tamDir = 0;
+    for (const c of central) {
+      const cab = [].concat([0x50, 0x4b, 0x01, 0x02], u16(20), u16(20), u16(0), u16(0), u16(0), u16(0),
+        u32(c.crc), u32(c.tam), u32(c.tam), u16(c.nome.length),
+        u16(0), u16(0), u16(0), u16(0), u32(0), u32(c.desloc));
+      dirPartes.push(new Uint8Array(cab), c.nome);
+      tamDir += cab.length + c.nome.length;
+    }
+    const fim = new Uint8Array([].concat([0x50, 0x4b, 0x05, 0x06], u16(0), u16(0),
+      u16(central.length), u16(central.length), u32(tamDir), u32(desloc), u16(0)));
+    return new Blob(partes.concat(dirPartes, [fim]),
+      { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  }
+  const escX = (s) => String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/\u0000-\u0008|\u000b|\u000c|\u000e-\u001f/g, '');
+  const colLetra = (n) => {
+    let s = '';
+    while (n >= 0) { s = String.fromCharCode(65 + (n % 26)) + s; n = Math.floor(n / 26) - 1; }
+    return s;
+  };
+  // linhas: primeira é o cabeçalho; números viram número de verdade na planilha
+  function gerarXLSX(linhas, nomeAba) {
+    const xmlLinhas = linhas.map((linha, i) => {
+      const cels = linha.map((v, j) => {
+        const ref = colLetra(j) + (i + 1);
+        const num = typeof v === 'number' && Number.isFinite(v);
+        if (num) return `<c r="${ref}"><v>${v}</v></c>`;
+        return `<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${escX(v)}</t></is></c>`;
+      }).join('');
+      return `<row r="${i + 1}">${cels}</row>`;
+    }).join('');
+    const sheet = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+      (linhas.length ? `<sheetData>${xmlLinhas}</sheetData>` : '<sheetData/>') +
+      '</worksheet>';
+    return zipStore([
+      { nome: '[Content_Types].xml', texto: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+        '<Default Extension="xml" ContentType="application/xml"/>' +
+        '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+        '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' +
+        '</Types>' },
+      { nome: '_rels/.rels', texto: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>' +
+        '</Relationships>' },
+      { nome: 'xl/workbook.xml', texto: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+        `<sheets><sheet name="${escX((nomeAba || 'Dados').slice(0, 28))}" sheetId="1" r:id="rId1"/></sheets>` +
+        '</workbook>' },
+      { nome: 'xl/_rels/workbook.xml.rels', texto: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' +
+        '</Relationships>' },
+      { nome: 'xl/worksheets/sheet1.xml', texto: sheet }
+    ]);
+  }
+
+  // ---------- PDF de tabela (relatório) ----------
+  // Reaproveita o escritor de PDF do talão: paisagem, cabeçalho em faixa,
+  // linhas zebradas e quebra de página automática.
+  function gerarPDFTabela({ titulo, subtitulo, colunas, linhas }) {
+    return window.NSPDF.gerarRelatorio({ titulo, subtitulo, colunas, linhas });
+  }
+
+  // ================= EXPORTAR RELATÓRIOS (PDF e Excel) =================
+  // Exporta o que está na tela: se houver filtros ligados nas abas Clientes ou
+  // Pedidos, o arquivo sai só com aqueles registros. Também dá para exportar
+  // tudo, sem filtro nenhum.
+  function dadosClientes(usarFiltros) {
+    const repId = repEfetivoId();
+    const hoje = hojeISO();
+    const avisoDias = Number(DB.config('alerta_vencendo_dias', 7));
+    const linhasCat = linhasDoCatalogo();
+    const f = fClientes;
+    let lista = clientesDoRep(repId).map(c => ({
+      c, st: statusCliente(c, hoje, avisoDias), pot: potencialDoCliente(c.id)
+    }));
+    if (usarFiltros) lista = lista.filter(({ c, st, pot }) => {
+      if (f.tipo === 'clientes' && ehProspec(c)) return false;
+      if (f.tipo === 'prospec' && !ehProspec(c)) return false;
+      if (f.prioridade === 'sim' && !ehPrioritario(c)) return false;
+      if (f.prioridade === 'nao' && ehPrioritario(c)) return false;
+      if (f.potencial !== 'todos') {
+        if (f.potencial === 'sem') { if (pot) return false; }
+        else if (pot !== f.potencial) return false;
+      }
+      if (f.classe !== 'todos' && C.classeDe(c) !== f.classe) return false;
+      if (f.status !== 'todos' && st.k !== f.status) return false;
+      if (f.semVisita !== 'todos' && diasSemAtendimento(c) < Number(f.semVisita)) return false;
+      if (f.semPedido !== 'todos' && diasSemPedido(c) < Number(f.semPedido)) return false;
+      if (f.mix !== 'todos') {
+        const completo = mixCompleto(c.id, linhasCat);
+        if (f.mix === 'completo' && !completo) return false;
+        if (f.mix === 'incompleto' && completo) return false;
+      }
+      return true;
+    });
+    lista.sort((a, b) => (a.c.nome || '').localeCompare(b.c.nome || ''));
+    const colunas = [
+      { t: 'Cliente', peso: 2.4 }, { t: 'Nome fantasia', peso: 2 }, { t: 'CNPJ/CPF', peso: 1.5 },
+      { t: 'Cidade', peso: 1.3 }, { t: 'UF', peso: .4 }, { t: 'Telefone', peso: 1.2 },
+      { t: 'Situação', peso: .9 }, { t: 'Prioridade', peso: .8 }, { t: 'Classe', peso: .6 },
+      { t: 'Ciclo (dias)', peso: .8, dir: true }, { t: 'Status', peso: 1.2 },
+      { t: 'Última visita', peso: 1 }, { t: 'Próxima visita', peso: 1 },
+      { t: 'Dias sem visita', peso: .9, dir: true }, { t: 'Dias sem pedido', peso: .9, dir: true },
+      { t: 'Último pedido (R$)', peso: 1.1, dir: true }, { t: 'Potencial', peso: 1 },
+      { t: 'Mix completo', peso: .9 }, { t: 'Rede', peso: 1 }
+    ];
+    const linhas = lista.map(({ c, st, pot }) => [
+      c.nome || '', c.nome_fantasia || '', c.cnpj_cpf ? C.fmtCNPJ(c.cnpj_cpf) : '',
+      c.cidade || '', c.uf || '', c.telefone || c.celular || '',
+      ehProspec(c) ? 'Prospecção' : 'Cliente', ehPrioritario(c) ? 'SIM' : '',
+      C.classeDe(c), cicloDoCliente(c), st.rot,
+      dataBR(c.ultima_visita_em) === '—' ? '' : dataBR(c.ultima_visita_em),
+      dataBR(proximaVisitaDe(c)) === '—' ? '' : dataBR(proximaVisitaDe(c)),
+      diasSemAtendimento(c) >= 9999 ? '' : diasSemAtendimento(c),
+      diasSemPedido(c) >= 9999 ? '' : diasSemPedido(c),
+      ultimoPedidoValor(c.id) || '', pot ? C.nomePotencial(pot) : 'Sem pedido',
+      mixCompleto(c.id, linhasCat) ? 'SIM' : 'não', c.rede || ''
+    ]);
+    return { colunas, linhas, titulo: 'Clientes', n: linhas.length };
+  }
+
+  function dadosPedidos(usarFiltros) {
+    const repId = repEfetivoId();
+    const f = fPedidos;
+    let peds = DB.all('pedidos')
+      .filter(p => !repId || p.representante_id === repId)
+      .filter(p => p.status !== 'cancelado');
+    if (usarFiltros) peds = peds.filter(p => {
+      if (f.faturado === 'sim' && !p.faturado_ns) return false;
+      if (f.faturado === 'pendente' && p.faturado_ns) return false;
+      if (f.mes !== 'todos' && (p.data_pedido || '').slice(0, 7) !== f.mes) return false;
+      if (f.tabela !== 'todos' && (p.tabela || 'simples') !== f.tabela) return false;
+      if (f.obs === 'sim' && !(p.observacoes || '').trim()) return false;
+      if (f.recebimento === 'sim' && !(p.assinante_nome || '').trim()) return false;
+      if (f.recebimento === 'nao' && (p.assinante_nome || '').trim()) return false;
+      return true;
+    });
+    peds.sort((a, b) => (b.data_pedido || '').localeCompare(a.data_pedido || ''));
+    const colunas = [
+      { t: 'Nº', peso: .6, dir: true }, { t: 'Data', peso: 1 }, { t: 'Cliente', peso: 2.6 },
+      { t: 'CNPJ/CPF', peso: 1.5 }, { t: 'Cidade', peso: 1.2 }, { t: 'Tabela', peso: 1.1 },
+      { t: 'Un. vendidas', peso: .9, dir: true }, { t: 'Desconto %', peso: .8, dir: true },
+      { t: 'Total (R$)', peso: 1.1, dir: true }, { t: 'Comissão %', peso: .8, dir: true },
+      { t: 'Comissão (R$)', peso: 1, dir: true }, { t: 'Prazo', peso: 1 },
+      { t: 'Faturado New Star', peso: 1 }, { t: 'Recebido por', peso: 1.4 },
+      { t: 'Observação', peso: 2 }
+    ];
+    const linhas = peds.map(p => {
+      const cli = DB.byId('clientes', p.cliente_id) || {};
+      const v = DB.all('visitas').find(x => x.pedido_id === p.id) || {};
+      return [
+        p.numero || '', dataBR(p.data_pedido), cli.nome || '',
+        cli.cnpj_cpf ? C.fmtCNPJ(cli.cnpj_cpf) : '', cli.cidade || '',
+        p.tabela === 'lucro' ? 'Lucro Presumido' : 'Simples',
+        Number(p.total_unid_vendidas || 0), Number(p.desconto_pct || 0),
+        Number(p.total_valor || 0), Number(v.comissao_pct || 0), Number(v.comissao_valor || 0),
+        p.condicao_pagamento || '', p.faturado_ns ? 'SIM' : 'não',
+        p.assinante_nome || '', (p.observacoes || '').replace(/\s+/g, ' ')
+      ];
+    });
+    return { colunas, linhas, titulo: 'Pedidos', n: linhas.length };
+  }
+
+  function telaExportar() {
+    const wrap = el('div');
+    const m = modal(wrap, { titulo: 'Exportar dados', full: true });
+    let usarFiltros = true;
+    const pintar = () => {
+      const cli = dadosClientes(usarFiltros);
+      const ped = dadosPedidos(usarFiltros);
+      const nFiltrosCli = filtrosAtivos(FILTROS_CLIENTES, fClientes).length;
+      const nFiltrosPed = filtrosAtivos(FILTROS_PEDIDOS, fPedidos).length;
+      const quando = new Date().toLocaleString('pt-BR');
+      const sufixo = hojeISO().replace(/-/g, '');
+
+      const baixarPDF = (d) => {
+        const blob = window.NSPDF.gerarRelatorio({
+          titulo: 'NEW STAR — ' + d.titulo,
+          subtitulo: (usarFiltros ? 'Com os filtros do app' : 'Relatório completo, sem filtros') +
+            ' · ' + sessao().rep.nome + ' · ' + quando,
+          colunas: d.colunas, linhas: d.linhas
+        });
+        window.NSUI.baixar(blob, d.titulo.toLowerCase() + '-' + sufixo + '.pdf');
+        toast(d.titulo + ' em PDF: ' + d.n + ' registro(s).');
+      };
+      const baixarXLS = (d) => {
+        const blob = gerarXLSX([d.colunas.map(c => c.t)].concat(d.linhas), d.titulo);
+        window.NSUI.baixar(blob, d.titulo.toLowerCase() + '-' + sufixo + '.xlsx');
+        toast(d.titulo + ' em Excel: ' + d.n + ' registro(s).');
+      };
+
+      const bloco = (d, nFiltros) => el('div', { class: 'card-export' },
+        el('div', { class: 'row space w100' },
+          el('strong', null, d.titulo),
+          el('span', { class: 'badge' }, d.n + ' registro(s)')),
+        el('p', { class: 'sub mt4' }, usarFiltros && nFiltros
+          ? nFiltros + ' filtro(s) da aba ' + d.titulo + ' aplicados'
+          : 'Sem filtro — todos os registros'),
+        el('div', { class: 'row gap8 mt8' },
+          el('button', { class: 'btn grow', onclick: () => baixarPDF(d) }, rot('documento', 'PDF')),
+          el('button', { class: 'btn btn-sec grow', onclick: () => baixarXLS(d) }, rot('grafico', 'Excel'))));
+
+      repor(wrap,
+        el('div', { class: 'col gap8' },
+          el('button', {
+            class: 'card-escolha' + (usarFiltros ? ' ativo' : ''),
+            onclick: () => { usarFiltros = true; pintar(); }
+          }, el('strong', null, 'Usar os filtros do app'),
+            el('span', { class: 'sub' }, 'Exporta só o que está aparecendo nas abas Clientes e Pedidos')),
+          el('button', {
+            class: 'card-escolha' + (!usarFiltros ? ' ativo' : ''),
+            onclick: () => { usarFiltros = false; pintar(); }
+          }, el('strong', null, 'Exportar tudo'),
+            el('span', { class: 'sub' }, 'Relatório completo, ignorando os filtros'))),
+        el('h4', { class: 'mt16' }, 'Escolha o arquivo'),
+        el('div', { class: 'col gap8 mt8' }, bloco(cli, nFiltrosCli), bloco(ped, nFiltrosPed)),
+        el('p', { class: 'sub mt12' },
+          'O PDF sai em paisagem, com cabeçalho e uma linha por registro. ' +
+          'O Excel (.xlsx) sai com uma coluna por informação, pronto para filtrar e somar. ' +
+          'Os arquivos são gerados no próprio aparelho e funcionam sem internet.'));
+    };
+    pintar();
   }
 
   function telaRelatorios() {
@@ -1737,9 +2273,15 @@
         const inMetaDia = el('input', { class: 'input', type: 'number', inputmode: 'decimal', placeholder: 'Meta do DIA em R$ (vazio = mês ÷ dias úteis)', value: metaDiaManual || '' });
         const inMetaNovos = el('input', { class: 'input', type: 'number', inputmode: 'numeric', placeholder: 'Meta de NOVOS CLIENTES no mês (ex.: 10)', value: metaNovos || '' });
         const inMetaAno = el('input', { class: 'input', type: 'number', inputmode: 'decimal', placeholder: 'Meta de ' + ano + ' em R$ (ex.: 2400000)', value: metaAno || '' });
+        // digitou a meta do mês? a do ano acompanha sozinha (mês × 12)
+        inMeta.addEventListener('input', () => {
+          const v = Number(inMeta.value) || 0;
+          if (v) inMetaAno.value = String(v * 12);
+        });
         wrap.appendChild(el('h4', { class: 'mt16' }, 'Cadastrar metas de ' + rotuloMes(mes)));
         wrap.appendChild(el('p', { class: 'sub mt4' },
-          'A meta vale só para este mês. Os meses seguintes começam com o mesmo valor até você trocar — e os meses já fechados continuam com a meta que tinham.'));
+          'A meta vale só para este mês. Os meses seguintes começam com o mesmo valor até você trocar — e os meses já fechados continuam com a meta que tinham. ' +
+          'A meta do ANO acompanha a do mês (mês × 12): R$ 200.000 por mês = R$ 2.400.000 no ano.'));
         wrap.appendChild(el('div', { class: 'col gap8 mt8' }, inMeta, inMetaDia, inMetaAno, inMetaNovos,
           el('button', {
             class: 'btn w100', onclick: () => {
@@ -2066,7 +2608,7 @@
             endereco: campos.endereco.value.trim() || null,
             contato: campos.contato.value.trim() || null,
             telefone: campos.telefone.value.trim() || null,
-            status: 'prospect', classe: 'B', frequencia_dias: freqDaClasse('B'),
+            status: 'prospect', classe: 'B',
             geocoding_status: 'pendente'
           });
           mm.fechar();
@@ -2104,8 +2646,7 @@
     const statusSel = el('select', { class: 'input' },
       ['ativo', 'prospect', 'inativo'].map(st => el('option', { value: st, selected: (c.status || 'ativo') === st ? '' : null }, st)));
     const classeSel = el('select', { class: 'input' },
-      [['A', 'A — prioridade máxima (35d)'], ['B', 'B — normal (60d)'], ['C', 'C — baixa (90d)'], ['D', 'D — mínima (120d; reencaixa por último)']]
-        .map(([v, r]) => el('option', { value: v, selected: (c.classe || 'B') === v ? '' : null }, r)));
+      C.CLASSES.map(([v, r]) => el('option', { value: v, selected: C.classeDe(c) === v ? '' : null }, r)));
     // qual tabela de preço o vendedor pode escolher neste cliente (evita erro no pedido)
     const prioSel = el('select', { class: 'input' },
       el('option', { value: '', selected: c.prioridade ? null : '' }, 'Não'),
@@ -2128,7 +2669,6 @@
       inp('condicao_pagamento_padrao', 'Prazo de pagamento deste cliente (ex.: 30 dias)'),
       inp('semana_padrao', 'Semana do ciclo (1-7)', 'number'),
       el('label', { class: 'campo' }, el('span', { class: 'sub' }, 'Dia da semana'), diaSel),
-      inp('frequencia_dias', 'Frequência (dias)', 'number'),
       el('label', { class: 'campo' }, el('span', { class: 'sub' }, 'Representante'), repSel),
       el('label', { class: 'campo' }, el('span', { class: 'sub' }, 'Status'), statusSel),
       el('label', { class: 'campo' }, el('span', { class: 'sub' }, 'Classe (A/B/C)'), classeSel),
@@ -2145,13 +2685,12 @@
           };
           for (const [k, elInp] of Object.entries(campos)) {
             let v = elInp.value.trim();
-            if (['semana_padrao', 'frequencia_dias', 'recebimento_dias'].includes(k))
+            if (['semana_padrao', 'recebimento_dias'].includes(k))
               v = v === '' ? null : parseInt(v, 10);
             body[k] = v === '' ? null : v;
           }
           if (body.rede && String(body.rede).toUpperCase().includes('CLAMED') && !body.recebimento_dias)
             body.recebimento_dias = 45;
-          if (body.frequencia_dias == null) body.frequencia_dias = 60;
           if (body.recebimento_dias == null) body.recebimento_dias = 0;
           const antigo = id ? DB.byId('clientes', id) : null;
           if (antigo && (antigo.endereco !== body.endereco || antigo.cidade !== body.cidade || antigo.cep !== body.cep))
@@ -2381,7 +2920,7 @@
 
   // ================= BOOT =================
   window.NSApp = {
-    sessao, nav, recalcularCicloCliente, marcarFaturado, avisarPendentesNewStar,
+    sessao, nav, recalcularCicloCliente, marcarFaturado, avisarPendentesNewStar, editarCliente,
     // Pedido digitado para quem não estava na rota: o cliente entra na rota de
     // HOJE já atendido, e o atendimento conta na meta de visitação.
     aoConcluirPedido(pedido) {

@@ -570,5 +570,71 @@
     return new Promise((res) => cv.toBlob(res, 'image/png'));
   }
 
-  window.NSPDF = { gerarPDFPedido, gerarCupomPedido, gerarCupomImagem };
+  // ---------- PDF de relatório (tabela) ----------
+  // Paisagem, faixa de cabeçalho, linhas zebradas e quebra de página sozinha.
+  // Serve para exportar qualquer listagem do app (clientes, pedidos…).
+  function gerarRelatorio({ titulo, subtitulo, colunas, linhas }) {
+    const LW = 842, LH = 595, LM = 28;   // A4 paisagem
+    const pdf = PDFWriter();
+    const pages = [];
+    let pg = Page(), y = LH - LM;
+    const util = LW - 2 * LM;
+    const somaPesos = colunas.reduce((t, c) => t + (c.peso || 1), 0);
+    const larg = colunas.map(c => util * (c.peso || 1) / somaPesos);
+
+    const cabecalho = () => {
+      pg.rect(LM, y - 30, util, 30, true);
+      pg.text(LM + 8, y - 12, titulo, 13, true);
+      if (subtitulo) pg.text(LM + 8, y - 24, subtitulo, 7.5);
+      pg.text(LW - LM - 8, y - 12, new Date().toLocaleString('pt-BR'), 7.5, false, 'right');
+      y -= 38;
+      pg.rect(LM, y - 14, util, 14, true);
+      let x = LM;
+      colunas.forEach((c, i) => {
+        pg.text(c.dir ? x + larg[i] - 4 : x + 4, y - 10, c.t, 7.5, true, c.dir ? 'right' : undefined);
+        x += larg[i];
+      });
+      y -= 14;
+    };
+    cabecalho();
+
+    let zebra = false;
+    for (const linha of linhas) {
+      if (y < LM + 26) { pages.push(pg); pg = Page(); y = LH - LM; cabecalho(); zebra = false; }
+      if (zebra) pg.rect(LM, y - 13, util, 13, true);
+      zebra = !zebra;
+      let x = LM;
+      colunas.forEach((c, i) => {
+        const v = linha[i] == null ? '' : String(linha[i]);
+        // corta o que não cabe, para não invadir a coluna vizinha
+        let txt = v;
+        while (txt && textWidth(txt, 7.5, false) > larg[i] - 8) txt = txt.slice(0, -1);
+        if (txt !== v && txt.length > 1) txt = txt.slice(0, -1) + '…';
+        pg.text(c.dir ? x + larg[i] - 4 : x + 4, y - 9, txt, 7.5, false, c.dir ? 'right' : undefined);
+        x += larg[i];
+      });
+      y -= 13;
+    }
+    if (!linhas.length) { pg.text(LM + 4, y - 10, 'Nenhum registro com esses filtros.', 8); y -= 13; }
+    pg.text(LM, LM - 10, 'NEW STAR · ' + linhas.length + ' registro(s)', 7);
+    pages.push(pg);
+
+    // ids fixos: 1 catálogo · 2 pages · 3 F1 · 4 F2 · depois página+conteúdo aos pares
+    const nPag = pages.length;
+    pdf.add('<< /Type /Catalog /Pages 2 0 R >>');
+    const kids = pages.map((_, i) => (5 + i * 2) + ' 0 R').join(' ');
+    pdf.add('<< /Type /Pages /Kids [' + kids + '] /Count ' + nPag + ' >>');
+    pdf.add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
+    pdf.add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
+    pages.forEach((p) => {
+      const idPag = pdf.objs.length + 1;
+      pdf.add('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + LW + ' ' + LH + '] ' +
+        '/Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ' + (idPag + 1) + ' 0 R >>');
+      const st = p.stream();
+      pdf.add('<< /Length ' + st.length + ' >>\nstream\n' + st + '\nendstream');
+    });
+    return pdf.build();
+  }
+
+  window.NSPDF = { gerarPDFPedido, gerarCupomPedido, gerarCupomImagem, gerarRelatorio };
 })();

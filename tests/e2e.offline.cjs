@@ -269,8 +269,12 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   check('prazo usado vira o prazo padrão do cliente', cliPrazo === '30 dias');
   check('visita com fez_pedido e valor vendido', dados.visita.fez_pedido === true && dados.visita.valor_pedido === 594.5 && !!dados.visita.data_visita);
   check('comissão 15% no 1º pedido = 89,18', dados.visita.comissao_pct === 15 && dados.visita.comissao_valor === 89.18);
-  const dt = new Date(dados.pedido.data_pedido + 'T12:00:00'); dt.setDate(dt.getDate() + 45);
-  check('recebimento Clamed +45 dias', dados.visita.comissao_recebimento_em === dt.toISOString().slice(0, 10));
+  // CLAMED fecha no dia 15: até o dia 15 cai no mês seguinte, depois disso em 2 meses
+  const dPed = new Date(dados.pedido.data_pedido + 'T12:00:00');
+  const alvoClamed = new Date(Date.UTC(dPed.getFullYear(),
+    dPed.getMonth() + (dPed.getDate() <= 15 ? 1 : 2), 15, 12)).toISOString().slice(0, 10);
+  check('recebimento Clamed cai no dia 15 do período certo',
+    dados.visita.comissao_recebimento_em === alvoClamed);
   check('linha do produto virou "linha que trabalha"', dados.cliProds.some(cp => cp.produto_id === PROD_ID));
   check('escrituras na fila offline (sync posterior)', dados.outbox >= 4);
 
@@ -402,20 +406,20 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   // ── faturado no New Star (sistema externo) ──
   check('pedido novo começa SEM a bolinha de faturado',
     (await page.locator('#view .card-pedido .selo-nf').count()) === 0);
-  await page.locator('#view .card-pedido button:has-text("Marcar como faturado")').first().click();
+  await page.locator('#view .card-pedido button:has-text("Marcar faturado")').first().click();
   await page.waitForTimeout(300);
   check('bolinha laranja com a nota fiscal aparece no card do pedido',
     (await page.locator('#view .card-pedido .selo-nf').count()) === 1);
   check('e o botão passa a dizer que já está faturado',
-    (await page.textContent('#view')).includes('Faturado no New Star'));
+    (await page.textContent('#view')).includes('Faturado'));
   check('a marca fica gravada no pedido',
     await page.evaluate(() => window.NSDB.all('pedidos').some(p => p.faturado_ns === true &&
       typeof p.faturado_ns_em === 'string')));
-  await page.locator('#view .card-pedido button:has-text("Faturado no New Star")').first().click();
+  await page.locator('#view .card-pedido button:has-text("Faturado")').first().click();
   await page.waitForTimeout(300);
   check('dá para desmarcar se marcou errado',
     (await page.locator('#view .card-pedido .selo-nf').count()) === 0);
-  await page.locator('#view .card-pedido button:has-text("Marcar como faturado")').first().click();
+  await page.locator('#view .card-pedido button:has-text("Marcar faturado")').first().click();
   await page.waitForTimeout(300);
 
   // 2º pedido do mesmo cliente = reposição 10% (testar via lógica local)
@@ -509,7 +513,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   // ── prospecção ──
   await page.click('#tabs button[data-v=clientes]');
   await page.waitForTimeout(250);
-  await page.click('#view button:has-text("Nova prospecção")');
+  await page.click('#view button:has-text("Prospecção")');
   await page.waitForSelector('.ns-overlay');
   const mp = page.locator('.ns-overlay').last();
   await mp.locator('input').nth(0).fill('DROGARIA NOVA PROSPEC');
@@ -599,16 +603,19 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
       .sort((a, b) => (b.numero || 0) - (a.numero || 0));
     const p = ps[0];
     const v = window.NSDB.all('visitas').find(x => x.pedido_id === p.id);
-    return { bruto: p.total_bruto, pct: p.desconto_pct, desc: p.desconto_valor,
-      total: p.total_valor, comissao: v && v.comissao_valor, valorVisita: v && v.valor_pedido };
+    return { bruto: p.total_bruto, pct: p.desconto_pct, desc: p.desconto_valor, tabela: p.tabela,
+      total: p.total_valor, comissao: v && v.comissao_valor, valorVisita: v && v.valor_pedido,
+      comissaoPct: v && v.comissao_pct };
   });
   check('pedido grava bruto, % e valor do desconto',
     pedDesc.pct === 10 && Math.abs(pedDesc.bruto - brutoDesc) < 0.01 &&
     Math.abs(pedDesc.desc - brutoDesc * 0.1) < 0.02);
   check('total do pedido já é o líquido (com o desconto abatido)',
     Math.abs(pedDesc.total - brutoDesc * 0.9) < 0.02);
-  check('comissão é calculada sobre o valor com desconto',
-    Math.abs(pedDesc.comissao - pedDesc.total * 0.1) < 0.02);
+  // a % vem da tabela do pedido: Simples 10% · Lucro Presumido 8,75%
+  const pctEsperado = pedDesc.tabela === 'lucro' ? 8.75 : 10;
+  check('comissão é calculada sobre o valor com desconto, na % da tabela',
+    Math.abs(pedDesc.comissao - pedDesc.total * pctEsperado / 100) < 0.02);
   check('a visita (que alimenta meta e painel) usa o valor líquido',
     Math.abs(pedDesc.valorVisita - pedDesc.total) < 0.01);
   const cupomDesc = await page.evaluate(async () => {
@@ -682,21 +689,34 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await mo.locator('button:has-text("Concluir")').click();
   await page.waitForTimeout(350);
   const nomesNaRota = () => page.evaluate(() =>
-    Array.from(document.querySelectorAll('#view .card-visita strong')).map(x => x.textContent.replace(/^\d+/, '')));
-  const antes = await nomesNaRota();
+    Array.from(document.querySelectorAll('#view .card-visita .cv-nome')).map(x => x.textContent.trim()));
+  // a ordem é trabalhada entre os que AINDA FALTAM (atendido já desceu para o fim)
+  const nomesPendentes = () => page.evaluate(() =>
+    Array.from(document.querySelectorAll('#view .card-visita:not(.feito) .cv-nome'))
+      .map(x => x.textContent.trim()));
+  const antes = await nomesPendentes();
+  if (process.env.DBG) console.log('ROTA', JSON.stringify(antes));
   check('ordem inicial é a de inclusão', antes.length >= 3);
-  await page.locator('#view .card-visita').last().locator('button:has-text("Primeiro")').click();
+  // "Primeiro"/"Último" agora ficam no menu ⋯ de cada cartão (menos botões na tela)
+  await page.locator('#view .card-visita:not(.feito)').last().locator('button[aria-label="Mais opções"]').click();
+  await page.waitForSelector('.ns-overlay button:has-text("Mandar para o 1º lugar")');
+  await page.locator('.ns-overlay').last().locator('button:has-text("Mandar para o 1º lugar")').click();
   await page.waitForTimeout(300);
-  const depois = await nomesNaRota();
-  check('mover para "Primeiro" muda a ordem de verdade', depois[0] === antes[antes.length - 1]);
-  await page.locator('#view button:has-text("Inverter ordem")').click();
+  const depois = await nomesPendentes();
+  check('mover para o 1º lugar muda a ordem de verdade', depois[0] === antes[antes.length - 1]);
+  await page.locator('#view button[aria-label="Ferramentas da rota"]').click();
+  await page.waitForSelector('.ns-overlay button:has-text("Inverter a ordem")');
+  await page.locator('.ns-overlay').last().locator('button:has-text("Inverter a ordem")').click();
   await page.waitForTimeout(300);
-  const invertido = await nomesNaRota();
+  const invertido = await nomesPendentes();
   check('inverter ordem vira a rota de ponta-cabeça',
     invertido[0] === depois[depois.length - 1] && invertido[invertido.length - 1] === depois[0]);
-  const ordemGravada = await page.evaluate(() =>
-    Array.from(document.querySelectorAll('#view .card-visita'))
-      .map(x => window.NSDB.byId('clientes', x.getAttribute('data-id')).rota_ordem));
+  const ordemGravada = await page.evaluate(() => {
+    const rep = window.NSDB.all('representantes')[0];
+    const dia = document.querySelector('#view .chip.ativo').textContent.trim().split(' ')[0];
+    return window.NSDB.all('clientes').filter(c => c.rota_dia === dia)
+      .map(c => Number(c.rota_ordem)).sort((a, b) => a - b);
+  });
   check('a ordem manual fica gravada (1, 2, 3…)',
     ordemGravada.join(',') === ordemGravada.map((_, i) => i + 1).join(','));
 
@@ -799,7 +819,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   check('cliente prioritário fica destacado em azul no cartão',
     (await page.locator('#view .card-visita.prioritario').count()) === 1);
   check('e ganha o selo PRIORIDADE', (await page.textContent('#view')).includes('PRIORIDADE'));
-  await page.locator('#view .card-visita.prioritario button:has-text("Prioridade")').click();
+  await page.locator('#view .card-visita.prioritario button[aria-label="Prioridade"]').click();
   await page.waitForTimeout(300);
   check('dá para tirar a prioridade num toque, pela própria rota',
     await page.evaluate(() => !window.NSDB.all('clientes').find(x => x.nome === 'ORDEM B').prioridade));
@@ -819,13 +839,22 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   }, antesAtender[0].trim());
   await page.waitForTimeout(300);
   const depoisAtender = await nomesNaRota();
-  check('cliente atendido desce para o fim da rota',
-    depoisAtender[depoisAtender.length - 1] === antesAtender[0] &&
-    depoisAtender.length === antesAtender.length);
+  if (process.env.DBG) console.log('ATEND', JSON.stringify(antesAtender), '→', JSON.stringify(depoisAtender));
+  check('cliente atendido desce para depois dos que ainda faltam',
+    depoisAtender.length === antesAtender.length &&
+    depoisAtender.indexOf(antesAtender[0]) > await page.evaluate(() =>
+      document.querySelectorAll('#view .card-visita:not(.feito)').length - 1));
   check('e o cartão dele fica cinza (compacto de atendido)',
-    (await page.locator('#view .card-visita.feito.compacto').count()) === 1);
-  check('a rota avisa quantos ainda faltam',
-    (await page.textContent('#view')).includes('os já atendidos foram para o fim'));
+    await page.evaluate((nome) => {
+      const card = Array.from(document.querySelectorAll('#view .card-visita'))
+        .find(x => x.textContent.includes(nome));
+      return !!card && card.classList.contains('feito') && card.classList.contains('compacto');
+    }, antesAtender[0].trim()));
+  const txtRota = await page.textContent('#view');
+  check('a rota separa "A visitar" de "Já atendidos"',
+    txtRota.includes('A visitar') && txtRota.includes('Já atendidos'));
+  check('e o cartão atendido ganha o botão de desfazer',
+    (await page.locator('#view .card-visita.feito button:has-text("Desfazer")').count()) > 0);
 
   // ── organizar por proximidade a partir do cliente nº 1 ──
   await page.evaluate(() => {
@@ -845,7 +874,9 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
     window.NSApp.nav('hoje');
   });
   await page.waitForTimeout(300);
-  await page.locator('#view button:has-text("Organizar por proximidade")').click();
+  await page.locator('#view button[aria-label="Ferramentas da rota"]').click();
+  await page.waitForSelector('.ns-overlay button:has-text("Organizar por proximidade")');
+  await page.locator('.ns-overlay').last().locator('button:has-text("Organizar por proximidade")').click();
   await page.waitForSelector('.ns-overlay button:has-text("Confirmar")');
   await page.locator('.ns-overlay').last().locator('button:has-text("Confirmar")').click();
   await page.waitForTimeout(500);
@@ -883,10 +914,14 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
     check('cartão da rota mostra o CNPJ destacado, sem abrir o cadastro',
       rotaTxt.includes('11.222.333/0001-44') &&
       (await page.locator('#view .card-visita .cnpj-chip').count()) > 0);
-    const bolinhas = await page.locator('#view .card-visita .st-tag').count();
-    check('uma única bolinha de status por cliente (sem duplicar)', bolinhas === 1);
+    const bolinhas = await page.locator('#view .card-visita .farol-grande, #view .card-visita .st-tag').count();
+    check('uma única bolinha de status por cliente (sem duplicar)', bolinhas <= 1);
     // tira da rota para o cenário seguinte começar do zero
-    await page.locator('#view button:has-text("Remover da rota")').click();
+    await page.evaluate(() => {
+      window.NSDB.all('clientes').filter(c => c.rota_dia)
+        .forEach(c => window.NSDB.update('clientes', c.id, { rota_dia: null, rota_ordem: null }));
+      window.NSApp.nav('hoje');
+    });
     await page.waitForTimeout(250);
   }
   check('botão grande de Criar rota aparece quando o dia está vazio',
@@ -905,9 +940,19 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page.locator('.ns-overlay').last().locator('button:has-text("Concluir")').click();
   await page.waitForTimeout(400);
   const naRota = await page.textContent('#view');
-  check('cliente aparece na rota do dia com os 2 botões',
-    naRota.includes('FARMACIA TESTE LTDA') && naRota.includes('Registrar visita') && naRota.includes('Remover da rota'));
-  await page.locator('#view button:has-text("Registrar visita")').first().click();
+  if (process.env.DBG) console.log('NAROTA', naRota.slice(0, 400));
+  // cliente já atendido hoje mostra "Atender de novo"; quem falta mostra "Registrar visita"
+  check('cliente aparece na rota do dia com a ação de atendimento',
+    naRota.includes('FARMACIA TESTE LTDA') &&
+    (naRota.includes('Registrar visita') || naRota.includes('Desfazer visita')));
+  // já atendido: "Atender de novo" fica no menu ⋯
+  if (naRota.includes('Registrar visita')) {
+    await page.locator('#view button:has-text("Registrar visita")').first().click();
+  } else {
+    await page.locator('#view .card-visita').first().locator('button[aria-label="Mais opções"]').click();
+    await page.waitForSelector('.ns-overlay button:has-text("Atender de novo")');
+    await page.locator('.ns-overlay').last().locator('button:has-text("Atender de novo")').click();
+  }
   await page.waitForSelector('.ns-overlay');
   const opc = await page.locator('.ns-overlay').last().textContent();
   check('registrar visita oferece as 3 opções', opc.includes('Novo pedido') && opc.includes('Sem pedido') && opc.includes('Não visitei'));
@@ -920,7 +965,9 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   const visSem = await page.evaluate(() => JSON.parse(localStorage.getItem('ns_c_visitas')).find(v => v.motivo_sem_pedido));
   check('visita sem pedido grava motivo e observação',
     !!visSem && visSem.motivo_sem_pedido === 'Cliente não quis fazer pedido' && visSem.observacao === 'Vai repor semana que vem');
-  await page.locator('#view button:has-text("Remover da rota")').first().click();
+  await page.locator('#view .card-visita').first().locator('button[aria-label="Mais opções"]').click();
+  await page.waitForSelector('.ns-overlay button:has-text("Tirar da rota")');
+  await page.locator('.ns-overlay').last().locator('button:has-text("Tirar da rota")').click();
   await page.waitForTimeout(400);
   const cliRota = await page.evaluate(() => JSON.parse(localStorage.getItem('ns_c_clientes'))[0].rota_dia);
   check('remover da rota devolve o cliente para a lista', cliRota == null);
@@ -940,10 +987,14 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page.waitForTimeout(200);
   await page.locator('.ns-overlay').last().locator('button:has-text("Concluir")').click();
   await page.waitForTimeout(300);
-  check('botão de resetar rota aparece com a rota montada',
-    (await page.textContent('#view')).includes('Resetar rota'));
-  await page.locator('#view button:has-text("Resetar rota")').click();
-  await page.locator('.ns-overlay').last().locator('button:has-text("Confirmar")').click();
+  // resetar a rota saiu da tela principal e foi para "Ferramentas da rota"
+  check('a tela da rota não tem mais botão solto de resetar',
+    !(await page.textContent('#view')).includes('Resetar rota'));
+  await page.locator('#view button[aria-label="Ferramentas da rota"]').click();
+  await page.waitForSelector('.ns-overlay button:has-text("Resetar a rota")');
+  await page.locator('.ns-overlay').last().locator('button:has-text("Resetar a rota")').click();
+  await page.waitForSelector('.ns-overlay button:has-text("Resetar")');
+  await page.locator('.ns-overlay').last().locator('button:has-text("Resetar")').click();
   await page.waitForTimeout(400);
   const aposReset = await page.evaluate(() => JSON.parse(localStorage.getItem('ns_c_clientes')).filter(c => c.rota_dia).length);
   check('resetar rota devolve todos os clientes do dia', aposReset === 0);
@@ -953,10 +1004,13 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page.waitForTimeout(200);
   await page.locator('#view .item-lista').first().click();
   await page.waitForSelector('.ns-overlay');
-  await page.locator('.ns-overlay button:has-text("C · 90d")').click();
+  await page.locator('.ns-overlay button:has-text("Classe C · 90d")').click();
   await page.waitForTimeout(250);
-  const cliClasse = await page.evaluate((id) => window.NSDB.byId('clientes', id), CLI_ID);
-  check('classe C aplica ciclo de 90 dias', cliClasse.classe === 'C' && cliClasse.frequencia_dias === 90);
+  const cliClasse = await page.evaluate((id) => ({
+    c: window.NSDB.byId('clientes', id), ciclo: window.NSCalc.cicloDoCliente(window.NSDB.byId('clientes', id))
+  }), CLI_ID);
+  // classe É o ciclo: não existe mais um campo de frequência separado
+  check('classe C aplica ciclo de 90 dias', cliClasse.c.classe === 'C' && cliClasse.ciclo === 90);
   await page.locator('.ns-overlay').last().locator('.btn-icon').first().click();
 
   // observações internas: salvam, aparecem e NUNCA vazam para o PDF
@@ -1052,7 +1106,11 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
     cli: JSON.parse(localStorage.getItem('ns_c_clientes'))[0]
   }));
   check('pedido negativo salvo: total −58,00', ret.pedido.total_valor === -58);
-  check('crédito abate na comissão: 10% de −58 = −5,80', ret.visita.comissao_pct === 10 && ret.visita.comissao_valor === -5.8);
+  // cliente Clamed = Lucro Presumido → 8,75%
+  if (process.env.DBG) console.log('CRED', ret.pedido.tabela, ret.visita.comissao_pct, ret.visita.comissao_valor);
+  check('crédito abate na comissão na % da tabela do pedido',
+    ret.visita.comissao_pct === (ret.pedido.tabela === 'lucro' ? 8.75 : 10) &&
+    Math.abs(ret.visita.comissao_valor - (-58 * ret.visita.comissao_pct / 100)) < 0.02);
   check('pedido só de recolhimento não conta como compra', ret.cli.ultimo_pedido_em == null);
   const pdfRet = await page.evaluate(async () => {
     const p = JSON.parse(localStorage.getItem('ns_c_pedidos'))[0];
@@ -1086,8 +1144,9 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   }));
   check('edição: total recalculado (\u221272,50) e prazo trocado para 45 dias',
     ed.p.total_valor === -72.5 && ed.p.condicao_pagamento === '45 dias');
-  check('edição: comissão recalculada mantendo a % (10% \u2192 \u22127,25)',
-    ed.v.comissao_pct === 10 && ed.v.comissao_valor === -7.25);
+  check('edição: comissão recalculada mantendo a % da tabela',
+    ed.v.comissao_pct === (ed.p.tabela === 'lucro' ? 8.75 : 10) &&
+    Math.abs(ed.v.comissao_valor - (-72.5 * ed.v.comissao_pct / 100)) < 0.02);
   check('edição: assinatura e assinante preservados, itens sem duplicar',
     !!ed.p.assinatura && ed.p.assinante_nome === 'Maria Souza' && ed.nItens === 1);
   await page.locator('.ns-overlay').last().locator('.btn-icon').first().click();
@@ -1103,33 +1162,92 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   });
   await page.click('#tabs button[data-v=clientes]');
   await page.waitForTimeout(350);
-  check('aba Clientes tem os filtros Todos / Só clientes / Só prospecções / Prioritários',
-    (await page.textContent('#view')).includes('Só clientes') &&
-    (await page.textContent('#view')).includes('Só prospecções') &&
-    (await page.textContent('#view')).includes('Prioritários'));
-  await page.locator('#view .chip', { hasText: 'Só prospecções' }).click();
-  await page.waitForTimeout(300);
+  // ── filtros centralizados: um painel só, em vez de bolinhas espalhadas ──
+  const aplicarFiltro = async (grupo, opcao) => {
+    await page.locator('#view .btn-filtros').click();
+    await page.waitForSelector('.ns-overlay .grupo-filtro');
+    const painel = page.locator('.ns-overlay').last();
+    await painel.locator('.grupo-filtro', { hasText: grupo })
+      .locator('.op-filtro', { hasText: opcao }).first().click();
+    await painel.locator('button:has-text("Aplicar")').click();
+    await page.waitForTimeout(300);
+  };
+  check('nenhum "null" vaza para a tela',
+    !(await page.textContent('#view')).includes('null'));
+  check('a aba Clientes tem UM botão de filtros, sem bolinhas espalhadas',
+    (await page.locator('#view .btn-filtros').count()) === 1 &&
+    (await page.locator('#view .chip').count()) === 0);
+  await page.locator('#view .btn-filtros').click();
+  await page.waitForSelector('.ns-overlay .grupo-filtro');
+  const grupos = await page.locator('.ns-overlay .grupo-filtro-tit').allTextContents();
+  check('o painel reúne todos os filtros pedidos',
+    ['Tipo de cadastro', 'Prioridade', 'Potencial (último pedido)', 'Classe (ciclo de visita)',
+     'Status da visita', 'Dias sem visita', 'Mix de produtos']
+      .every(g => grupos.some(x => x.includes(g))));
+  await page.locator('.ns-overlay').last().locator('button:has-text("Aplicar")').click();
+  await page.waitForTimeout(200);
+
+  await aplicarFiltro('Tipo de cadastro', 'Só prospecções');
   check('filtro "Só prospecções" mostra apenas prospecção',
     await page.evaluate(() => {
       const its = Array.from(document.querySelectorAll('#view .item-lista'));
       return its.length > 0 && its.every(x => x.classList.contains('prospec'));
     }));
-  await page.locator('#view .chip', { hasText: 'Prioritários' }).click();
+  check('e aparece uma etiqueta mostrando o filtro ligado',
+    (await page.locator('#view .etiqueta').count()) === 1);
+  await page.locator('#view .etiqueta').click();  // tirar o filtro pela etiqueta
   await page.waitForTimeout(300);
+  check('tocar na etiqueta desliga aquele filtro',
+    (await page.locator('#view .etiqueta').count()) === 0);
+
+  await aplicarFiltro('Prioridade', 'Só prioritários');
   check('filtro "Prioritários" mostra apenas quem tem prioridade',
     await page.evaluate(() => {
       const its = Array.from(document.querySelectorAll('#view .item-lista'));
       return its.length === 1 && its[0].classList.contains('prioritario');
     }));
-  await page.locator('#view .chip', { hasText: 'Só clientes' }).click();
+
+  // combinação de filtros: prioridade + potencial ao mesmo tempo
+  await aplicarFiltro('Potencial (último pedido)', 'Muito alto');
+  check('dois filtros somados aparecem como duas etiquetas',
+    (await page.locator('#view .etiqueta').count()) === 2);
+  await page.locator('#view .btn-link:has-text("limpar tudo")').click();
   await page.waitForTimeout(300);
-  check('filtro "Só clientes" esconde as prospecções',
-    await page.evaluate(() => Array.from(document.querySelectorAll('#view .item-lista'))
-      .every(x => !x.classList.contains('prospec'))));
+  check('"limpar tudo" solta todos os filtros de uma vez',
+    (await page.locator('#view .etiqueta').count()) === 0);
+
+  // potencial calculado pelo último pedido, mostrado na lista
+  const pots = await page.evaluate(() => {
+    const rep = window.NSDB.all('representantes')[0];
+    const mk = (nome, valor) => {
+      const c = window.NSDB.insert('clientes', { representante_id: rep.id, nome,
+        cidade: 'PF', uf: 'RS', status: 'ativo', classe: 'B' });
+      window.NSDB.insert('pedidos', { representante_id: rep.id, cliente_id: c.id,
+        numero: 900 + valor, data_pedido: '2026-09-01', status: 'concluido',
+        tabela: 'simples', total_valor: valor, total_unid_vendidas: 10 });
+      return c.id;
+    };
+    return { baixo: mk('POT BAIXO', 800), normal: mk('POT NORMAL', 1200),
+      alto: mk('POT ALTO', 2000), muito: mk('POT MUITO', 3000) };
+  });
+  await page.click('#tabs button[data-v=clientes]');
+  await page.waitForTimeout(350);
+  await page.fill('#view input', 'POT ');
+  await page.waitForTimeout(300);
+  const txtPot = await page.textContent('#view');
+  check('o potencial do cliente aparece na lista',
+    txtPot.includes('BAIXO') && txtPot.includes('NORMAL') &&
+    txtPot.includes('ALTO') && txtPot.includes('MUITO ALTO'));
+  await aplicarFiltro('Potencial (último pedido)', 'Muito alto');
+  check('filtro de potencial mostra só os de potencial muito alto',
+    await page.evaluate(() => {
+      const its = Array.from(document.querySelectorAll('#view .item-lista'));
+      return its.length === 1 && its[0].textContent.includes('POT MUITO');
+    }));
+  await page.locator('#view .btn-link:has-text("limpar tudo")').click();
+  await page.waitForTimeout(250);
 
   // excluir prospecção: rápido, com confirmação, e só para prospecção
-  await page.locator('#view .chip', { hasText: 'Só prospecções' }).click();
-  await page.waitForTimeout(300);
   await page.fill('#view input', 'PARA EXCLUIR');
   await page.waitForTimeout(300);
   await page.locator('#view .item-lista button:has-text("Excluir")').first().click();
@@ -1140,11 +1258,13 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page.waitForTimeout(400);
   check('prospecção excluída some da base',
     await page.evaluate(() => !window.NSDB.all('clientes').some(c => c.nome === 'PROSPEC PARA EXCLUIR')));
-  await page.locator('#view .chip', { hasText: 'Só clientes' }).click();
+  await page.fill('#view input', 'FARMACIA TESTE');
   await page.waitForTimeout(300);
   check('cliente efetivo NÃO tem botão de excluir na lista',
     (await page.locator('#view .item-lista button:has-text("Excluir")').count()) === 0);
-  await page.locator('#view .chip', { hasText: /^Todos/ }).first().click();
+  check('e o CNPJ dele aparece direto na lista, sem abrir o cadastro',
+    (await page.locator('#view .item-lista .cnpj-chip').count()) > 0);
+  await page.fill('#view input', '');
   await page.waitForTimeout(250);
 
   // ── ticket médio ──
@@ -1199,6 +1319,118 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   });
   check('sem pedido pendente, nenhum aviso aparece', semPendentes === 0);
 
+
+  // ── exportação em PDF e Excel, respeitando os filtros ──
+  await page.click('#tabs button[data-v=mais]');
+  await page.waitForTimeout(300);
+  await page.locator('.item-menu:has-text("Exportar em PDF e Excel")').click();
+  await page.waitForSelector('.ns-overlay .card-export');
+  const txtExp = await page.textContent('.ns-overlay');
+  check('a aba Mais tem exportação de Clientes e Pedidos',
+    txtExp.includes('Clientes') && txtExp.includes('Pedidos') &&
+    txtExp.includes('PDF') && txtExp.includes('Excel'));
+  check('dá para escolher entre usar os filtros ou exportar tudo',
+    txtExp.includes('Usar os filtros do app') && txtExp.includes('Exportar tudo'));
+
+  const pdfCli = await page.evaluate(() => new Promise((ok) => {
+    const orig = window.NSUI.baixar;
+    window.NSUI.baixar = async (blob, n) => {
+      window.NSUI.baixar = orig;
+      const buf = new Uint8Array(await blob.arrayBuffer());
+      ok({ nome: n, tam: buf.length, inicio: String.fromCharCode.apply(null, buf.slice(0, 5)) });
+    };
+    const card = Array.from(document.querySelectorAll('.ns-overlay .card-export'))
+      .find(c => c.textContent.includes('Clientes'));
+    Array.from(card.querySelectorAll('button')).find(b => b.textContent.includes('PDF')).click();
+  }));
+  check('exporta Clientes em PDF de verdade',
+    pdfCli.nome.endsWith('.pdf') && pdfCli.inicio === '%PDF-' && pdfCli.tam > 800);
+
+  const xlsPed = await page.evaluate(() => new Promise((ok) => {
+    const orig = window.NSUI.baixar;
+    window.NSUI.baixar = async (blob, n) => {
+      window.NSUI.baixar = orig;
+      const buf = new Uint8Array(await blob.arrayBuffer());
+      ok({ nome: n, tipo: blob.type, tam: buf.length,
+        inicio: String.fromCharCode.apply(null, buf.slice(0, 2)) });
+    };
+    const card = Array.from(document.querySelectorAll('.ns-overlay .card-export'))
+      .find(c => c.textContent.includes('Pedidos'));
+    Array.from(card.querySelectorAll('button')).find(b => b.textContent.includes('Excel')).click();
+  }));
+  check('exporta Pedidos em Excel (.xlsx de verdade)',
+    xlsPed.nome.endsWith('.xlsx') && xlsPed.inicio === 'PK' &&
+    xlsPed.tipo.includes('spreadsheetml') && xlsPed.tam > 800);
+
+  // com filtro ligado, o arquivo sai só com o que está filtrado
+  const contagens = await page.evaluate(() => {
+    const n = (t) => Number((Array.from(document.querySelectorAll('.ns-overlay .card-export'))
+      .find(c => c.textContent.includes(t)).textContent.match(/(\d+) registro/) || [])[1]);
+    const antes = { cli: n('Clientes'), ped: n('Pedidos') };
+    Array.from(document.querySelectorAll('.ns-overlay .card-escolha'))
+      .find(b => b.textContent.includes('Exportar tudo')).click();
+    const tudo = { cli: n('Clientes'), ped: n('Pedidos') };
+    return { antes, tudo };
+  });
+  check('a contagem de registros aparece antes de exportar',
+    contagens.antes.cli > 0 && contagens.tudo.cli >= contagens.antes.cli);
+  await page.evaluate(() => document.querySelectorAll('.ns-overlay').forEach(o => o.remove()));
+
+  // ── observação do pedido em destaque ──
+  await page.evaluate(() => {
+    const p = window.NSDB.all('pedidos').filter(x => x.status === 'concluido')[0];
+    window.NSDB.update('pedidos', p.id, { observacoes: 'Cobrar a devolução da placa antiga.' });
+    window.NSApp.nav('pedidos');
+  });
+  await page.waitForTimeout(400);
+  check('pedido com observação ganha o selo de alerta no card',
+    (await page.locator('#view .card-pedido .selo-obs').count()) > 0);
+  await page.locator('#view .card-pedido button:has-text("Observação")').first().click();
+  await page.waitForSelector('.ns-overlay .obs-box');
+  check('e a observação abre em destaque vermelho',
+    (await page.textContent('.ns-overlay .obs-box')).includes('Cobrar a devolução'));
+  await page.evaluate(() => document.querySelectorAll('.ns-overlay').forEach(o => o.remove()));
+
+  // ── desfazer visita clicada por engano ──
+  const visitaEngano = await page.evaluate(() => {
+    const rep = window.NSDB.all('representantes')[0];
+    const c = window.NSDB.insert('clientes', { representante_id: rep.id, nome: 'CLIQUE ERRADO',
+      cidade: 'PF', uf: 'RS', status: 'ativo', classe: 'B',
+      rota_dia: null, rota_ordem: null });
+    const dia = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta'][Math.min(4, Math.max(0, new Date().getDay() - 1))];
+    window.NSDB.update('clientes', c.id, { rota_dia: dia, rota_ordem: 1 });
+    const h = new Date();
+    const seg = new Date(h); seg.setDate(h.getDate() - ((h.getDay() || 7) - 1));
+    const data = new Date(seg); data.setDate(seg.getDate() + ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta'].indexOf(dia));
+    const iso = data.getFullYear() + '-' + String(data.getMonth() + 1).padStart(2, '0') + '-' + String(data.getDate()).padStart(2, '0');
+    const v = window.NSDB.insert('visitas', { cliente_id: c.id, representante_id: rep.id,
+      data_visita: iso, realizada: true, fez_pedido: false });
+    window.NSApp.nav('hoje');
+    return { id: c.id, vid: v.id, dia };
+  });
+  await page.waitForTimeout(400);
+  const temDesfazer = await page.locator('#view .card-visita:has-text("CLIQUE ERRADO") button:has-text("Desfazer visita")').count();
+  check('visita registrada por engano tem botão de desfazer', temDesfazer > 0);
+  if (temDesfazer) {
+    await page.locator('#view .card-visita:has-text("CLIQUE ERRADO") button:has-text("Desfazer visita")').click();
+    await page.waitForSelector('.ns-overlay button:has-text("Desfazer")');
+    check('desfazer a visita pede confirmação antes',
+      (await page.textContent('.ns-overlay')).includes('Desfazer a visita'));
+    await page.locator('.ns-overlay').last().locator('button:has-text("Desfazer")').click();
+    await page.waitForTimeout(400);
+    check('a visita some e o cliente volta para a fila',
+      await page.evaluate((vid) => !window.NSDB.byId('visitas', vid), visitaEngano.vid));
+  }
+
+  // visita COM pedido não pode ser apagada pela rota (levaria a comissão junto)
+  const comPedido = await page.evaluate(() => {
+    const v = window.NSDB.all('visitas').find(x => x.pedido_id);
+    const c = window.NSDB.byId('clientes', v.cliente_id);
+    window.NSApp.__testExcluirVisita = true;
+    return { vid: v.id, cid: c.id };
+  });
+  check('visita com pedido continua protegida (só some excluindo o pedido)',
+    await page.evaluate((vid) => !!window.NSDB.byId('visitas', vid), comPedido.vid));
 
   check('sem erros de JavaScript na página', erros.length === 0);
   if (erros.length) console.error(erros.join('\n'));

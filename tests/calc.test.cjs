@@ -30,9 +30,45 @@ c = C.calcComissao({ valor: 500, clienteNovo: false, pctNovo: 15, pctReposicao: 
 eq('venda de junho recebe em julho', c.recebimentoEm, '2026-07-01');
 c = C.calcComissao({ valor: 500, clienteNovo: false, pctNovo: 15, pctReposicao: 10, dataPedido: '2026-12-15', recebimentoDias: 0 });
 eq('venda de dezembro recebe em janeiro (vira o ano)', c.recebimentoEm, '2027-01-01');
-c = C.calcComissao({ valor: 1000, clienteNovo: false, pctNovo: 15, pctReposicao: 10, dataPedido: '2026-07-25', recebimentoDias: 45 });
-eq('reposição 10% = 100', c.valor, 100);
-eq('Clamed recebe +45d', c.recebimentoEm, '2026-09-08');
+c = C.calcComissao({ valor: 1000, clienteNovo: false, tabela: 'simples', dataPedido: '2026-07-25', recebimentoDias: 45 });
+eq('reposição na Tabela Simples = 10%', c.valor, 100);
+// CLAMED fecha no dia 15: venda de 25/07 passa do fechamento e só cai 2 meses depois
+eq('Clamed: venda depois do dia 15 cai no dia 15 de 2 meses depois', c.recebimentoEm, '2026-09-15');
+c = C.calcComissao({ valor: 1000, clienteNovo: false, tabela: 'simples', dataPedido: '2026-07-10', recebimentoDias: 45 });
+eq('Clamed: venda até o dia 15 cai no dia 15 do mês seguinte', c.recebimentoEm, '2026-08-15');
+c = C.calcComissao({ valor: 1000, clienteNovo: false, tabela: 'simples', dataPedido: '2026-07-15', recebimentoDias: 45 });
+eq('Clamed: o próprio dia 15 ainda entra no fechamento', c.recebimentoEm, '2026-08-15');
+c = C.calcComissao({ valor: 1000, clienteNovo: false, tabela: 'simples', dataPedido: '2026-12-20', recebimentoDias: 45 });
+eq('Clamed: dezembro depois do dia 15 vira fevereiro', c.recebimentoEm, '2027-02-15');
+
+console.log('Comissão por tabela (Lucro Presumido 8,75%):');
+eq('cliente novo = 15% em qualquer tabela',
+  C.calcComissao({ valor: 1000, clienteNovo: true, tabela: 'lucro', dataPedido: '2026-07-10', recebimentoDias: 0 }).pct, 15);
+eq('reposição Tabela Simples = 10%',
+  C.calcComissao({ valor: 1000, clienteNovo: false, tabela: 'simples', dataPedido: '2026-07-10', recebimentoDias: 0 }).pct, 10);
+eq('reposição Lucro Presumido = 8,75%',
+  C.calcComissao({ valor: 1000, clienteNovo: false, tabela: 'lucro', dataPedido: '2026-07-10', recebimentoDias: 0 }).pct, 8.75);
+eq('Lucro Presumido: 1000 × 8,75% = 87,50',
+  C.calcComissao({ valor: 1000, clienteNovo: false, tabela: 'lucro', dataPedido: '2026-07-10', recebimentoDias: 0 }).valor, 87.5);
+eq('sem tabela informada usa a Simples (comportamento antigo)',
+  C.calcComissao({ valor: 1000, clienteNovo: false, dataPedido: '2026-07-10', recebimentoDias: 0 }).pct, 10);
+
+console.log('Classe = ciclo:');
+eq('A = 45 dias', C.cicloDaClasse('A'), 45);
+eq('B = 60 dias', C.cicloDaClasse('B'), 60);
+eq('C = 90 dias', C.cicloDaClasse('C'), 90);
+eq('D = 120 dias', C.cicloDaClasse('D'), 120);
+eq('cliente sem classe cai em B (60 dias)', C.cicloDoCliente({}), 60);
+eq('classe inválida também cai em B', C.cicloDoCliente({ classe: 'Z' }), 60);
+
+console.log('Potencial do cliente (último pedido):');
+eq('R$ 800 = baixo', C.potencialCliente(800), 'baixo');
+eq('R$ 1.000 = normal (limite de baixo)', C.potencialCliente(1000), 'normal');
+eq('R$ 1.500 = normal (limite)', C.potencialCliente(1500), 'normal');
+eq('R$ 1.500,01 = alto', C.potencialCliente(1500.01), 'alto');
+eq('R$ 2.500 = alto (limite)', C.potencialCliente(2500), 'alto');
+eq('R$ 2.500,01 = muito alto', C.potencialCliente(2500.01), 'muito_alto');
+eq('sem pedido nenhum = sem potencial', C.potencialCliente(0), null);
 c = C.calcComissao({ valor: -800, clienteNovo: false, pctNovo: 15, pctReposicao: 10, dataPedido: '2026-07-28', recebimentoDias: 0 });
 eq('retirada: comissão negativa −80 (crédito abate no mês)', c.valor, -80);
 eq('retirada: crédito entra no mês seguinte', c.recebimentoEm, '2026-08-01');
@@ -71,11 +107,15 @@ p = C.decidirPernoite({ ultimo: { lat: 0, lng: 0.5 }, base: { lat: 0, lng: 0 },
   primeiroAmanha: { lat: 0, lng: 0.6 }, distMinKm: 150, economiaMinKm: 60, fator: 1.3 });
 eq('perto da base (<150km) → não sugerir', p.sugerir, false);
 
-console.log('Frequência que aprende:');
-eq('3 sem pedido → alongar', C.sugestaoFrequencia(
-  [{ fez_pedido: false }, { fez_pedido: false }, { fez_pedido: false }], 45).tipo, 'alongar');
-eq('3 com pedido → encurtar p/ 30', C.sugestaoFrequencia(
-  [{ fez_pedido: true }, { fez_pedido: true }, { fez_pedido: true }], 45).para, 30);
+console.log('Classe que aprende (sugestão de trocar a classe):');
+const tresSem = [{ fez_pedido: false }, { fez_pedido: false }, { fez_pedido: false }];
+const tresCom = [{ fez_pedido: true }, { fez_pedido: true }, { fez_pedido: true }];
+eq('3 sem pedido → alongar', C.sugestaoFrequencia(tresSem, 45).tipo, 'alongar');
+eq('e a sugestão vem como CLASSE (A 45 → B 60)', C.sugestaoFrequencia(tresSem, 45).classe, 'B');
+eq('3 com pedido na classe B → encurtar para a classe A (45 dias)',
+  C.sugestaoFrequencia(tresCom, 60).classe, 'A');
+eq('já na classe A (45 dias) não tem como encurtar', C.sugestaoFrequencia(tresCom, 45), null);
+eq('classe D (120) não alonga mais', C.sugestaoFrequencia(tresSem, 120).para, 120);
 eq('misto → sem sugestão', C.sugestaoFrequencia(
   [{ fez_pedido: true }, { fez_pedido: false }, { fez_pedido: true }], 45), null);
 
@@ -241,16 +281,16 @@ eq('acima de 100% trava em 100%', C.aplicarDesconto(500, 150).liquido, 0);
 eq('centavos arredondam certo', C.aplicarDesconto(1073.10, 5).desconto, 53.66);
 eq('pedido negativo (crédito) também aceita desconto', C.aplicarDesconto(-100, 10).liquido, -90);
 // a comissão passa a ser calculada sobre o líquido
-const comSemDesc = C.calcComissao({ valor: 10000, clienteNovo: false, pctNovo: 15, pctReposicao: 10,
+const comSemDesc = C.calcComissao({ valor: 10000, clienteNovo: false, tabela: 'simples',
   dataPedido: '2026-08-10', recebimentoDias: 0 });
-const comComDesc = C.calcComissao({ valor: C.aplicarDesconto(10000, 3).liquido, clienteNovo: false,
+const comComDesc = C.calcComissao({ valor: C.aplicarDesconto(10000, 3).liquido, clienteNovo: false, tabela: 'simples',
   pctNovo: 15, pctReposicao: 10, dataPedido: '2026-08-10', recebimentoDias: 0 });
 eq('comissão sem desconto: 10% de 10.000 = 1.000', comSemDesc.valor, 1000);
 eq('comissão com 3%: 10% de 9.700 = 970', comComDesc.valor, 970);
-// Clamed: 45 dias corridos da venda
-const comClamed = C.calcComissao({ valor: 1000, clienteNovo: false, pctNovo: 15, pctReposicao: 10,
+// Clamed fecha no dia 15: venda de 10/08 (até o dia 15) cai em 15/09
+const comClamed = C.calcComissao({ valor: 1000, clienteNovo: false, tabela: 'simples',
   dataPedido: '2026-08-10', recebimentoDias: 45 });
-eq('Clamed de 10/08 cai em 24/09 (45 dias)', comClamed.recebimentoEm, '2026-09-24');
+eq('Clamed de 10/08 cai em 15/09 (fechamento do dia 15)', comClamed.recebimentoEm, '2026-09-15');
 
 console.log('\nMeta diária dinâmica (o exemplo do gestor):');
 // meta 200.000 · vendido 10.000 · restam 10 dias úteis → 190.000 ÷ 10 = 19.000/dia

@@ -119,6 +119,69 @@
     return '<span class="st-tag ' + cor + '" aria-hidden="true"></span>';
   }
 
+  // ---------- feedback tátil e visual ----------
+  // O app movimenta dinheiro: todo toque que grava alguma coisa precisa
+  // responder na hora, para o vendedor ter certeza do que apertou.
+  let vibrarLigado = true;
+  function vibrar(ms) {
+    if (!vibrarLigado) return;
+    try { if (navigator.vibrate) navigator.vibrate(ms || 10); } catch (e) {}
+  }
+  const PESADOS = '.btn.big,.btn-assinar,.btn-cupom,.btn-mini.vermelho,.btn.laranja,#fab,.btn-gps';
+  const LEVES = '.btn,.btn-mini,.chip,.item-lista,.card-visita,.card-escolha,#tabs button,.btn-icon,.stepper button';
+  document.addEventListener('pointerdown', (e) => {
+    const alvo = e.target && e.target.closest ? e.target.closest(LEVES) : null;
+    if (!alvo || alvo.disabled) return;
+    alvo.classList.add('tocado');
+    setTimeout(() => alvo.classList.remove('tocado'), 180);
+    vibrar(alvo.closest(PESADOS) ? 18 : 8);
+  }, { passive: true });
+
+  // ---------- volta de telas externas (compartilhar / imprimir) ----------
+  // No iPhone, ao voltar da folha de compartilhamento a página às vezes fica
+  // preta ou "travada" até o usuário arrastar a tela. Forçar um reflow e
+  // devolver a rolagem resolve, sem mexer em nada do conteúdo.
+  function destravarTela() {
+    try {
+      document.body.classList.add('destravando');
+      // leitura de layout obriga o navegador a repintar a página inteira
+      void document.body.offsetHeight;
+      const v = $('#view');
+      if (v) { const t = v.scrollTop; v.scrollTop = t + 1; v.scrollTop = t; void v.offsetHeight; }
+      requestAnimationFrame(() => {
+        document.body.classList.remove('destravando');
+        void document.body.offsetHeight;
+      });
+    } catch (e) { document.body.classList.remove('destravando'); }
+  }
+  window.addEventListener('pageshow', destravarTela);
+  window.addEventListener('focus', destravarTela);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) destravarTela(); });
+
+  // compartilhar um arquivo e voltar sem deixar a tela travada
+  async function compartilharArquivo(file, titulo) {
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: titulo });
+        return true;
+      }
+      return false;
+    } catch (e) {
+      return e && e.name === 'AbortError' ? true : false; // cancelou = fluxo normal
+    } finally {
+      // roda depois que a folha do sistema fecha
+      setTimeout(destravarTela, 80);
+      setTimeout(destravarTela, 600);
+    }
+  }
+
+  // replaceChildren transforma null em texto "null" na tela; esta versão ignora
+  // os filhos vazios, como o el() já faz
+  function repor(alvo, ...filhos) {
+    alvo.replaceChildren(...filhos.flat().filter(x => x != null));
+    return alvo;
+  }
+
   let toastTimer;
   function toast(msg, tipo) {
     let t = $('#ns-toast');
@@ -131,8 +194,9 @@
 
   function modal(content, opts) {
     opts = opts || {};
-    const overlay = el('div', { class: 'ns-overlay' });
-    const box = el('div', { class: 'ns-modal ' + (opts.full ? 'full' : '') });
+    const overlay = el('div', { class: 'ns-overlay' + (opts.centro ? ' centro' : '') });
+    const box = el('div', { class: 'ns-modal ' + (opts.full ? 'full' : '') +
+      (opts.centro ? ' centro' : '') + (opts.classe ? ' ' + opts.classe : '') });
     if (opts.titulo) {
       box.appendChild(el('div', { class: 'ns-modal-head' },
         el('strong', null, opts.titulo),
@@ -148,14 +212,19 @@
     return { fechar, body, box };
   }
 
-  function confirmar(msg) {
+  function confirmar(msg, opts) {
+    opts = opts || {};
+    vibrar(25);
     return new Promise((resolve) => {
       const c = el('div', null,
-        el('p', { class: 'mb12' }, msg),
+        el('p', { class: 'mb12 pre' }, msg),
         el('div', { class: 'row gap8' },
           el('button', { class: 'btn btn-sec grow', onclick: () => { m.fechar(); resolve(false); } }, 'Cancelar'),
-          el('button', { class: 'btn grow', onclick: () => { m.fechar(); resolve(true); } }, 'Confirmar')));
-      const m = modal(c, { titulo: 'Confirmação' });
+          el('button', {
+            class: 'btn grow' + (opts.perigo ? ' btn-perigo' : ''),
+            onclick: () => { vibrar(30); m.fechar(); resolve(true); }
+          }, opts.ok || 'Confirmar')));
+      const m = modal(c, { titulo: opts.titulo || 'Confirmação' });
     });
   }
 
@@ -173,5 +242,7 @@
   }
 
   window.NSUI = { $, $$, el, escH, toast, modal, confirmar, dataBR, hojeISO, mesISO, baixar,
-    ico, icoHTML, rot, farol, farolHTML, ICONES };
+    ico, icoHTML, rot, farol, farolHTML, ICONES,
+    vibrar, destravarTela, compartilharArquivo, repor,
+    ligarVibracao(v) { vibrarLigado = v !== false; } };
 })();
