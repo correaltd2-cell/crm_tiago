@@ -64,7 +64,6 @@ function montarLinhas({ pedido, itens, cliente, rep, produtos, observacoes, base
   t('Data: ' + dataBR(pedido.data_pedido));
   t('Vendedor: ' + (rep.nome || ''));
   if (fone) t('Contato do vendedor: ' + fone);
-  t('Tabela: ' + (pedido.tabela === 'lucro' ? 'Lucro Presumido' : 'Tabela Simples'));
   t('Cond. pgto: ' + (pedido.condicao_pagamento || '-'));
   t('--------------------------------', { align: 1 });
   t(cliente.nome || '', { bold: 1 });
@@ -78,13 +77,14 @@ function montarLinhas({ pedido, itens, cliente, rep, produtos, observacoes, base
     t(it.tamanho === 'AV'
       ? 'Avulso: ' + it.unid_colocadas + ' un'
       : 'Placa ' + it.tamanho + ' x' + it.placas + ' = ' + it.unid_colocadas + ' un');
-    t('Qtd. devolvida: ' + it.dev_display + ' | Qtd. quebrada: ' + it.dev_quebrada);
+    // no CUPOM a devolucao se chama TROCA (no PDF continua "Devolvido")
+    t('Qtd. trocada: ' + it.dev_display + ' | Qtd. quebrada: ' + it.dev_quebrada);
     t('Qtd. vendida: ' + it.unid_vendidas + ' | Valor unit.: ' + fmtBR(it.preco_unit));
     t('TOTAL ' + fmtBR(it.valor_total), { bold: 1, align: 2 });
     t(' ');
   }
   t('--------------------------------', { align: 1 });
-  t('Colocadas: ' + pedido.total_unid_colocadas + ' | Devolvidas: ' + pedido.total_unid_dev_display);
+  t('Colocadas: ' + pedido.total_unid_colocadas + ' | Trocadas: ' + pedido.total_unid_dev_display);
   t('Quebradas: ' + pedido.total_unid_dev_quebrada + ' | Vendidas: ' + pedido.total_unid_vendidas);
   t((negativo ? 'CREDITO ' : 'TOTAL ') + fmtBR(pedido.total_valor), { bold: 1, align: 2, format: 1 });
   if (observacoes) t(observacoes);

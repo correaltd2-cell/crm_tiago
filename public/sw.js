@@ -1,10 +1,16 @@
 /* NEW STAR — service worker: app shell cache-first (offline 100%) */
-const VERSAO = 'newstar-v57';
+const VERSAO = 'promptstar-v58';
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './icon.svg',
-  './icon-192.png', './icon-512.png',
+  './icon-192.png', './icon-512.png', './icon-maskable.png',
   './js/calc.js', './js/seed.js', './js/ui.js', './js/db.js', './js/rota.js',
-  './js/pdf.js', './js/pedido.js', './js/ajuda.js', './js/app.js'
+  './js/pdf.js', './js/pedido.js', './js/ajuda.js', './js/app.js',
+  './marca-estrela.png', './marca-newstar.png', './marca-newstar-cupom.png',
+  './fontes/poppins-400-latin.woff2', './fontes/poppins-400-latin-ext.woff2',
+  './fontes/poppins-500-latin.woff2', './fontes/poppins-500-latin-ext.woff2',
+  './fontes/poppins-600-latin.woff2', './fontes/poppins-600-latin-ext.woff2',
+  './fontes/poppins-700-latin.woff2', './fontes/poppins-700-latin-ext.woff2',
+  './fontes/poppins-800-latin.woff2', './fontes/poppins-800-latin-ext.woff2'
 ];
 
 // O skipWaiting fica ligado: sem ele, a versão nova ficava PARADA esperando o

@@ -128,7 +128,8 @@
     try { if (navigator.vibrate) navigator.vibrate(ms || 10); } catch (e) {}
   }
   const PESADOS = '.btn.big,.btn-assinar,.btn-cupom,.btn-mini.vermelho,.btn.laranja,#fab,.btn-gps';
-  const LEVES = '.btn,.btn-mini,.chip,.item-lista,.card-visita,.card-escolha,#tabs button,.btn-icon,.stepper button';
+  const LEVES = '.btn,.btn-mini,.chip,.item-lista,.card-visita,.card-escolha,#tabs button,.btn-icon,' +
+    '.stepper button,.btn-step,.btn-tam';
   document.addEventListener('pointerdown', (e) => {
     const alvo = e.target && e.target.closest ? e.target.closest(LEVES) : null;
     if (!alvo || alvo.disabled) return;
@@ -136,6 +137,30 @@
     setTimeout(() => alvo.classList.remove('tocado'), 180);
     vibrar(alvo.closest(PESADOS) ? 18 : 8);
   }, { passive: true });
+
+  // Pisca um número que acabou de mudar (quantidade, total do pedido...).
+  // Só a animação: o texto quem troca é quem chama, para nunca redesenhar a
+  // tela inteira por causa de um produto.
+  function piscar(alvo, classe) {
+    if (!alvo || !alvo.classList) return alvo;
+    const cls = classe || 'valor-muda';
+    alvo.classList.remove(cls);
+    void alvo.offsetWidth; // reinicia a animação mesmo em toques seguidos
+    alvo.classList.add(cls);
+    setTimeout(() => alvo.classList.remove(cls), 420);
+    return alvo;
+  }
+
+  // Troca o texto de um elemento e só pisca se o valor realmente mudou.
+  function texto(alvo, valor, animar) {
+    if (!alvo) return alvo;
+    const novo = valor == null ? '' : String(valor);
+    if (alvo.textContent === novo) return alvo;
+    const tinhaAlgo = alvo.textContent !== '';
+    alvo.textContent = novo;
+    if (animar !== false && tinhaAlgo) piscar(alvo);
+    return alvo;
+  }
 
   // ---------- volta de telas externas (compartilhar / imprimir) ----------
   // No iPhone, ao voltar da folha de compartilhamento a página às vezes fica
@@ -243,6 +268,6 @@
 
   window.NSUI = { $, $$, el, escH, toast, modal, confirmar, dataBR, hojeISO, mesISO, baixar,
     ico, icoHTML, rot, farol, farolHTML, ICONES,
-    vibrar, destravarTela, compartilharArquivo, repor,
+    vibrar, destravarTela, compartilharArquivo, repor, piscar, texto,
     ligarVibracao(v) { vibrarLigado = v !== false; } };
 })();

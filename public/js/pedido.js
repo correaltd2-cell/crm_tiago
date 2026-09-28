@@ -3,7 +3,8 @@
  * Conferência → Assinatura → Concluído → PDF/Compartilhar/Imprimir */
 (function () {
   'use strict';
-  const { $, el, escH, toast, modal, confirmar, dataBR, hojeISO, ico, icoHTML, rot, repor } = window.NSUI;
+  const { $, el, escH, toast, modal, confirmar, dataBR, hojeISO, ico, icoHTML, rot, repor,
+    piscar, texto } = window.NSUI;
   const C = window.NSCalc, DB = window.NSDB;
 
   const precoDe = (p, tabela) => tabela === 'lucro' ? p.preco_lucro : p.preco_simples;
@@ -104,13 +105,16 @@
     function passoItens() {
       const cli = DB.byId('clientes', ped.cliente_id);
       const wrap = el('div');
+      // id do produto que acabou de entrar/ser editado: só ele ganha a animação
+      let destaqueItem = null;
+      let totalAnterior = null;
       const render = () => {
         wrap.innerHTML = '';
         wrap.appendChild(cabecalhoCliente(cli, ped));
         const listEl = el('div', { class: 'col gap8 mt8' });
         ped.itens.forEach((it, idx) => {
           const p = DB.byId('produtos', it.produto_id);
-          listEl.appendChild(el('div', { class: 'card-item' },
+          listEl.appendChild(el('div', { class: 'card-item' + (it.id && it.id === destaqueItem ? ' entrando' : '') },
             el('div', { class: 'row space' },
               el('strong', null, (p.codigo ? p.codigo + ' · ' : '') + nomeProd(p)),
               el('button', { class: 'btn-icon', onclick: () => { ped.itens.splice(idx, 1); render(); }, 'aria-label': 'Remover produto' }, ico('lixeira'))),
@@ -129,9 +133,13 @@
         const tot = C.calcTotais(ped.itens);
         wrap.appendChild(listEl);
         wrap.appendChild(el('button', { class: 'btn btn-sec big mt12 w100', onclick: () => formItem(null) }, '+ Adicionar produto'));
+        const totVal = el('strong', null, C.fmtMoney(tot.valor));
         wrap.appendChild(el('div', { class: 'total-bar mt12' },
-          el('span', null, `${tot.vendidas} un vendidas`),
-          el('strong', null, C.fmtMoney(tot.valor))));
+          el('span', null, `${tot.vendidas} un vendidas`), totVal));
+        // transição discreta no total só quando ele realmente mudou
+        if (totalAnterior != null && totalAnterior !== tot.valor) piscar(totVal);
+        totalAnterior = tot.valor;
+        destaqueItem = null;
         wrap.appendChild(el('div', { class: 'row gap8 mt12' },
           el('button', { class: 'btn btn-sec grow', onclick: passoTabela }, rot('setaEsq', 'Voltar')),
           el('button', {
@@ -211,14 +219,24 @@
             const val = el('input', {
               class: 'input num', type: 'number', inputmode: 'numeric',
               min: String(min), value: String(item[key]),
+              'aria-label': label,
+              // digitação: grava e recalcula na hora, sem reescrever o campo
+              // (reescrever tiraria o cursor do vendedor no meio do número)
               oninput: () => { item[key] = Math.max(min, parseInt(val.value, 10) || min); atualiza(); }
             });
+            // + e − mexem só no número e no cálculo — o resto da tela fica parado
+            const passo = (delta) => {
+              item[key] = Math.max(min, (item[key] || 0) + delta);
+              val.value = item[key];
+              piscar(val, 'qtde-muda');
+              atualiza();
+            };
             return el('div', { class: 'stepper' },
               el('span', { class: 'stepper-label' }, label),
               el('div', { class: 'row gap4' },
-                el('button', { class: 'btn-step', onclick: () => { item[key] = Math.max(min, (item[key] || 0) - 1); val.value = item[key]; atualiza(); } }, '−'),
+                el('button', { class: 'btn-step', 'aria-label': 'Diminuir ' + label, onclick: () => passo(-1) }, '−'),
                 val,
-                el('button', { class: 'btn-step', onclick: () => { item[key] = (item[key] || 0) + 1; val.value = item[key]; atualiza(); } }, '+')));
+                el('button', { class: 'btn-step', 'aria-label': 'Aumentar ' + label, onclick: () => passo(1) }, '+')));
           };
           const tamBtn = (t, rot, indisponivel) => el('button', {
             class: 'btn-tam' + (item.tamanho === t ? ' ativo' : ''),
@@ -231,20 +249,37 @@
             tamBtn('AV', 'Avulso (un)', false)
           ];
 
+          // o resumo é montado UMA vez; cada toque no + / − troca só os números.
+          // Antes a caixa inteira era reescrita a cada clique e piscava na tela.
+          const vColocadas = el('strong', null, ''), vDisplay = el('strong', null, ''),
+            vQuebrada = el('strong', null, ''), vVendidas = el('strong', null, ''),
+            vConta = el('span', null, ''), vValor = el('strong', null, '');
+          const avisoBox = el('div');
+          resumo.append(
+            el('div', { class: 'row space' }, el('span', null, 'Unidades colocadas'), vColocadas),
+            el('div', { class: 'row space' }, el('span', null, '− Devolvidas (display)'), vDisplay),
+            el('div', { class: 'row space' }, el('span', null, '− Quebradas'), vQuebrada),
+            el('div', { class: 'row space destaque' }, el('span', null, '= Vendidas'), vVendidas),
+            el('div', { class: 'row space destaque' }, vConta, vValor),
+            avisoBox);
+
           function atualiza() {
             const upp = uppDe();
             const r = C.calcItem({
               placas: item.placas, unidPorPlaca: upp,
               devDisplay: item.dev_display, devQuebrada: item.dev_quebrada, precoUnit: preco
             });
-            resumo.innerHTML =
-              `<div class="row space"><span>Unidades colocadas</span><strong>${r.colocadas}</strong></div>` +
-              `<div class="row space"><span>− Devolvidas (display)</span><strong>${item.dev_display}</strong></div>` +
-              `<div class="row space"><span>− Quebradas</span><strong>${item.dev_quebrada}</strong></div>` +
-              `<div class="row space destaque"><span>= Vendidas</span><strong>${r.vendidas}</strong></div>` +
-              `<div class="row space destaque"><span>${r.vendidas} × ${C.fmtMoney(preco)}</span><strong>${C.fmtMoney(r.valor)}</strong></div>` +
-              (r.vendidas < 0 ? '<div class="aviso">' + icoHTML('retorno', 'ic-sm') + ' Recolhendo ' + (-r.vendidas) +
-                ' un — crédito de ' + C.fmtMoney(-r.valor) + ' descontado do total do pedido.</div>' : '');
+            texto(vColocadas, r.colocadas);
+            texto(vDisplay, item.dev_display);
+            texto(vQuebrada, item.dev_quebrada);
+            texto(vVendidas, r.vendidas);
+            texto(vConta, `${r.vendidas} × ${C.fmtMoney(preco)}`, false);
+            texto(vValor, C.fmtMoney(r.valor));
+            const aviso = r.vendidas < 0
+              ? '<div class="aviso">' + icoHTML('retorno', 'ic-sm') + ' Recolhendo ' + (-r.vendidas) +
+                ' un — crédito de ' + C.fmtMoney(-r.valor) + ' descontado do total do pedido.</div>'
+              : '';
+            if (avisoBox.innerHTML !== aviso) avisoBox.innerHTML = aviso;
           }
           atualiza();
           box.appendChild(el('div', null,
@@ -272,6 +307,7 @@
                     unid_vendidas: r.vendidas, preco_unit: preco, valor_total: r.valor
                   };
                   if (isNovo) ped.itens.push(feito); else ped.itens[idx] = feito;
+                  destaqueItem = feito.id; // só este card entra animado
                   mi.fechar(); render();
                 }
               }, isNovo ? 'Adicionar' : 'Salvar'))));

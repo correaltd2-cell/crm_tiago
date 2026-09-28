@@ -111,6 +111,38 @@
     });
   }
 
+  // carrega uma imagem do próprio app (logo). Devolve null se não achar, para o
+  // cupom e o PDF continuarem saindo mesmo sem o arquivo.
+  const _imgs = {};
+  function carregarImagem(caminho) {
+    if (_imgs[caminho] !== undefined) return Promise.resolve(_imgs[caminho]);
+    return new Promise((ok) => {
+      const img = new Image();
+      img.onload = () => { _imgs[caminho] = img; ok(img); };
+      img.onerror = () => { _imgs[caminho] = null; ok(null); };
+      img.src = caminho;
+    });
+  }
+
+  // PNG do app → JPEG base64 + dimensões (o escritor de PDF usa DCTDecode)
+  const _jpegs = {};
+  async function carregarJpegDaImagem(caminho) {
+    if (_jpegs[caminho] !== undefined) return _jpegs[caminho];
+    const img = await carregarImagem(caminho);
+    if (!img) { _jpegs[caminho] = null; return null; }
+    try {
+      const cv = document.createElement('canvas');
+      cv.width = img.naturalWidth || img.width;
+      cv.height = img.naturalHeight || img.height;
+      const cx = cv.getContext('2d');
+      cx.fillStyle = '#fff'; cx.fillRect(0, 0, cv.width, cv.height);
+      cx.drawImage(img, 0, 0);
+      const jpeg = cv.toDataURL('image/jpeg', 0.92);
+      _jpegs[caminho] = { b64: jpeg.split(',')[1], w: cv.width, h: cv.height };
+    } catch (e) { _jpegs[caminho] = null; }
+    return _jpegs[caminho];
+  }
+
   // ---------- layout do talão ----------
   const COLS = [
     { t: 'Cód.',      w: 34,  k: 'codigo' },
@@ -134,9 +166,15 @@
     const nomeTabela = pedido.tabela === 'lucro' ? 'Lucro Presumido' : 'Tabela Simples';
     const prodDe = (id) => (produtos.find(p => p.id === id) || {});
 
-    // Cabeçalho
+    // Cabeçalho — a marca NEWSTAR entra como imagem dentro do PDF
+    const logo = await carregarJpegDaImagem('marca-newstar.png');
     pg.rect(M, y - 46, W - 2 * M, 46, true);
-    pg.text(M + 10, y - 20, 'NEW STAR', 16, true);
+    if (logo) {
+      const lh = 17, lw = Math.round(lh * logo.w / logo.h);
+      pg.image('/Im2', M + 10, y - 24, lw, lh);
+    } else {
+      pg.text(M + 10, y - 20, 'NEWSTAR', 16, true);
+    }
     pg.text(M + 10, y - 36, Number(pedido.total_valor) < 0
       ? 'Talão de Pedido — Recolhimento com Crédito do Cliente'
       : 'Talão de Pedido', 8.5);
@@ -252,21 +290,29 @@
 
     // ---------- montagem dos objetos ----------
     const nPag = pages.length;
-    // ids: 1 catálogo, 2 pages, 3 F1, 4 F2, 5 imagem (se houver), depois páginas+conteúdos
+    // ids: 1 catálogo, 2 pages, 3 F1, 4 F2, depois as imagens que existirem
+    // (assinatura e logo) e por fim as páginas com seus conteúdos
+    let prox = 5;
+    const idImg = img ? prox++ : 0;
+    const idLogo = logo ? prox++ : 0;
+    const kidsStart = prox;
     pdf.add('<< /Type /Catalog /Pages 2 0 R >>');
-    const kidsStart = img ? 6 : 5;
     const kids = pages.map((_, i) => (kidsStart + i * 2) + ' 0 R').join(' ');
     pdf.add('<< /Type /Pages /Kids [' + kids + '] /Count ' + nPag + ' >>');
     pdf.add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
     pdf.add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
-    if (img) {
-      const bin = atob(img.b64);
-      pdf.add('<< /Type /XObject /Subtype /Image /Width ' + img.w + ' /Height ' + img.h +
+    const addImagem = (im) => {
+      const bin = atob(im.b64);
+      pdf.add('<< /Type /XObject /Subtype /Image /Width ' + im.w + ' /Height ' + im.h +
         ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + bin.length +
         ' >>\nstream\n' + bin + '\nendstream');
-    }
+    };
+    if (img) addImagem(img);
+    if (logo) addImagem(logo);
+    const xobj = [img ? '/Im1 ' + idImg + ' 0 R' : '', logo ? '/Im2 ' + idLogo + ' 0 R' : '']
+      .filter(Boolean).join(' ');
     const res = '/Resources << /Font << /F1 3 0 R /F2 4 0 R >>' +
-      (img ? ' /XObject << /Im1 5 0 R >>' : '') + ' >>';
+      (xobj ? ' /XObject << ' + xobj + ' >>' : '') + ' >>';
     pages.forEach((page, i) => {
       const contentId = kidsStart + i * 2 + 1;
       pdf.add('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + W + ' ' + H + '] ' + res +
@@ -342,7 +388,7 @@
     // totais
     hr();
     txt('Colocadas: ' + pedido.total_unid_colocadas +
-      ' · Devolvidas: ' + pedido.total_unid_dev_display, 6.5, {}, 8);
+      ' · Trocadas: ' + pedido.total_unid_dev_display, 6.5, {}, 8);
     txt('Quebradas: ' + pedido.total_unid_dev_quebrada +
       ' · Vendidas: ' + pedido.total_unid_vendidas, 6.5, {}, 11);
     if (Number(pedido.desconto_pct) > 0) {
@@ -456,7 +502,6 @@
     const F = (px) => Math.round(px * k);
     const dataBR = (iso) => iso ? iso.split('-').reverse().join('/') : '';
     const prodDe = (id) => (produtos.find(p => p.id === id) || {});
-    const nomeTabela = pedido.tabela === 'lucro' ? 'Lucro Presumido' : 'Tabela Simples';
     const fone = rep.contato || rep.telefone || rep.celular || '';
     const negativo = Number(pedido.total_valor) < 0;
 
@@ -464,7 +509,11 @@
     // A assinatura em imagem fica no PDF do talão.
     const cv = document.createElement('canvas');
     const ctx = cv.getContext('2d');
-    const fonte = (px, b) => (b ? '700 ' : '') + px + 'px Arial, Helvetica, sans-serif';
+    // Poppins no cupom também: a mesma família da interface, com Arial de reserva
+    // caso a fonte ainda não tenha terminado de carregar.
+    const fonte = (px, b) => (b ? '700 ' : '500 ') + px + "px Poppins, Arial, Helvetica, sans-serif";
+    // logo da NEWSTAR no cabeçalho, em preto sobre branco (impressão térmica)
+    const logo = await carregarImagem('marca-newstar-cupom.png');
     function quebra(texto, px, b, maxW) {
       ctx.font = fonte(px, b);
       const palavras = String(texto || '').split(/\s+/);
@@ -501,46 +550,78 @@
         y += px + Math.round(4 * k);
       };
       const multi = (s, px, b, o) => { for (const l of quebra(s, px, b, IN)) t(l, px, Object.assign({ b }, o)); };
+      // rótulo à esquerda e valor à direita, com o rótulo podendo ir em negrito:
+      // é o que deixa as colunas alinhadas e o cupom fácil de ler
+      const rotulado = (rot, val, px, rotForte) => {
+        if (pintar) {
+          ctx.fillStyle = '#000';
+          ctx.font = fonte(px, !!rotForte); ctx.textAlign = 'left'; ctx.fillText(rot + ':', M, y);
+          ctx.font = fonte(px, !!rotForte); ctx.textAlign = 'right'; ctx.fillText(val, W - M, y);
+        }
+        y += px + Math.round(5 * k);
+      };
       const hr = (grossa) => {
         y += Math.round(3 * k);
         if (pintar) { ctx.fillStyle = '#000'; ctx.fillRect(M, y, IN, grossa ? 3 : 1.5); }
         y += Math.round(13 * k);
       };
 
-      t('NEW STAR', F(36), { b: true, al: 'center' });
+      // ── cabeçalho: a marca NEWSTAR impressa, e não o nome digitado ──
+      if (logo) {
+        const lw = Math.min(IN, Math.round(232 * k));
+        const lh = Math.round(lw * logo.height / logo.width);
+        if (pintar) ctx.drawImage(logo, CX - lw / 2, y, lw, lh);
+        y += lh + Math.round(6 * k);
+      } else {
+        t('NEWSTAR', F(36), { b: true, al: 'center' });
+      }
       t('APP DO VENDEDOR', F(14), { al: 'center' });
       t(negativo ? 'RECOLHIMENTO — CRÉDITO' : 'TALÃO DE PEDIDO', F(18), { b: true, al: 'center' });
       hr(true);
+
+      // ── bloco 1: o pedido ──
       t('PEDIDO Nº ' + (pedido.numero || 'PENDENTE'), F(26), { b: true });
-      par('Data', dataBR(pedido.data_pedido), F(19));
-      par('Vendedor', rep.nome || '—', F(19));
-      if (fone) par('Contato', fone, F(19));
-      par('Tabela', pedido.tabela === 'lucro' ? 'Lucro Pres.' : 'Simples', F(19));
-      par('Prazo', pedido.condicao_pagamento || '—', F(19));
+      y += Math.round(3 * k);
+      rotulado('Data', dataBR(pedido.data_pedido), F(19));
+      rotulado('Vendedor', rep.nome || '—', F(19));
+      if (fone) rotulado('Contato', fone, F(19));
+      // a TABELA DE PREÇO não entra no cupom (continua no PDF do talão)
+      rotulado('Prazo', pedido.condicao_pagamento || '—', F(19));
       hr();
+
+      // ── bloco 2: o cliente ──
       multi(cliente.nome || '', F(22), true);
-      if (cliente.cnpj_cpf) t(C.fmtCNPJ(cliente.cnpj_cpf), F(18));
+      if (cliente.cnpj_cpf) rotulado('CNPJ', C.fmtCNPJ(cliente.cnpj_cpf), F(18));
       const cid = [cliente.cidade, cliente.uf].filter(Boolean).join(' - ');
-      if (cid) t(cid, F(18));
+      if (cid) rotulado('Cidade', cid, F(18));
       hr();
-      for (const it of itens) {
-        multi(prodDe(it.produto_id).codigo ? prodDe(it.produto_id).codigo + ' ' +
-          (prodDe(it.produto_id).nome || '') : (prodDe(it.produto_id).nome || ''), F(20), true);
+
+      // ── bloco 3: um produto por vez, bem separado do seguinte ──
+      itens.forEach((it, idx) => {
         const p = prodDe(it.produto_id);
+        if (idx) hr();
+        multi((p.codigo ? p.codigo + ' ' : '') + (p.nome || ''), F(20), true);
         if (p.variacao) t(p.variacao, F(17));
         t(it.tamanho === 'AV'
           ? 'Avulso ' + it.unid_colocadas + ' un'
-          : 'Placa ' + it.tamanho + ' x' + it.placas + ' = ' + it.unid_colocadas + ' un', F(19));
-        t('Devolv. ' + it.dev_display + '   Quebr. ' + it.dev_quebrada, F(19));
-        t('Vendidas ' + it.unid_vendidas + '  x ' + C.fmtMoney(Number(it.preco_unit)), F(19));
-        par('TOTAL', C.fmtMoney(Number(it.valor_total)), F(21), true);
-        y += Math.round(7 * k);
-      }
+          : 'Placa ' + it.tamanho + ' ' + it.placas + 'x = ' + it.unid_colocadas + ' un', F(19));
+        y += Math.round(3 * k);
+        // no CUPOM a devolução se chama TROCA (no PDF continua "Devolvido")
+        rotulado('Trocadas', String(it.dev_display), F(19), true);
+        rotulado('Quebradas', String(it.dev_quebrada), F(19), true);
+        rotulado('Vendidas', String(it.unid_vendidas), F(19), true);
+        rotulado('Valor unitário', C.fmtMoney(Number(it.preco_unit)), F(19));
+        y += Math.round(2 * k);
+        par('TOTAL:', C.fmtMoney(Number(it.valor_total)), F(23), true);
+        y += Math.round(5 * k);
+      });
       hr();
-      par('Colocadas', String(pedido.total_unid_colocadas), F(19));
-      par('Devolvidas', String(pedido.total_unid_dev_display), F(19));
-      par('Quebradas', String(pedido.total_unid_dev_quebrada), F(19));
-      par('Vendidas', String(pedido.total_unid_vendidas), F(19));
+
+      // ── bloco 4: o fechamento ──
+      rotulado('Colocadas', String(pedido.total_unid_colocadas), F(19), true);
+      rotulado('Trocadas', String(pedido.total_unid_dev_display), F(19), true);
+      rotulado('Quebradas', String(pedido.total_unid_dev_quebrada), F(19), true);
+      rotulado('Vendidas', String(pedido.total_unid_vendidas), F(19), true);
       y += Math.round(6 * k);
       if (Number(pedido.desconto_pct) > 0) {
         par('Subtotal', C.fmtMoney(Number(pedido.total_bruto || 0)), F(19));

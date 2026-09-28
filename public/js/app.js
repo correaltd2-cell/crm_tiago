@@ -1,4 +1,4 @@
-/* NEW STAR — app principal: login, Hoje (rota), clientes, pedidos, dashboard,
+/* PROMPT STAR — app principal: login, Hoje (rota), clientes, pedidos, dashboard,
  * despesas e área administrativa do gestor. */
 (function () {
   'use strict';
@@ -8,26 +8,15 @@
 
   // ================= MARCA =================
   // Marca "Estrada da Estrela": a rota do vendedor termina na estrela
-  const LOGO_SVG =
-    '<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
-    '<defs><linearGradient id="nscir" x1="0" y1="0" x2="0" y2="1">' +
-    '<stop offset="0" stop-color="#5aa9e6"/><stop offset=".55" stop-color="#2b7bd4"/><stop offset="1" stop-color="#1150a8"/></linearGradient>' +
-    '<linearGradient id="nsouro" x1="0" y1="0" x2="1" y2="1">' +
-    '<stop offset="0" stop-color="#ffd062"/><stop offset=".55" stop-color="#f8b13c"/><stop offset="1" stop-color="#e79a25"/></linearGradient></defs>' +
-    '<circle cx="256" cy="256" r="238" fill="url(#nscir)"/>' +
-    '<path d="M226 142 L262.4 241.8 L368.7 245.6 L285 311.2 L314.2 413.4 L226 354 L137.8 413.4 L167 311.2 L83.3 245.6 L189.6 241.8 Z" fill="url(#nsouro)"/>' +
-    '<path d="M336 176 C392 232 404 300 330 336 C388 322 412 258 372 200 Z" fill="url(#nsouro)"/>' +
-    '<g transform="rotate(45 330 160)">' +
-    '<path d="M330 92 C352 118 358 146 352 176 L308 176 C302 146 308 118 330 92 Z" fill="url(#nsouro)"/>' +
-    '<path d="M308 154 L286 196 L310 186 Z" fill="url(#nsouro)"/>' +
-    '<path d="M352 154 L374 196 L350 186 Z" fill="url(#nsouro)"/>' +
-    '<path d="M318 178 L342 178 L336 200 L324 200 Z" fill="url(#nsouro)"/>' +
-    '<circle cx="330" cy="136" r="13" fill="#1560bd"/></g>' +
-    '</svg>';
+  // Marca do app: a estrela oficial (arquivo de imagem, não desenho improvisado)
+  const LOGO_ARQ = 'marca-estrela.png';
+  const NOME_APP = 'Prompt Star';
+
   function logoMarca(soIcone) {
     const { el } = window.NSUI;
-    const span = el('span', { class: 'logo-mark', html: LOGO_SVG });
-    if (!soIcone) span.appendChild(el('strong', null, 'New Star'));
+    const span = el('span', { class: 'logo-mark' },
+      el('img', { src: LOGO_ARQ, alt: NOME_APP, width: 30, height: 30 }));
+    if (!soIcone) span.appendChild(el('strong', null, NOME_APP));
     return span;
   }
 
@@ -53,8 +42,8 @@
     const email = el('input', { class: 'input big', type: 'email', placeholder: 'E-mail', autocomplete: 'username' });
     const senha = el('input', { class: 'input big', type: 'password', placeholder: 'Senha', autocomplete: 'current-password' });
     const box = el('div', { class: 'login-box' },
-      el('div', { class: 'login-logo', html: LOGO_SVG }),
-      el('h1', null, 'New Star'),
+      el('img', { class: 'login-logo', src: LOGO_ARQ, alt: NOME_APP }),
+      el('h1', null, NOME_APP),
       el('p', { class: 'login-tag' }, 'App do Vendedor'),
       msg ? el('p', { class: 'aviso' }, msg) : null,
       email, senha,
@@ -2888,10 +2877,11 @@
 
 
   // ================= APARÊNCIA (temas de cor) =================
+  // cor de destaque — só as cores da paleta oficial do Prompt Star
   const TEMAS = [
-    ['ouro', 'Ouro', '#d4af37'], ['esmeralda', 'Esmeralda', '#2ec27e'],
-    ['safira', 'Safira', '#4d8dff'], ['rubi', 'Rubi', '#f2545e'],
-    ['ametista', 'Ametista', '#a86bf5'], ['prata', 'Prata', '#aebdd6']
+    ['ouro', 'Amarelo', '#F9D132'], ['lilas', 'Lilás', '#DB80FF'],
+    ['verde', 'Verde-limão', '#C1FF72'], ['vermelho', 'Vermelho', '#FF5757'],
+    ['roxo', 'Roxo', '#290F5D']
   ];
   function aplicarTema(t) {
     if (t && t !== 'ouro') document.documentElement.dataset.tema = t;
@@ -2901,9 +2891,22 @@
   function telaAparencia() {
     const atual = localStorage.getItem('ns_tema') || 'ouro';
     const grid = el('div', { class: 'tema-grid' });
+    // vibração ao tocar: preferência DESTE aparelho, como o tema
+    const chkVibra = el('input', { type: 'checkbox' });
+    chkVibra.checked = localStorage.getItem('ns_vibrar') !== '0';
+    chkVibra.addEventListener('change', () => {
+      localStorage.setItem('ns_vibrar', chkVibra.checked ? '1' : '0');
+      window.NSUI.ligarVibracao(chkVibra.checked);
+      if (chkVibra.checked) window.NSUI.vibrar(18);
+      toast(chkVibra.checked ? 'Vibração ligada.' : 'Vibração desligada.');
+    });
     const m = modal(el('div', null,
       el('p', { class: 'sub mb12' }, 'Escolha a cor de destaque do aplicativo (vale para este aparelho).'),
-      grid), { titulo: 'Aparência' });
+      grid,
+      el('label', { class: 'row gap8 mt12 campo-box roxo' }, chkVibra,
+        el('div', null, el('strong', null, 'Vibrar ao tocar nos botões'),
+          el('div', { class: 'sub' }, 'Vale só para este aparelho. O iPhone não vibra — o iOS não libera esse recurso para aplicativos abertos pelo navegador.')))
+    ), { titulo: 'Aparência' });
     TEMAS.forEach(([k, rotulo, cor]) => {
       grid.appendChild(el('button', {
         class: 'tema-opt' + ((localStorage.getItem('ns_tema') || 'ouro') === k ? ' ativo' : ''),
@@ -2914,7 +2917,7 @@
           toast('Tema ' + rotulo + ' aplicado.');
           montarTopbar();
         }
-      }, el('span', { class: 'tema-bola', style: 'background:radial-gradient(circle at 32% 26%,#fff, ' + cor + ' 55%, #000c 140%)' }), rotulo));
+      }, el('span', { class: 'tema-bola', style: 'background:' + cor }), rotulo));
     });
   }
 
@@ -2981,6 +2984,7 @@
 
   document.addEventListener('DOMContentLoaded', async () => {
     aplicarTema(localStorage.getItem('ns_tema') || 'ouro');
+    window.NSUI.ligarVibracao(localStorage.getItem('ns_vibrar') !== '0');
     $$('#tabs button').forEach(b => b.addEventListener('click', () => nav(b.dataset.v)));
     $('#fab').addEventListener('click', () => window.NSPedido.novo());
     ligarAtualizacao();

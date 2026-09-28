@@ -1,4 +1,4 @@
-/* NEW STAR — Suporte com IA (aba Ajuda)
+/* PROMPT STAR — Suporte com IA (aba Ajuda)
  * Chat que conhece o sistema inteiro e responde em linguagem simples,
  * passo a passo. Usa a API do Gemini (chave em Configurações → IA);
  * sem conexão ou sem chave, responde com o manual embutido. */
@@ -10,7 +10,7 @@
   // ---------- manual completo do sistema (base de conhecimento) ----------
   const MANUAL = `
 VISÃO GERAL
-O New Star é o aplicativo da equipe de vendas da New Star (placas de brincos e semijoias em consignação para farmácias). Ele funciona no celular, mesmo sem internet — tudo que se faz sem sinal fica guardado e é enviado sozinho quando a conexão volta (o selo no topo mostra: verde "sincronizado", amarelo "pendente", "offline" sem sinal).
+O PROMPT STAR é o aplicativo da equipe de vendas da New Star (placas de brincos e semijoias em consignação para farmácias). O nome e a estrela que aparecem no alto da tela e no ícone do celular são a marca do APLICATIVO; a marca NEW STAR continua sendo a da empresa e é ela que sai impressa no cupom e no talão em PDF entregues ao cliente. Ele funciona no celular, mesmo sem internet — tudo que se faz sem sinal fica guardado e é enviado sozinho quando a conexão volta (o selo no topo mostra: verde "sincronizado", amarelo "pendente", "offline" sem sinal).
 
 ABAS (barra embaixo da tela)
 • HOJE — a rota manual por dia da semana. • CLIENTES — a lista de clientes. • PEDIDOS — os talões feitos. • PAINEL — os números do mês. • MAIS — financeiro, ajustes e administração. • AJUDA — este suporte.
@@ -97,7 +97,14 @@ METAS
 A meta padrão é R$ 200.000 POR MÊS, o que dá R$ 2.400.000 NO ANO. Ao cadastrar a meta do mês em Mais → Relatórios, a meta do ano acompanha sozinha (mês × 12). Dá para mudar as duas à mão quando precisar.
 
 RESPOSTA AO TOQUE
-Todo botão responde na hora: afunda de leve e o celular dá uma vibradinha curta. Ações importantes (concluir pedido, imprimir, assinar, excluir) vibram um pouco mais forte. É proposital: o app mexe com dinheiro, e cada toque precisa deixar claro que foi registrado.
+Todo botão responde na hora: afunda de leve e o celular dá uma vibradinha curta. Ações importantes (concluir pedido, imprimir, assinar, excluir) vibram um pouco mais forte. É proposital: o app mexe com dinheiro, e cada toque precisa deixar claro que foi registrado. NA TELA DE PRODUTOS DO PEDIDO: os botões + e − dão a mesma vibradinha curta, o número piscar de leve confirmando que entrou, e só os números do cálculo mudam — a tela inteira não é mais redesenhada a cada toque. Ao adicionar um produto, o card dele entra deslizando e o total do pedido pisca quando muda. Digitar a quantidade direto no campo NÃO vibra e não tira o cursor do lugar: o cálculo acompanha a digitação. Quem usa iPhone não sente a vibração (o iOS não libera esse recurso para aplicativos na internet) — no iPhone a confirmação é visual: o botão afunda e o número pisca. Quem não quiser vibração pode desligar em MAIS → APARÊNCIA, na chave "Vibrar ao tocar nos botões" (vale só para aquele aparelho).
+A VIBRAÇÃO PODE FALTAR: além do iPhone, alguns Android com o modo "não perturbe" ou a vibração do sistema desligada também não vibram. Isso não é defeito do aplicativo.
+
+COMO É O CUPOM DE 58 MM
+O cupom foi reorganizado para ficar fácil de ler na mesa do cliente. No alto sai a MARCA NEW STAR impressa; embaixo, em blocos separados por um traço: os dados do pedido (número, data, prazo), o cliente, os produtos (um por bloco, com quantidade deixada, TROCADAS e vendidas), o total e, no fim, o mesmo rodapé de sempre com "RECEBIMENTO CONFIRMADO". A palavra que aparece no cupom é TROCADA/TROCADAS, porque é o que o cliente entende: a peça saiu e foi trocada por outra. NO SISTEMA E NO TALÃO EM PDF continua escrito DEVOLVIDA — é o termo do controle interno, e nada dos dados antigos mudou. O cupom também NÃO mostra mais qual tabela de preço foi usada (Simples ou Lucro Presumido); essa informação continua no talão em PDF, no pedido e nos relatórios.
+
+O TALÃO EM PDF
+O PDF agora sai com a MARCA NEW STAR no cabeçalho. Tudo o mais continua igual: a tabela de preços, a palavra DEVOLVIDA, a assinatura do cliente e as observações padrão.
 
 DEPOIS DE IMPRIMIR O CUPOM
 Ao voltar da tela de impressão/compartilhamento o app volta sozinho ao normal. Antes ele às vezes ficava com a tela preta e só destravava se você arrastasse para baixo — isso foi corrigido.
@@ -166,13 +173,13 @@ PROBLEMAS COMUNS
   function promptSistema() {
     const s = window.NSApp.sessao();
     const quem = s ? `${s.eu.nome} (papel: ${s.eu.papel})` : 'usuário';
-    return `Você é o assistente de suporte do aplicativo New Star. Quem pergunta é ${quem}, uma pessoa que pode ter pouca familiaridade com tecnologia — muitas vezes uma pessoa mais velha.
+    return `Você é o assistente de suporte do aplicativo Prompt Star (o app de vendas da New Star). Quem pergunta é ${quem}, uma pessoa que pode ter pouca familiaridade com tecnologia — muitas vezes uma pessoa mais velha.
 
 REGRAS DE RESPOSTA:
 - Responda SEMPRE em português do Brasil, com frases curtas e palavras simples, sem termos técnicos.
 - Quando ensinar a fazer algo, use passos numerados começando por onde tocar (ex.: "1. Toque em CLIENTES embaixo da tela").
 - Seja direto: primeiro a resposta, depois no máximo 1 ou 2 detalhes úteis.
-- Só fale sobre o aplicativo New Star. Se perguntarem outra coisa, responda com gentileza que você é o suporte do aplicativo.
+- Só fale sobre o aplicativo Prompt Star. Se perguntarem outra coisa, responda com gentileza que você é o suporte do aplicativo.
 - Se realmente não souber, oriente a falar com o Guilherme (gestor).
 
 MANUAL OFICIAL DO APLICATIVO (única fonte de verdade):
@@ -253,7 +260,7 @@ ${MANUAL}`;
       const h = historico();
       if (!h.length) {
         chatEl.appendChild(el('div', { class: 'chat-msg bot' },
-          'Olá! Eu sou o assistente do New Star. Posso explicar qualquer tela ou botão do aplicativo. Toque numa pergunta pronta ou escreva a sua:'));
+          'Olá! Eu sou o assistente do Prompt Star. Posso explicar qualquer tela ou botão do aplicativo. Toque numa pergunta pronta ou escreva a sua:'));
         SUGESTOES.forEach(sg => chatEl.appendChild(el('button', {
           class: 'chip mt4', onclick: () => { input.value = sg; enviar(); }
         }, sg)));

@@ -332,5 +332,59 @@ eq('só Simples oferece uma', C.tabelasDoCliente({ tabela_permitida: 'simples' }
 eq('nomes legíveis das tabelas', C.NOME_TABELA.lucro + '/' + C.NOME_TABELA.simples, 'Lucro Presumido/Tabela Simples');
 eq('3 opções no cadastro (ambas, simples, lucro)', C.TABELAS_PERMITIDAS.map(t => t[0]).join(','), 'ambas,simples,lucro');
 
+// ---- identidade Prompt Star e regras de texto do cupom / talão ----
+// O cupom é desenhado em canvas (imagem), então não dá para ler o texto no
+// navegador: a garantia fica aqui, no código-fonte que gera cada peça.
+const fs = require('fs'), path = require('path');
+const lerPub = (f) => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
+const pdfJs = lerPub('public/js/pdf.js');
+const apiCupom = lerPub('api/cupom.js');
+const idxHtml = lerPub('public/index.html');
+// comentário explicando a regra não conta como texto impresso
+const semComentario = (txt) => txt.replace(/^\s*\/\/.*$/gm, '');
+const fatia = (txt, de, ate) => {
+  const i = txt.indexOf(de), j = ate ? txt.indexOf(ate, i) : txt.length;
+  return i < 0 ? '' : semComentario(txt.slice(i, j < 0 ? txt.length : j));
+};
+const cupomJs = fatia(pdfJs, 'function gerarCupomImagem', 'function gerarPDFPedido');
+const talaoJs = fatia(pdfJs, 'function gerarPDFPedido', null);
+
+console.log('\nCupom 58mm (texto e blocos):');
+eq('cupom fala "Trocada(s)" — é o que o cliente entende', /Trocad/.test(cupomJs), true);
+eq('cupom não usa mais a palavra "Devolvid"', /Devolvid/.test(cupomJs), false);
+eq('cupom não imprime a tabela de preço', /'Tabela/.test(cupomJs), false);
+eq('cupom traz a marca NEW STAR no cabeçalho',
+  cupomJs.includes('marca-newstar-cupom.png'), true);
+eq('rodapé do cupom permanece o mesmo',
+  cupomJs.includes('RECEBIMENTO CONFIRMADO'), true);
+eq('impressão Bluetooth também diz "trocada"', /trocad/i.test(apiCupom), true);
+eq('impressão Bluetooth não diz "devolvid"', /devolvid/i.test(semComentario(apiCupom)), false);
+
+console.log('\nTalão em PDF (nada muda além da marca):');
+eq('PDF continua escrevendo "Devolvid" (termo interno)', /Devolvid/.test(talaoJs), true);
+eq('PDF continua mostrando a tabela de preço', /Tabela/.test(talaoJs), true);
+eq('PDF ganha a marca NEW STAR', talaoJs.includes('marca-newstar.png'), true);
+
+console.log('\nIdentidade visual Prompt Star:');
+const paleta = ['#F9D132', '#DB80FF', '#FFFFFF', '#C1FF72', '#FF5757', '#290F5D'];
+eq('as 6 cores oficiais estão nos tokens',
+  paleta.every(c => idxHtml.includes(c) || idxHtml.includes(c.toLowerCase())), true);
+// gradiente some da interface: só sobram os dois carets dos <select>, que são
+// ícones desenhados em CSS, não cor de fundo de componente
+const gradientes = (idxHtml.match(/linear-gradient|radial-gradient/g) || []).length;
+eq('interface sem gradientes de cor (só os 2 carets dos campos de escolha)', gradientes <= 2, true);
+eq('tipografia Poppins carregada localmente', idxHtml.includes("@font-face") && idxHtml.includes('poppins-400-latin'), true);
+eq('fonte aplicada no corpo do app', /body\{[^}]*font-family:var\(--fonte\)/.test(idxHtml), true);
+
+console.log('\nResposta ao toque e animações:');
+const uiJs = lerPub('public/js/ui.js'), pedidoJs = lerPub('public/js/pedido.js');
+eq('vibração centralizada numa função só', /function vibrar\(/.test(uiJs), true);
+eq('botões + e − do pedido entram na lista do toque', /btn-step/.test(uiJs), true);
+eq('animação de número reaproveitável', /function piscar\(/.test(uiJs) && /piscar/.test(pedidoJs), true);
+eq('+ e − não redesenham a tela do item (só trocam o número)',
+  /resumo\.innerHTML\s*=/.test(pedidoJs), false);
+eq('digitar a quantidade não reescreve o campo (cursor fica no lugar)',
+  /oninput:[^\n]*val\.value\s*=/.test(pedidoJs), false);
+
 console.log(`\n${ok} ok, ${fail} falhas`);
 process.exit(fail ? 1 : 0);
