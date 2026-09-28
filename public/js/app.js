@@ -43,7 +43,8 @@
     const senha = el('input', { class: 'input big', type: 'password', placeholder: 'Senha', autocomplete: 'current-password' });
     const box = el('div', { class: 'login-box' },
       el('img', { class: 'login-logo', src: LOGO_ARQ, alt: NOME_APP }),
-      el('h1', null, NOME_APP),
+      // na tela de entrada o nome sai exatamente como na logo: "Prompt Star."
+      el('h1', { class: 'login-marca' }, NOME_APP + '.'),
       el('p', { class: 'login-tag' }, 'App do Vendedor'),
       msg ? el('p', { class: 'aviso' }, msg) : null,
       email, senha,
