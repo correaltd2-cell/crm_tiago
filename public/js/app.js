@@ -16,7 +16,8 @@
     const { el } = window.NSUI;
     const span = el('span', { class: 'logo-mark' },
       el('img', { src: LOGO_ARQ, alt: NOME_APP, width: 30, height: 30 }));
-    if (!soIcone) span.appendChild(el('strong', null, NOME_APP));
+    // o nome sai exatamente como na logo: "Prompt Star.", com o ponto
+    if (!soIcone) span.appendChild(el('strong', null, NOME_APP + '.'));
     return span;
   }
 

@@ -511,7 +511,9 @@
     const ctx = cv.getContext('2d');
     // Poppins no cupom também: a mesma família da interface, com Arial de reserva
     // caso a fonte ainda não tenha terminado de carregar.
-    const fonte = (px, b) => (b ? '700 ' : '500 ') + px + "px Poppins, Arial, Helvetica, sans-serif";
+    // Peso mais leve de propósito: na térmica a tinta espalha e o 700 fazia os
+    // números "engrossarem" e fecharem os buracos do 8, do 6 e do 0.
+    const fonte = (px, b) => (b ? '600 ' : '400 ') + px + "px Poppins, Arial, Helvetica, sans-serif";
     // logo da NEWSTAR no cabeçalho, em preto sobre branco (impressão térmica)
     const logo = await carregarImagem('marca-newstar-cupom.png');
     function quebra(texto, px, b, maxW) {
