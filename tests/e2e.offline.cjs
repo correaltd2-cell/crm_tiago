@@ -1839,32 +1839,46 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   }));
   check('a placa mostra as 48 posições reais do produto (nem mais, nem menos)',
     (await page10.locator('.furo').count()) === 48);
+  check('a placa da referência: 8 colunas na placa de 48',
+    await page10.evaluate(() => getComputedStyle(document.querySelector('.placa-grade'))
+      .gridTemplateColumns.split(' ').length === 8));
+  check('furo vazio é cinza, como na placa desenhada',
+    await page10.evaluate(() => {
+      const f = document.querySelector('.furo.vazio');
+      return f && getComputedStyle(f).backgroundColor === 'rgb(115, 115, 115)';
+    }));
+  check('a placa P tem o topo em arco e a G é reta',
+    await page10.evaluate(() => {
+      const c = document.querySelector('.placa-cartao');
+      return c.classList.contains('p-pequena') &&
+        getComputedStyle(c.querySelector('.placa-cabeca')).borderTopLeftRadius !== '0px';
+    }));
   check('e já vem com o que estava conferido (48 − 32 devolvidas = 16 vendidas)',
     (await page10.locator('.furo.vazio').count()) === 16);
 
-  await page10.locator('.placa-rodape button:has-text("Concluir")').click();
+  await page10.locator('.placa-concluir').click();
   await page10.waitForTimeout(250);
   await mi10.locator('button[aria-label="Conferir a placa"]').click();
   await page10.waitForSelector('.placa-tela');
-  await page10.locator('button:has-text("Não vendeu nada")').click();
+  await page10.locator('.placa-atalho:has-text("Não vendeu nada")').click();
   await page10.waitForTimeout(150);
   check('"Não vendeu nada" limpa a placa inteira',
     (await page10.locator('.furo.vazio').count()) === 0);
   // duas fileiras inteiras + 3 furos = 19 vendidas
   await page10.locator('.placa-fileira').nth(0).click();
   await page10.locator('.placa-fileira').nth(1).click();
-  const l3 = page10.locator('.placa-linha').nth(2).locator('.furo');
-  for (let i = 0; i < 3; i++) await l3.nth(i).click();
+  const furos10 = page10.locator('.placa-grade .furo');
+  for (let i = 16; i < 19; i++) await furos10.nth(i).click();
   check('duas fileiras inteiras mais 3 furos = 19 vendidas',
     (await page10.textContent('.placa-placar strong')).trim() === '19');
   // segunda placa do mesmo produto
   await page10.locator('.placa-aba.mais').click();
   await page10.waitForTimeout(150);
-  await page10.locator('button:has-text("Vendeu tudo")').click();
+  await page10.locator('.placa-atalho:has-text("Vendeu tudo")').click();
   await page10.waitForTimeout(150);
   check('dá para conferir mais de uma placa do mesmo produto (19 + 48 = 67)',
     (await page10.textContent('.placa-placar strong')).trim() === '67');
-  await page10.locator('.placa-rodape button:has-text("Concluir")').click();
+  await page10.locator('.placa-concluir').click();
   await page10.waitForTimeout(300);
   check('a conferência entra no pedido: 2 placas e 29 devolvidas (96 − 67)',
     await page10.evaluate(() => {
@@ -1880,8 +1894,8 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   // cancelar não pode mexer em nada
   await mi10.locator('button[aria-label="Conferir a placa"]').click();
   await page10.waitForSelector('.placa-tela');
-  await page10.locator('button:has-text("Vendeu tudo")').click();
-  await page10.locator('.placa-rodape button:has-text("Cancelar")').click();
+  await page10.locator('.placa-atalho:has-text("Vendeu tudo")').click();
+  await page10.locator('.placa-cancelar').click();
   await page10.waitForTimeout(250);
   check('Cancelar na placa não altera o pedido',
     await page10.evaluate(() => {
