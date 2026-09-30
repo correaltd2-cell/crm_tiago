@@ -82,7 +82,7 @@ FAZER UM PEDIDO (talão digital)
 • Para excluir um pedido errado de vez: aba Pedidos → abra o pedido → "Excluir pedido" (desfaz também a visita e a comissão).
 
 NOMES DOS PRODUTOS (catálogo padronizado)
-Os produtos aparecem com o mesmo nome no pedido, no talão, no cupom e na ficha do cliente: LUXO DOURADO · LUXO PRATA · BRP - BRINCO PEQUENO CLASSIC · PONTO DE LUZ - ZIRCÔNIA · BRAG - BRINCO ARGOLINHA · PARIS - GARGANTILHA · NEW YORK - GARGANTILHA · PULA - PULSEIRA ADULTA · PUL - PULSEIRA INFANTIL. ANEL REGULÁVEL: placa P com 48 unidades e placa G com 72 · R$ 27,50 na Tabela Simples e R$ 29,90 no Lucro Presumido. Os demais itens do catálogo (BRG, BRAG Zircônia, BRP M. Encantado, DIVA, FOR MEN, PRATA 925 e TORNOZELEIRA) continuam com o nome antigo. Para mudar qualquer nome ou preço: MAIS → Admin → Produtos.
+Todo produto passou a ter a SIGLA na frente do nome, e a ordem é SEMPRE a mesma no pedido, na ficha do cliente, no talão e no cupom: 1) (BRAG) BRINCO ARGOLINHA · 2) (BRP) BRINCO PEQUENO CLASSIC · 3) (PONTO DE LUZ) PONTO DE LUZ ZIRCÔNIA · 4) (LUXO) LUXO DOURADO · 5) (LUXO) LUXO PRATA · 6) (PARIS) GARGANTILHA PARIS · 7) (PULA) PULSEIRA ADULTA · 8) (PUL) PULSEIRA INFANTIL · 9) (NEW YORK) GARGANTILHA NEW YORK · 10) (ANEL) ANEL REGULÁVEL. Quando o mesmo produto entra com placa P e placa G no mesmo pedido, a PEQUENA sai sempre antes da GRANDE. (ANEL) ANEL REGULÁVEL: placa P com 48 unidades e placa G com 72 · R$ 27,50 na Tabela Simples e R$ 29,90 no Lucro Presumido. Só o NOME mudou: preço, unidades por placa, pedidos antigos e comissões continuam iguais. Os demais itens do catálogo (BRG, BRAG Zircônia, BRP M. Encantado, DIVA, FOR MEN, PRATA 925 e TORNOZELEIRA) continuam com o nome antigo. Para mudar qualquer nome ou preço: MAIS → Admin → Produtos.
 
 SINCRONIZAÇÃO E O SELO DO TOPO
 O selo no alto da tela mostra como está a ligação com o banco de dados: VERDE "sincronizado" (tudo em dia), "sincronizando…", "X pendente(s)" (tem coisa na fila esperando sinal), "offline" (sem sinal — pode trabalhar normal, nada se perde) e VERMELHO "SEM ATUALIZAR". Esse último é novo e importante: quer dizer que o app está online e não perdeu nada, mas NÃO está conseguindo baixar as novidades do servidor. Toque no selo para ver o motivo.
@@ -99,6 +99,32 @@ A meta padrão é R$ 200.000 POR MÊS, o que dá R$ 2.400.000 NO ANO. Ao cadastr
 RESPOSTA AO TOQUE
 Todo botão responde na hora: afunda de leve e o celular dá uma vibradinha curta. Ações importantes (concluir pedido, imprimir, assinar, excluir) vibram um pouco mais forte. É proposital: o app mexe com dinheiro, e cada toque precisa deixar claro que foi registrado. NA TELA DE PRODUTOS DO PEDIDO: os botões + e − dão a mesma vibradinha curta, o número piscar de leve confirmando que entrou, e só os números do cálculo mudam — a tela inteira não é mais redesenhada a cada toque. Ao adicionar um produto, o card dele entra deslizando e o total do pedido pisca quando muda. Digitar a quantidade direto no campo NÃO vibra e não tira o cursor do lugar: o cálculo acompanha a digitação. Quem usa iPhone não sente a vibração (o iOS não libera esse recurso para aplicativos na internet) — no iPhone a confirmação é visual: o botão afunda e o número pisca. Quem não quiser vibração pode desligar em MAIS → APARÊNCIA, na chave "Vibrar ao tocar nos botões" (vale só para aquele aparelho).
 A VIBRAÇÃO PODE FALTAR: além do iPhone, alguns Android com o modo "não perturbe" ou a vibração do sistema desligada também não vibram. Isso não é defeito do aplicativo.
+
+CONFERIR A PLACA NA TELA (o jeito rápido de lançar o pedido)
+Dentro do pedido, em ADICIONAR PRODUTO, ao lado do nome do produto ficam DOIS botões:
+• O botão ROXO de CALCULADORA abre uma calculadora dentro do próprio app — soma, subtrai, multiplica e divide. Serve para a conta do balcão, tipo "4 fileiras × 8 = 32". Feita a conta, toque em "LANÇAR EM DEVOLVIDA — DISPLAY" e o número entra sozinho no campo, sem digitar.
+• O botão VERDE de PLACA abre a CONFERÊNCIA DA PLACA em tela cheia. É a novidade principal: em vez de contar e fazer conta, o vendedor põe a placa de verdade do lado do celular e reproduz na tela o que está vendido.
+COMO FUNCIONA A CONFERÊNCIA: a tela desenha a placa com o número EXATO de posições daquele produto — 48, 64, 72, 99, 16 ou 22, conforme o cadastro. Cada bolinha é uma unidade.
+• BOLINHA CHEIA (na cor da placa) = a peça ainda está lá na farmácia → vai como TROCADA/devolvida.
+• BOLINHA VAZIA (branca) = a peça saiu da placa → foi VENDIDA.
+Toque numa bolinha para marcar uma peça vendida. Toque no NÚMERO DA FILEIRA (à esquerda) para marcar ou desmarcar a fileira inteira de uma vez. Tem ainda os atalhos "VENDEU TUDO" e "NÃO VENDEU NADA".
+Embaixo, o placar mostra o tempo todo quantas foram VENDIDAS e quantas FICAM NA PLACA.
+MAIS DE UMA PLACA DO MESMO PRODUTO: no alto ficam as abas PLACA 1, PLACA 2… e o botão "+ PLACA". Cada placa tem a sua própria conferência, e o sistema soma tudo — mas você continua sabendo qual placa física está conferindo. A lixeira tira a placa aberta.
+AO TOCAR EM CONCLUIR: o sistema joga tudo direto nos campos do pedido que já existiam — "Placas deixadas" vira a quantidade de placas conferidas e "Devolvida — Display" recebe o que sobrou na placa. Não precisa digitar nada de novo. As QUEBRADAS continuam sendo lançadas à mão, no campo próprio, porque só o vendedor sabe quais quebraram. Os avulsos também seguem como sempre.
+CANCELAR não muda nada no pedido.
+AS CORES DAS PLACAS: cada modelo aparece na cor da placa de verdade, para bater o olho e reconhecer — Luxo Dourado e Luxo Prata em azul claro, Argolinha em vermelho rosé, Ponto de Luz em preto, BRP Classic em verde escuro, Pulseira Adulta em vinho, Paris em cinza e New York em azul. As placas PEQUENAS têm as pontas arredondadas; as GRANDES são mais retas. Gargantilhas e pulseiras aparecem penduradas nos ganchos, como na placa real.
+
+ABERTURA DO APP
+Ao abrir, aparece por cerca de 2 segundos a animação da marca Prompt Star. Ela sai sozinha e NUNCA trava o app: se você tocar na tela, pula na hora; se o aparelho não conseguir tocar o vídeo, ela sai do mesmo jeito.
+
+BOTÃO DE NOVO PEDIDO
+O botão redondo do canto de baixo à direita agora é VERDE e ficou mais afastado da barra de abas, para não ser apertado sem querer.
+
+CLIENTE PRIORITÁRIO EM AZUL
+A marca de prioridade agora é AZUL (antes era roxa, igual à prospecção). E tem uma novidade: assim que você TIRA O PEDIDO daquele cliente, a prioridade SAI SOZINHA — ela serve para não esquecer o cliente, e depois do pedido já cumpriu o papel.
+
+FATURADO NO NEW STAR EM LARANJA
+O laranja voltou a ser só do faturamento: a bolinha da nota fiscal no card do pedido, o botão "FATURADO" e o pop-up de pedido pendente. Assim não se confunde com o amarelo da identidade do app.
 
 COMO É O CUPOM DE 58 MM
 O cupom foi reorganizado para ficar fácil de ler na mesa do cliente. No alto sai a MARCA NEW STAR impressa; embaixo, em blocos separados por um traço: os dados do pedido (número, data, prazo), o cliente, os produtos (um por bloco, com quantidade deixada, TROCADAS e vendidas), o total e, no fim, o mesmo rodapé de sempre com "RECEBIMENTO CONFIRMADO". A palavra que aparece no cupom é TROCADA/TROCADAS, porque é o que o cliente entende: a peça saiu e foi trocada por outra. NO SISTEMA E NO TALÃO EM PDF continua escrito DEVOLVIDA — é o termo do controle interno, e nada dos dados antigos mudou. O cupom também NÃO mostra mais qual tabela de preço foi usada (Simples ou Lucro Presumido); essa informação continua no talão em PDF, no pedido e nos relatórios.

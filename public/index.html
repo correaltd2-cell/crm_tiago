@@ -26,13 +26,18 @@ window.NS_CONFIG = {
   --verde:#C1FF72;
   --vermelho:#FF5757;
   --roxo:#290F5D;
+  /* laranja: 7ª cor da paleta, reservada ao faturamento no New Star */
+  --laranja:#FF8A2B;
+  /* azul: cor de apoio, reservada ao cliente PRIORITÁRIO */
+  --azul-prio:#2E8BE6;
 
   /* ---- variações de apoio (só claro/escuro das oficiais, sem cor nova) ---- */
   --roxo-claro:#3d1a85; --roxo-escuro:#1b0940;
   --amarelo-escuro:#c9a41c; --lilas-escuro:#a94fd0;
   --verde-escuro:#5c8f1f; --vermelho-escuro:#c92f2f;
+  --laranja-escuro:#d1650a; --azul-prio-escuro:#1b63ab; --azul-prio-tint:#e7f2fd;
   --roxo-tint:#efeaf8; --amarelo-tint:#fdf4d6; --lilas-tint:#f7ecff;
-  --verde-tint:#f0fde0; --vermelho-tint:#ffeceC;
+  --verde-tint:#f0fde0; --vermelho-tint:#ffeceC; --laranja-tint:#fff0e2;
 
   /* ---- superfícies e texto ---- */
   --bg0:#f5f3fa; --bg1:#ffffff; --bg2:#efeaf8;
@@ -148,7 +153,8 @@ input,select,textarea{font:inherit;font-family:var(--fonte)}
 #tabs button:active .ic{transform:scale(.9)}
 
 /* ── FAB: esfera dourada ── */
-#fab{position:fixed;right:16px;bottom:96px;width:58px;height:58px;border-radius:50%;
+#fab{position:fixed;right:16px;bottom:calc(126px + env(safe-area-inset-bottom));
+  width:58px;height:58px;border-radius:50%;
   background:var(--ouro);
   color:#fff;z-index:19;display:flex;align-items:center;justify-content:center;
   box-shadow:0 2px 3px rgba(255,255,255,.55) inset,0 -4px 8px rgba(8,40,90,.45) inset,
@@ -326,25 +332,25 @@ select.input,select.input.big{appearance:none;-webkit-appearance:none;
 .card-pedido{position:relative}
 .selo-nf{position:absolute;top:10px;right:10px;width:30px;height:30px;border-radius:50%;
   display:flex;align-items:center;justify-content:center;color:#fff;
-  background:var(--amarelo);
-  box-shadow:0 1px 0 rgba(255,255,255,.4) inset,0 6px 14px -6px rgba(200,105,10,.85)}
+  background:var(--laranja);
+  box-shadow:0 1px 0 rgba(255,255,255,.4) inset,0 6px 14px -6px rgba(209,101,10,.85)}
 .selo-nf .ic{width:17px;height:17px;stroke-width:1.9}
 .card-pedido:has(.selo-nf) .grow{padding-right:42px}
-.btn-mini.laranja,.btn.laranja{background:var(--amarelo);color:#fff;
-  border-color:#c8690a;box-shadow:0 6px 14px -8px rgba(200,105,10,.9)}
+.btn-mini.laranja,.btn.laranja{background:var(--laranja);color:#fff;
+  border-color:var(--laranja-escuro);box-shadow:0 6px 14px -8px rgba(209,101,10,.9)}
 /* cliente PRIORITÁRIO: azul, para não confundir com o roxo da prospecção */
-.card-visita.prioritario{border-left:4px solid var(--az2) !important;
+.card-visita.prioritario{border-left:4px solid var(--azul-prio) !important;
   background:var(--roxo-tint)}
-.item-lista.prioritario{border-left:3px solid var(--az2);
+.item-lista.prioritario{border-left:3px solid var(--azul-prio);
   background:var(--roxo-tint)}
 /* prospecção continua mandando na borda quando for os dois */
 .card-visita.prospec.prioritario{border-left:4px solid var(--prospec) !important}
-.badge.prioritario{background:var(--roxo);color:#fff;
+.badge.prioritario{background:var(--azul-prio);color:#fff;
   border-color:var(--az3);letter-spacing:.06em;font-weight:800}
 .badge.prioritario .ic{width:1em;height:1em}
-.btn-mini.prioritario{background:var(--roxo);color:#fff;
+.btn-mini.prioritario{background:var(--azul-prio);color:#fff;
   border-color:var(--az3);box-shadow:0 6px 14px -8px rgba(17,80,168,.8)}
-.chip.prioritario{background:var(--roxo)}
+.chip.prioritario{background:var(--azul-prio)}
 .chip.prioritario.ativo{background:var(--ouro);color:#2b1c00;border-color:var(--az3)}
 /* GPS: verde-água, para achar de longe no meio dos botões */
 .btn-mini.gps{background:#e6f6f1;color:#0d6b52;border-color:rgba(13,107,82,.35);font-weight:800}
@@ -460,11 +466,11 @@ body.destravando{opacity:.999}
 .ns-modal.centro::before{display:none}
 @keyframes pop-entra{from{opacity:0;transform:translateY(18px) scale(.94)}to{opacity:1;transform:none}}
 .modal-pendente{border:2px solid #e5760a;box-shadow:0 30px 70px -24px rgba(200,105,10,.75)}
-.modal-pendente .ns-modal-head{background:var(--amarelo);color:#fff;
+.modal-pendente .ns-modal-head{background:var(--laranja);color:#fff;
   border-bottom:none;border-radius:22px 22px 0 0}
 .modal-pendente .ns-modal-head strong{font-size:1.05rem;letter-spacing:.06em}
 .modal-pendente .ns-modal-head .btn-icon{color:#fff}
-.modal-pendente .aviso-forte{background:var(--amarelo-tint);
+.modal-pendente .aviso-forte{background:var(--laranja-tint);
   border:1.5px solid #e5760a;border-left:5px solid #e5760a;color:#8a3b06;font-size:1.06rem}
 .card-export{background:var(--vidro);border:1px solid var(--borda);border-left:4px solid var(--az2);
   border-radius:var(--r-md);padding:13px 15px;box-shadow:var(--sombra-1)}
@@ -718,7 +724,8 @@ body.destravando{opacity:.999}
 .btn{background:var(--roxo);color:#fff;box-shadow:var(--sombra-1)}
 .btn:disabled{background:var(--bg2);color:var(--sub2);box-shadow:none}
 .btn-sec{background:var(--branco);color:var(--roxo);border:1.5px solid var(--borda2);box-shadow:none}
-.btn.laranja,.btn-mini.laranja{background:var(--amarelo);color:var(--roxo);border-color:var(--amarelo-escuro)}
+/* laranja = faturado no New Star; é cor escura o bastante para texto branco */
+.btn.laranja,.btn-mini.laranja{background:var(--laranja);color:#fff;border-color:var(--laranja-escuro)}
 .btn-visita{background:var(--verde);color:var(--roxo);box-shadow:var(--sombra-1)}
 .btn-visita .ic{stroke-width:2.2}
 .btn-mini.verde{background:var(--verde);color:var(--roxo);border-color:var(--verde-escuro)}
@@ -734,7 +741,7 @@ body.destravando{opacity:.999}
 .chip{background:var(--roxo);color:#fff}
 .chip.ativo{background:var(--amarelo);color:var(--roxo);border-color:var(--amarelo-escuro)}
 .chip.prospec{background:var(--lilas);color:var(--roxo)}
-.chip.prioritario{background:var(--roxo-claro);color:#fff}
+.chip.prioritario{background:var(--azul-prio);color:#fff}
 .chip.prospec.ativo,.chip.prioritario.ativo{background:var(--amarelo);color:var(--roxo)}
 .btn-filtros{background:var(--roxo);color:#fff}
 .btn-filtros.ativo{background:var(--amarelo);color:var(--roxo)}
@@ -743,7 +750,8 @@ body.destravando{opacity:.999}
 .badge.erro{background:var(--vermelho-tint);color:var(--vermelho-escuro);border-color:var(--vermelho)}
 .badge.aviso{background:var(--amarelo-tint);color:var(--amarelo-escuro);border-color:var(--amarelo)}
 .badge.prospec{background:var(--lilas);color:var(--roxo);border-color:var(--lilas-escuro)}
-.badge.prioritario{background:var(--roxo);color:#fff;border-color:var(--roxo-escuro)}
+.badge.prioritario{background:var(--azul-prio);color:#fff;border-color:var(--azul-prio-escuro)}
+.btn-mini.prioritario{background:var(--azul-prio);color:#fff;border-color:var(--azul-prio-escuro)}
 .badge.pot.pot-muito_alto{background:var(--amarelo);color:var(--roxo);border-color:var(--amarelo-escuro)}
 .badge.pot.pot-alto{background:var(--verde-tint);color:var(--verde-escuro);border-color:var(--verde)}
 .badge.pot.pot-normal{background:var(--lilas-tint);color:var(--lilas-escuro);border-color:var(--lilas)}
@@ -763,14 +771,20 @@ body.destravando{opacity:.999}
 .selo-obs{background:var(--vermelho-tint);border-color:var(--vermelho)}
 .selo-nf{background:var(--amarelo);color:var(--roxo);box-shadow:var(--sombra-1)}
 .card-pedido.com-obs{border-left-color:var(--vermelho)}
-.item-lista.prioritario{background:var(--roxo-tint)}
-.card-visita.prioritario{background:var(--roxo-tint)}
+.item-lista.prioritario{background:var(--azul-prio-tint)}
+.card-visita.prioritario{background:var(--azul-prio-tint)}
+/* a linha da data/classe não pode encostar na etiqueta do CNPJ */
+span.sub{display:inline-block}
+.cnpj-chip+.sub,.cnpj-chip+.selos,.cnpj-chip+.row{margin-top:9px}
+.cnpj-chip{margin-bottom:1px}
 .card-visita.prospec{background:var(--lilas-tint)}
 .item-lista.prospec{background:var(--lilas-tint)}
 .aviso-box{background:var(--amarelo-tint);border-color:var(--amarelo-escuro);border-left-color:var(--amarelo-escuro)}
 .total-bar{background:var(--roxo);color:#fff}
 .total-bar strong{color:var(--amarelo)}
-#fab{background:var(--amarelo);color:var(--roxo);box-shadow:0 10px 26px -10px rgba(41,15,93,.6)}
+/* botão de NOVO PEDIDO: verde-limão, a cor de "pode ir" da paleta */
+#fab{background:var(--verde);color:var(--roxo);box-shadow:0 10px 26px -10px rgba(41,15,93,.6)}
+#fab .ic{stroke-width:2.2}
 #tabs button.ativo{color:var(--amarelo);background:rgba(255,255,255,.12)}
 .sync-chip.ok{background:rgba(193,255,114,.22);color:var(--verde);border-color:rgba(193,255,114,.55)}
 .sync-chip.off{background:rgba(249,209,50,.22);color:var(--amarelo);border-color:rgba(249,209,50,.55)}
@@ -778,9 +792,159 @@ body.destravando{opacity:.999}
 .sucesso-banner{background:var(--verde-tint);color:var(--verde-escuro);border-color:var(--verde)}
 .progresso-fill{background:var(--amarelo)}
 .tema-opt.ativo{border-color:var(--roxo)}
+/* ═══════════ CONFERÊNCIA DA PLACA E CALCULADORA DO PEDIDO ═══════════ */
+body.sem-rolagem{overflow:hidden}
+/* as duas ferramentas ao lado do nome do produto */
+.btn-ferramenta{width:42px;height:42px;border-radius:12px;flex:0 0 auto;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--roxo);color:#fff;border:none;box-shadow:var(--sombra-1);
+  transition:transform .12s,filter .18s}
+/* a conferência da placa é a ferramenta principal: ganha a cor de "pode ir" */
+.btn-ferramenta.placa{background:var(--verde);color:var(--roxo)}
+.btn-ferramenta.placa .ic{stroke-width:1.9}
+.btn-ferramenta .ic{width:21px;height:21px;stroke-width:1.75}
+.btn-ferramenta:active{transform:scale(.92)}
+.btn-ferramenta:disabled{background:var(--bg2);color:var(--sub2);box-shadow:none}
+
+/* ── tela cheia de conferência: a placa ocupa tudo o que dá ── */
+.placa-tela{position:fixed;inset:0;z-index:90;background:var(--bg0);
+  display:flex;flex-direction:column;animation:surge .18s ease-out}
+.placa-topo{display:flex;align-items:center;gap:10px;padding:10px 12px;
+  padding-top:calc(10px + env(safe-area-inset-top));
+  background:var(--roxo);color:#fff;flex:0 0 auto}
+.placa-topo .btn-icon{color:#fff}
+.placa-titulo{font-size:.98rem;font-weight:700;line-height:1.2;flex:1;min-width:0}
+.placa-dica{font-size:.66rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--amarelo);text-align:right;line-height:1.25;max-width:104px}
+/* abas: uma por placa física do mesmo produto */
+.placa-abas{display:flex;gap:7px;padding:9px 12px;overflow-x:auto;flex:0 0 auto;
+  background:var(--roxo-escuro);scrollbar-width:none}
+.placa-abas::-webkit-scrollbar{display:none}
+.placa-aba{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;
+  padding:7px 13px;border-radius:999px;font-size:.8rem;font-weight:700;
+  background:rgba(255,255,255,.14);color:#fff;border:1px solid rgba(255,255,255,.2)}
+.placa-aba.ativa{background:var(--amarelo);color:var(--roxo);border-color:var(--amarelo-escuro)}
+.placa-aba-num{font-size:.7rem;font-weight:900;background:rgba(0,0,0,.22);
+  border-radius:999px;padding:1px 7px;font-variant-numeric:tabular-nums}
+.placa-aba.ativa .placa-aba-num{background:rgba(41,15,93,.18)}
+.placa-aba.mais{background:var(--verde);color:var(--roxo);border-color:var(--verde-escuro)}
+.placa-aba.tirar{background:var(--vermelho-tint);color:var(--vermelho-escuro);border-color:var(--vermelho)}
+/* o palco rola; o placar e os botões ficam parados embaixo */
+.placa-palco{flex:1 1 auto;overflow-y:auto;padding:14px 12px 18px;-webkit-overflow-scrolling:touch}
+.placa-corpo{background:#fff;border-radius:14px;overflow:hidden;
+  box-shadow:var(--sombra-2);max-width:560px;margin:0 auto}
+.placa-corpo.p-pequena{border-radius:26px}
+.placa-cabeca{background:var(--placa-cor);color:var(--placa-txt);
+  padding:12px 14px;display:flex;flex-direction:column;gap:2px}
+.placa-corpo.p-pequena .placa-cabeca{border-radius:26px 26px 0 0}
+.placa-cabeca span:first-child{font-weight:800;font-size:.98rem;line-height:1.2;letter-spacing:-.01em}
+.placa-tam{font-size:.72rem;font-weight:700;opacity:.82}
+.placa-grade{padding:12px 10px 16px;display:flex;flex-direction:column;gap:7px}
+.placa-linha{display:flex;align-items:center;gap:7px}
+/* botão da fileira inteira: o atalho de quem vendeu a fileira toda */
+.placa-fileira{flex:0 0 auto;width:26px;height:26px;border-radius:8px;font-size:.72rem;font-weight:900;
+  background:var(--bg2);color:var(--sub);border:1px solid var(--borda);
+  font-variant-numeric:tabular-nums}
+.placa-fileira:active{transform:scale(.9)}
+.placa-furos{flex:1 1 auto;display:grid;gap:6px;
+  grid-template-columns:repeat(var(--placa-cols),minmax(0,1fr))}
+/* furo CHEIO = peça ainda na placa (fica/trocada) · VAZIO = vendida */
+.furo{aspect-ratio:1;border-radius:50%;border:none;padding:0;
+  background:var(--placa-cor);box-shadow:inset 0 -2px 0 rgba(0,0,0,.18);
+  min-height:26px;transition:background .12s,box-shadow .12s,transform .12s}
+.furo.vazio{background:#ffffff;
+  box-shadow:inset 0 0 0 2px var(--borda2),inset 0 3px 6px rgba(41,15,93,.18)}
+.furo:active{transform:scale(.86)}
+@keyframes furo-muda{0%{transform:scale(1)}40%{transform:scale(1.3)}100%{transform:scale(1)}}
+.furo-muda{animation:furo-muda .2s ease-out}
+/* gargantilhas e pulseiras: ganchos no alto com a peça pendurada */
+.placa-corpo.p-pendente .furo{aspect-ratio:auto;height:22px;border-radius:0 0 4px 4px;
+  position:relative;overflow:visible;min-height:22px}
+.placa-corpo.p-pendente .furo .fio{position:absolute;left:50%;top:100%;
+  width:5px;height:58px;margin-left:-2.5px;border-radius:0 0 3px 3px;
+  background:var(--placa-cor)}
+.placa-corpo.p-pendente .furo.vazio .fio{display:none}
+.placa-corpo.p-pendente .placa-linha{align-items:flex-start;margin-bottom:58px}
+.placa-corpo.p-pendente .placa-grade{padding-bottom:8px}
+.placa-atalhos{max-width:560px;margin-left:auto;margin-right:auto}
+.placa-rodape{flex:0 0 auto;background:#fff;border-top:1px solid var(--borda);
+  padding:11px 12px calc(11px + env(safe-area-inset-bottom));
+  box-shadow:0 -10px 26px -18px rgba(41,15,93,.6)}
+.placa-placar{display:flex;gap:10px;margin-bottom:10px}
+.placa-placar>div{flex:1;background:var(--roxo);color:#fff;border-radius:12px;
+  padding:9px 12px;display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.placa-placar span{font-size:.76rem;font-weight:700;color:#cdbdf0}
+.placa-placar strong{font-size:1.4rem;font-weight:900;color:var(--amarelo);
+  font-variant-numeric:tabular-nums}
+.placa-placar>div:last-child strong{color:var(--verde)}
+
+/* ── calculadora ── */
+.calc-caixa{display:flex;flex-direction:column}
+.calc-conta{min-height:19px;margin-top:-4px;text-align:right;color:var(--sub);
+  font-size:.85rem;font-weight:600;font-variant-numeric:tabular-nums}
+.calc-visor{text-align:right;font-size:2.3rem;font-weight:800;color:var(--roxo);
+  line-height:1.15;padding:2px 2px 12px;font-variant-numeric:tabular-nums;
+  overflow-x:auto;white-space:nowrap}
+.calc-teclado{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.calc-tecla{height:56px;border-radius:14px;font-size:1.3rem;font-weight:800;
+  background:var(--bg2);color:var(--roxo);border:1px solid var(--borda);
+  transition:transform .1s,filter .15s}
+.calc-tecla:active{transform:scale(.94);filter:brightness(.95)}
+.calc-tecla.op{background:var(--lilas-tint);color:var(--lilas-escuro);border-color:var(--lilas)}
+.calc-tecla.apaga{background:var(--vermelho-tint);color:var(--vermelho-escuro);border-color:var(--vermelho);
+  font-size:1.05rem}
+.calc-tecla.igual{background:var(--roxo);color:#fff;border-color:var(--roxo-escuro)}
+.calc-tecla.alto{grid-row:span 2;height:auto}
+.calc-tecla.zero{grid-column:span 2}
+@media (prefers-reduced-motion:reduce){.furo-muda{animation:none !important}}
+
+/* ═══════════ ABERTURA DO APP ═══════════
+   Curta de propósito: o vendedor abre o app para trabalhar, não para assistir. */
+#abertura{position:fixed;inset:0;z-index:200;background:var(--roxo);
+  display:flex;align-items:center;justify-content:center;overflow:hidden;
+  transition:opacity .34s ease,visibility .34s}
+#abertura video{width:100%;height:100%;object-fit:contain;background:var(--roxo)}
+#abertura.saindo{opacity:0;visibility:hidden;pointer-events:none}
+/* quem pediu menos animação no celular vê só a marca parada */
+@media (prefers-reduced-motion:reduce){#abertura video{display:none}
+  #abertura{background:var(--roxo) url(abertura-fim.png) center/contain no-repeat}}
 </style>
 </head>
 <body>
+<!-- Abertura: sai sozinha assim que o vídeo termina (ou em 2,6s, o que vier
+     primeiro). Um toque também pula. Fica FORA do #view para não atrapalhar
+     nenhuma tela do app. -->
+<div id="abertura" aria-hidden="true">
+  <video id="aberturaVideo" muted playsinline autoplay preload="auto"
+    poster="abertura-fim.png" src="abertura.mp4"></video>
+</div>
+<script>
+/* A abertura NUNCA pode prender o vendedor. Este script é o primeiro a rodar e
+   não depende de nenhum outro arquivo: mesmo que algo mais falhe, a tela sai.
+   Sai no fim do vídeo, no toque, ou no prazo máximo — o que vier primeiro. */
+(function () {
+  var capa = document.getElementById('abertura');
+  var v = document.getElementById('aberturaVideo');
+  if (!capa) return;
+  var LIMITE = 2600;          // teto absoluto, mesmo se o vídeo travar
+  var SEM_VIDEO = 1100;       // o aparelho não tocou o vídeo: mostra só a marca
+  var saiu = false;
+  function sair() {
+    if (saiu) return;
+    saiu = true;
+    capa.classList.add('saindo');
+    setTimeout(function () { if (capa.parentNode) capa.parentNode.removeChild(capa); }, 400);
+  }
+  setTimeout(sair, LIMITE);
+  capa.addEventListener('pointerdown', sair);   // um toque pula
+  if (v) {
+    v.addEventListener('ended', sair);
+    v.addEventListener('error', function () { setTimeout(sair, SEM_VIDEO); });
+    var p = v.play();
+    if (p && p.catch) p.catch(function () { setTimeout(sair, SEM_VIDEO); });
+  } else setTimeout(sair, SEM_VIDEO);
+})();
+</script>
 <header id="topbar" style="display:none"></header>
 <main id="view"></main>
 <button id="fab" title="Novo pedido" aria-label="Novo pedido"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5.2v13.6M5.2 12h13.6"/></svg></button>
@@ -798,6 +962,7 @@ body.destravando{opacity:.999}
 <script src="js/db.js"></script>
 <script src="js/rota.js"></script>
 <script src="js/pdf.js"></script>
+<script src="js/placa.js"></script>
 <script src="js/pedido.js"></script>
 <script src="js/ajuda.js"></script>
 <script src="js/app.js"></script>

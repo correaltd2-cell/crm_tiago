@@ -9,6 +9,8 @@
 
   const precoDe = (p, tabela) => tabela === 'lucro' ? p.preco_lucro : p.preco_simples;
   const nomeProd = (p) => p.nome + (p.variacao ? ' (' + p.variacao + ')' : '');
+  // itens do pedido na ordem oficial do catálogo (placa P antes da G)
+  const ordenarItensPed = (itens) => C.ordenarItens(itens, (id) => DB.byId('produtos', id));
 
   function sessao() { return window.NSApp.sessao(); }
 
@@ -25,8 +27,8 @@
       id: pedidoExistente.id, cliente_id: pedidoExistente.cliente_id,
       data: pedidoExistente.data_pedido, tabela: pedidoExistente.tabela,
       condicao_pagamento: pedidoExistente.condicao_pagamento,
-      itens: DB.all('pedido_itens').filter(i => i.pedido_id === pedidoExistente.id)
-        .map(i => Object.assign({}, i)),
+      itens: ordenarItensPed(DB.all('pedido_itens').filter(i => i.pedido_id === pedidoExistente.id)
+        .map(i => Object.assign({}, i))),
       obs: pedidoExistente.observacoes || '',
       desconto_pct: Number(pedidoExistente.desconto_pct || 0),
       assinatura: pedidoExistente.assinatura || null,
@@ -178,7 +180,9 @@
             };
             ativos
               .filter(p => !q || nomeProd(p).toLowerCase().includes(q) || String(p.codigo || '').toLowerCase().includes(q))
-              .sort((a, b) => rank(a) - rank(b) || String(a.codigo || '').localeCompare(String(b.codigo || '')))
+              .sort((a, b) => rank(a) - rank(b) ||
+                C.ordemProduto(a) - C.ordemProduto(b) ||
+                String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'))
               .forEach(p => {
                 const preco = precoDe(p, ped.tabela);
                 const semPreco = preco == null;
@@ -188,6 +192,11 @@
                   onclick: () => {
                     if (semPreco) return toast('Produto sem preço na tabela escolhida — cadastre no Admin → Produtos.', 'erro');
                     if (semUnid) { item.tamanho = 'AV'; }
+                    // trocou de produto: as devoluções contadas eram do produto
+                    // ANTERIOR e não valem mais aqui — voltam a zero.
+                    if (item.produto_id && item.produto_id !== p.id) {
+                      item.dev_display = 0; item.dev_quebrada = 0;
+                    }
                     item.produto_id = p.id; formQtde();
                   }
                 },
@@ -282,8 +291,48 @@
             if (avisoBox.innerHTML !== aviso) avisoBox.innerHTML = aviso;
           }
           atualiza();
+
+          // ── as duas ferramentas de conferência, ao lado do nome do produto ──
+          // Calculadora: a conta do balcão ("4 fileiras × 8") sem sair do pedido.
+          // Placa: a conferência visual, que faz a conta sozinha.
+          const refazStepper = () => formQtde();
+          const btnCalc = el('button', {
+            class: 'btn-ferramenta', 'aria-label': 'Calculadora',
+            title: 'Calculadora — lança o resultado no devolvido',
+            onclick: () => window.NSPlaca.calculadora({
+              rotuloLancar: 'Lançar em Devolvida — Display',
+              aoLancar: (n) => {
+                item.dev_display = n;
+                refazStepper();
+                toast(n + ' un lançadas em Devolvida — Display.');
+              }
+            })
+          }, ico('calculadora'));
+          const btnPlaca = el('button', {
+            class: 'btn-ferramenta placa', 'aria-label': 'Conferir a placa',
+            title: 'Conferir a placa — marque o que foi vendido',
+            disabled: avulso ? '' : null,
+            onclick: () => window.NSPlaca.conferir({
+              produto: p, tamanho: item.tamanho, unidPorPlaca: uppDe(),
+              placas: Math.max(1, item.placas || 1),
+              // já conferido antes = o que estava como vendido neste item
+              vendidasIniciais: Math.max(0,
+                (Math.max(1, item.placas || 1) * uppDe()) - (item.dev_display || 0) - (item.dev_quebrada || 0)),
+              aoConcluir: ({ placas, vendidas, unidPorPlaca }) => {
+                // o que sobra na placa é o que volta: devolvida/trocada.
+                // as quebradas ficam por conta do vendedor, no campo próprio.
+                item.placas = placas;
+                item.dev_display = Math.max(0, placas * unidPorPlaca - vendidas - (item.dev_quebrada || 0));
+                refazStepper();
+                toast(vendidas + ' un vendidas em ' + placas + (placas > 1 ? ' placas.' : ' placa.'));
+              }
+            })
+          }, ico('placa'));
+
           box.appendChild(el('div', null,
-            el('strong', null, (p.codigo ? p.codigo + ' · ' : '') + nomeProd(p)),
+            el('div', { class: 'row space gap8' },
+              el('strong', { class: 'grow' }, (p.codigo ? p.codigo + ' · ' : '') + nomeProd(p)),
+              el('div', { class: 'row gap4' }, btnCalc, btnPlaca)),
             el('div', { class: 'sub' }, `Preço (${ped.tabela === 'lucro' ? 'Lucro Presumido' : 'Simples'}): ${C.fmtMoney(preco)}`),
             el('div', { class: 'row gap8 mt12' }, tamBtns),
             el('div', { class: 'col gap8 mt12' },
@@ -307,6 +356,9 @@
                     unid_vendidas: r.vendidas, preco_unit: preco, valor_total: r.valor
                   };
                   if (isNovo) ped.itens.push(feito); else ped.itens[idx] = feito;
+                  // ordem oficial do catálogo, com a placa P antes da G: o que
+                  // o vendedor vê aqui é o que sai no talão e no cupom
+                  ped.itens = ordenarItensPed(ped.itens);
                   destaqueItem = feito.id; // só este card entra animado
                   mi.fechar(); render();
                 }

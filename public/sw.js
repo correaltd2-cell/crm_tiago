@@ -1,11 +1,12 @@
 /* NEW STAR — service worker: app shell cache-first (offline 100%) */
-const VERSAO = 'promptstar-v60';
+const VERSAO = 'promptstar-v62';
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './icon.svg',
   './icon-192.png', './icon-512.png', './icon-maskable.png',
   './js/calc.js', './js/seed.js', './js/ui.js', './js/db.js', './js/rota.js',
-  './js/pdf.js', './js/pedido.js', './js/ajuda.js', './js/app.js',
+  './js/pdf.js', './js/placa.js', './js/pedido.js', './js/ajuda.js', './js/app.js',
   './marca-estrela.png', './marca-newstar.png', './marca-newstar-cupom.png',
+  './abertura.mp4', './abertura-fim.png',
   './fontes/poppins-400-latin.woff2', './fontes/poppins-400-latin-ext.woff2',
   './fontes/poppins-500-latin.woff2', './fontes/poppins-500-latin-ext.woff2',
   './fontes/poppins-600-latin.woff2', './fontes/poppins-600-latin-ext.woff2',

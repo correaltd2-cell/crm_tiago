@@ -49,6 +49,15 @@
     ajustes: '<path d="M4 7.5h8M16.5 7.5H20M4 16.5h3.5M12 16.5h8"/><circle cx="14.2" cy="7.5" r="2.4"/><circle cx="9.7" cy="16.5" r="2.4"/>',
     caixa: '<path d="M3.6 7.6 12 3.2l8.4 4.4v8.8L12 20.8l-8.4-4.4Z"/><path d="m3.6 7.6 8.4 4.5 8.4-4.5M12 20.8v-8.7"/>',
     display: '<rect x="3.4" y="3.6" width="17.2" height="9.6" rx="1.6"/><path d="M12 13.2V20.6M8.4 20.6h7.2"/>',
+    calculadora: '<rect x="4.2" y="2.8" width="15.6" height="18.4" rx="2.4"/><rect x="7.2" y="5.8" width="9.6" height="3.4" rx="1"/>' +
+      '<circle cx="8.2" cy="12.9" r="1.05" fill="currentColor" stroke="none"/><circle cx="12" cy="12.9" r="1.05" fill="currentColor" stroke="none"/>' +
+      '<circle cx="15.8" cy="12.9" r="1.05" fill="currentColor" stroke="none"/><circle cx="8.2" cy="17.2" r="1.05" fill="currentColor" stroke="none"/>' +
+      '<circle cx="12" cy="17.2" r="1.05" fill="currentColor" stroke="none"/><circle cx="15.8" cy="17.2" r="1.05" fill="currentColor" stroke="none"/>',
+    placa: '<rect x="3.6" y="4.4" width="16.8" height="16" rx="5.2"/><path d="M10.2 2.2h3.6"/>' +
+      '<circle cx="7.6" cy="9.6" r="1.5" fill="currentColor" stroke="none"/>' +
+      '<circle cx="12" cy="9.6" r="1.5" fill="currentColor" stroke="none"/>' +
+      '<circle cx="16.4" cy="9.6" r="1.5"/><circle cx="7.6" cy="15.2" r="1.5"/>' +
+      '<circle cx="12" cy="15.2" r="1.5"/><circle cx="16.4" cy="15.2" r="1.5"/>',
     pin: '<path d="M20 10.4c0 5.4-8 10.9-8 10.9s-8-5.5-8-10.9a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10.2" r="2.8"/>',
     salvar: '<path d="M4.4 5.6A1.6 1.6 0 0 1 6 4h9.6L20 8.4V18.4A1.6 1.6 0 0 1 18.4 20H6a1.6 1.6 0 0 1-1.6-1.6Z"/><path d="M8 4v5.2h6.8V4M8 20v-5.6h8V20"/>',
     tendencia: '<path d="m3.2 16.6 6.3-6.3 4 4 7.3-7.3"/><path d="M15.4 7h5.4v5.4"/>',

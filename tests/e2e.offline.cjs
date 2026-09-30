@@ -87,26 +87,34 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
     window.NS_SEED.clientes.filter(c => ['Sábado', 'Domingo'].includes(c.dia_semana_padrao)).length);
   check('atendimento só de segunda a sexta (0 clientes no fim de semana)', finaisSemana === 0);
 
-  // nomes padronizados do catálogo (valem no pedido e na rota — vêm da mesma tabela)
-  const nomesPadrao = ['LUXO DOURADO', 'LUXO PRATA', 'BRP - BRINCO PEQUENO CLASSIC',
-    'PONTO DE LUZ - ZIRCÔNIA', 'BRAG - BRINCO ARGOLINHA', 'PARIS - GARGANTILHA',
-    'NEW YORK - GARGANTILHA', 'PULA - PULSEIRA ADULTA', 'PUL - PULSEIRA INFANTIL'];
+  // nomes e ORDEM oficiais do catálogo (valem no pedido, no talão e no cupom)
+  const ordemOficial = ['(BRAG) BRINCO ARGOLINHA', '(BRP) BRINCO PEQUENO CLASSIC',
+    '(PONTO DE LUZ) PONTO DE LUZ ZIRCÔNIA', '(LUXO) LUXO DOURADO', '(LUXO) LUXO PRATA',
+    '(PARIS) GARGANTILHA PARIS', '(PULA) PULSEIRA ADULTA', '(PUL) PULSEIRA INFANTIL',
+    '(NEW YORK) GARGANTILHA NEW YORK', '(ANEL) ANEL REGULÁVEL'];
   const catalogo = await page.evaluate(() => window.NS_SEED.produtos.map(p => ({
     nome: p.nome, variacao: p.variacao, preco: p.preco_simples })));
-  check('os 9 produtos usam a nomenclatura padronizada',
-    nomesPadrao.every(n => catalogo.some(p => p.nome === n)));
-  check('e sem variação repetida no nome (LUXO DOURADO, não "LUXO (Dourado)")',
-    catalogo.filter(p => nomesPadrao.includes(p.nome)).every(p => !p.variacao));
-  const anel = catalogo.find(p => p.nome === 'ANEL REGULÁVEL');
-  check('ANEL REGULÁVEL no catálogo, com os dois preços', !!anel && anel.preco === 27.5);
+  check('os 10 produtos usam a nomenclatura (SIGLA) NOME',
+    ordemOficial.every(n => catalogo.some(p => p.nome === n)));
+  check('e sem variação repetida no nome',
+    catalogo.filter(p => ordemOficial.includes(p.nome)).every(p => !p.variacao));
+  check('a ordem oficial do catálogo bate com a lista pedida',
+    await page.evaluate((esperada) => {
+      const lista = window.NSCalc.ORDEM_PRODUTOS;
+      return lista.length === esperada.length && lista.every((n, i) => n === esperada[i]);
+    }, ordemOficial));
+  check('placa P vem antes da placa G no mesmo produto',
+    await page.evaluate(() => window.NSCalc.ORDEM_TAMANHO.P < window.NSCalc.ORDEM_TAMANHO.G));
+  const anel = catalogo.find(p => p.nome === '(ANEL) ANEL REGULÁVEL');
+  check('(ANEL) ANEL REGULÁVEL no catálogo, com os dois preços', !!anel && anel.preco === 27.5);
   check('e com placa P de 48 e placa G de 72 unidades',
     await page.evaluate(() => {
-      const p = window.NS_SEED.produtos.find(x => x.nome === 'ANEL REGULÁVEL');
+      const p = window.NS_SEED.produtos.find(x => x.nome === '(ANEL) ANEL REGULÁVEL');
       return !!p && p.unid_placa_p === 48 && p.unid_placa_g === 72 && p.preco_lucro === 29.9;
     }));
   check('a troca de nome não mexeu nos preços',
-    catalogo.find(p => p.nome === 'BRAG - BRINCO ARGOLINHA').preco === 12.6 &&
-    catalogo.find(p => p.nome === 'LUXO DOURADO').preco === 25.5);
+    catalogo.find(p => p.nome === '(BRAG) BRINCO ARGOLINHA').preco === 12.6 &&
+    catalogo.find(p => p.nome === '(LUXO) LUXO DOURADO').preco === 25.5);
 
   await page.fill('input[type=email]', 'denilson@newstar.com.br');
   await page.fill('input[type=password]', '123456');
@@ -1762,6 +1770,140 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
     (await page9.textContent('.ns-overlay')).includes('sem espaço'));
   await page9.close();
 
+  // ══ abertura, conferência da placa e calculadora do pedido ══
+  const page10 = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  page10.on('pageerror', (e) => erros.push('pageerror(p10): ' + e.message));
+  await page10.route('**/firestore.googleapis.com/**', (r) => r.abort());
+  await page10.addInitScript((s) => {
+    for (const [k, v] of Object.entries(s)) localStorage.setItem(k, JSON.stringify(v));
+    Object.defineProperty(navigator, 'onLine', { get: () => false });
+  }, seed);
+  await page10.goto('http://localhost:8899/');
+
+  // a abertura NÃO pode prender o vendedor: some sozinha mesmo sem tocar nela
+  check('a abertura aparece ao abrir o app', await page10.isVisible('#abertura'));
+  await page10.waitForSelector('#abertura', { state: 'detached', timeout: 6000 });
+  check('e sai sozinha, sem travar a tela', !(await page10.isVisible('#abertura')));
+
+  await page10.waitForSelector('.login-box input[type=email]');
+  await page10.fill('input[type=email]', 'denilson@newstar.com.br');
+  await page10.fill('input[type=password]', '123456');
+  await page10.click('text=Entrar');
+  await page10.waitForSelector('#tabs', { state: 'visible' });
+
+  // botão de novo pedido: verde e longe da barra de abas
+  const fab = await page10.evaluate(() => {
+    const e = document.getElementById('fab'), c = getComputedStyle(e);
+    const abas = document.getElementById('tabs').getBoundingClientRect();
+    return { cor: c.backgroundColor, folga: Math.round(abas.top - e.getBoundingClientRect().bottom) };
+  });
+  check('botão de novo pedido é verde-limão', fab.cor === 'rgb(193, 255, 114)');
+  check('e não encosta na barra de abas', fab.folga >= 24);
+
+  // o produto da placa entra pela ordem oficial
+  await page10.click('#fab');
+  await page10.waitForSelector('.ns-modal');
+  await page10.fill('.ns-modal input', 'farm');
+  await page10.click('.ns-modal .item-lista');
+  await page10.click('text=Tabela Lucro Presumido');
+  await page10.click('text=+ Adicionar produto');
+  const mi10 = page10.locator('.ns-overlay').last().locator('.ns-modal');
+  await mi10.waitFor();
+  await mi10.locator('.item-lista').first().click();
+  await page10.waitForTimeout(150);
+  check('as duas ferramentas aparecem ao lado do produto',
+    await mi10.locator('button[aria-label="Calculadora"]').isVisible() &&
+    await mi10.locator('button[aria-label="Conferir a placa"]').isVisible());
+
+  // calculadora: 4 × 8 = 32 lançado direto no devolvido
+  await mi10.locator('button[aria-label="Calculadora"]').click();
+  await page10.waitForSelector('.calc-teclado');
+  const tecla = (t) => page10.locator('.calc-tecla', { hasText: new RegExp('^' + t + '$') }).first().click();
+  await tecla('4'); await tecla('×'); await tecla('8'); await tecla('=');
+  check('calculadora faz 4 × 8 = 32', (await page10.textContent('.calc-visor')).trim() === '32');
+  await page10.locator('button:has-text("Lançar em Devolvida")').click();
+  await page10.waitForTimeout(250);
+  check('o resultado entra no campo Devolvida — Display sem digitar',
+    await page10.evaluate(() => {
+      const c = [...document.querySelectorAll('.stepper')]
+        .find(s => s.textContent.includes('Display'));
+      return c && c.querySelector('input').value === '32';
+    }));
+
+  // conferência visual da placa: 48 furos (placa P do produto do teste)
+  await mi10.locator('button[aria-label="Conferir a placa"]').click();
+  await page10.waitForSelector('.placa-tela');
+  check('a placa abre em tela cheia', await page10.evaluate(() => {
+    const e = document.querySelector('.placa-tela'), c = getComputedStyle(e);
+    return c.position === 'fixed' && e.getBoundingClientRect().height >= window.innerHeight - 2;
+  }));
+  check('a placa mostra as 48 posições reais do produto (nem mais, nem menos)',
+    (await page10.locator('.furo').count()) === 48);
+  check('e já vem com o que estava conferido (48 − 32 devolvidas = 16 vendidas)',
+    (await page10.locator('.furo.vazio').count()) === 16);
+
+  await page10.locator('.placa-rodape button:has-text("Concluir")').click();
+  await page10.waitForTimeout(250);
+  await mi10.locator('button[aria-label="Conferir a placa"]').click();
+  await page10.waitForSelector('.placa-tela');
+  await page10.locator('button:has-text("Não vendeu nada")').click();
+  await page10.waitForTimeout(150);
+  check('"Não vendeu nada" limpa a placa inteira',
+    (await page10.locator('.furo.vazio').count()) === 0);
+  // duas fileiras inteiras + 3 furos = 19 vendidas
+  await page10.locator('.placa-fileira').nth(0).click();
+  await page10.locator('.placa-fileira').nth(1).click();
+  const l3 = page10.locator('.placa-linha').nth(2).locator('.furo');
+  for (let i = 0; i < 3; i++) await l3.nth(i).click();
+  check('duas fileiras inteiras mais 3 furos = 19 vendidas',
+    (await page10.textContent('.placa-placar strong')).trim() === '19');
+  // segunda placa do mesmo produto
+  await page10.locator('.placa-aba.mais').click();
+  await page10.waitForTimeout(150);
+  await page10.locator('button:has-text("Vendeu tudo")').click();
+  await page10.waitForTimeout(150);
+  check('dá para conferir mais de uma placa do mesmo produto (19 + 48 = 67)',
+    (await page10.textContent('.placa-placar strong')).trim() === '67');
+  await page10.locator('.placa-rodape button:has-text("Concluir")').click();
+  await page10.waitForTimeout(300);
+  check('a conferência entra no pedido: 2 placas e 29 devolvidas (96 − 67)',
+    await page10.evaluate(() => {
+      const val = (rot) => {
+        const c = [...document.querySelectorAll('.stepper')].find(s => s.textContent.includes(rot));
+        return c && c.querySelector('input').value;
+      };
+      return val('Placas deixadas') === '2' && val('Display') === '29';
+    }));
+  check('e o cálculo do item fecha em 67 vendidas',
+    (await page10.textContent('.calc-live')).includes('67'));
+
+  // cancelar não pode mexer em nada
+  await mi10.locator('button[aria-label="Conferir a placa"]').click();
+  await page10.waitForSelector('.placa-tela');
+  await page10.locator('button:has-text("Vendeu tudo")').click();
+  await page10.locator('.placa-rodape button:has-text("Cancelar")').click();
+  await page10.waitForTimeout(250);
+  check('Cancelar na placa não altera o pedido',
+    await page10.evaluate(() => {
+      const c = [...document.querySelectorAll('.stepper')].find(s => s.textContent.includes('Display'));
+      return c && c.querySelector('input').value === '29';
+    }));
+
+  // prioridade: serve para não esquecer o cliente e SAI quando o pedido é tirado
+  await page10.evaluate(() => {
+    const c = window.NSDB.all('clientes')[0];
+    window.NSDB.update('clientes', c.id, { prioridade: true });
+  });
+  check('cliente marcado como prioritário fica prioritário',
+    await page10.evaluate(() => !!window.NSDB.all('clientes')[0].prioridade));
+  await page10.evaluate(() => {
+    const c = window.NSDB.all('clientes')[0];
+    window.NSApp.aoConcluirPedido({ cliente_id: c.id });
+  });
+  await page10.waitForTimeout(200);
+  check('e a prioridade sai sozinha depois que o pedido é tirado',
+    await page10.evaluate(() => !window.NSDB.all('clientes')[0].prioridade));
+  await page10.close();
 
   await browser.close();
   server.close();

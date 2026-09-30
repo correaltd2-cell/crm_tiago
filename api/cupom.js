@@ -49,12 +49,46 @@ function fmtCNPJ(v) {
 }
 
 // montarLinhas é puro (testável em Node)
+// ordem oficial do catalogo (mesma do app): o cupom impresso sai sempre nesta
+// sequencia, e dentro do mesmo produto a placa P vem antes da G.
+const ORDEM_PRODUTOS = [
+  '(BRAG) BRINCO ARGOLINHA',
+  '(BRP) BRINCO PEQUENO CLASSIC',
+  '(PONTO DE LUZ) PONTO DE LUZ ZIRCONIA',
+  '(PONTO DE LUZ) PONTO DE LUZ ZIRC\u00d4NIA',
+  '(LUXO) LUXO DOURADO',
+  '(LUXO) LUXO PRATA',
+  '(PARIS) GARGANTILHA PARIS',
+  '(PULA) PULSEIRA ADULTA',
+  '(PUL) PULSEIRA INFANTIL',
+  '(NEW YORK) GARGANTILHA NEW YORK',
+  '(ANEL) ANEL REGUL\u00c1VEL'
+];
+const ORDEM_TAMANHO = { P: 0, G: 1, AV: 2 };
+function ordemProduto(p) {
+  const i = ORDEM_PRODUTOS.indexOf((p && p.nome) || '');
+  return i < 0 ? ORDEM_PRODUTOS.length : i;
+}
+function ordenarItens(itens, produtos) {
+  const de = (id) => produtos.find(p => p.id === id) || {};
+  return itens.slice().sort((a, b) => {
+    const pa = de(a.produto_id), pb = de(b.produto_id);
+    const d = ordemProduto(pa) - ordemProduto(pb);
+    if (d) return d;
+    const n = String(pa.nome || '').localeCompare(String(pb.nome || ''), 'pt-BR');
+    if (n) return n;
+    return (ORDEM_TAMANHO[a.tamanho] != null ? ORDEM_TAMANHO[a.tamanho] : 9) -
+      (ORDEM_TAMANHO[b.tamanho] != null ? ORDEM_TAMANHO[b.tamanho] : 9);
+  });
+}
+
 function montarLinhas({ pedido, itens, cliente, rep, produtos, observacoes, baseURL }) {
   const L = [];
   const t = (content, o) => L.push(Object.assign({ type: 0, content, bold: 0, align: 0, format: 0 }, o));
   const negativo = Number(pedido.total_valor) < 0;
   const fone = rep.contato || rep.telefone || rep.celular || '';
   const prodDe = (id) => produtos.find(p => p.id === id) || {};
+  itens = ordenarItens(itens, produtos);
 
   t('NEW STAR', { bold: 1, align: 1, format: 2 });
   t('APP DO VENDEDOR', { align: 1 });

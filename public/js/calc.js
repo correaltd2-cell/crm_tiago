@@ -550,6 +550,51 @@
   ];
   const NOME_TABELA = { simples: 'Tabela Simples', lucro: 'Lucro Presumido' };
 
+  // ---------- ordem oficial do catálogo ----------
+  // O vendedor confere as placas sempre na mesma sequência. Esta lista manda
+  // na tela do pedido, na ficha do cliente, no talão em PDF e no cupom — para
+  // o papel sair na mesma ordem em que ele anda pela gôndola.
+  const ORDEM_PRODUTOS = [
+    '(BRAG) BRINCO ARGOLINHA',
+    '(BRP) BRINCO PEQUENO CLASSIC',
+    '(PONTO DE LUZ) PONTO DE LUZ ZIRCÔNIA',
+    '(LUXO) LUXO DOURADO',
+    '(LUXO) LUXO PRATA',
+    '(PARIS) GARGANTILHA PARIS',
+    '(PULA) PULSEIRA ADULTA',
+    '(PUL) PULSEIRA INFANTIL',
+    '(NEW YORK) GARGANTILHA NEW YORK',
+    '(ANEL) ANEL REGULÁVEL'
+  ];
+  // quem não está na lista oficial vai depois, em ordem alfabética
+  function ordemProduto(produto) {
+    const i = ORDEM_PRODUTOS.indexOf((produto && produto.nome) || '');
+    return i < 0 ? ORDEM_PRODUTOS.length : i;
+  }
+  // Dentro do mesmo produto a placa PEQUENA vem antes da GRANDE (P → G → avulso),
+  // que é a ordem em que a mercadoria é conferida no balcão.
+  const ORDEM_TAMANHO = { P: 0, G: 1, AV: 2 };
+  function ordenarProdutos(lista) {
+    return lista.slice().sort((a, b) => {
+      const d = ordemProduto(a) - ordemProduto(b);
+      if (d) return d;
+      return String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR');
+    });
+  }
+  // ordena os ITENS de um pedido: produto na ordem oficial, placa P antes da G
+  function ordenarItens(itens, produtoDe) {
+    const prod = produtoDe || (() => ({}));
+    return itens.slice().sort((a, b) => {
+      const pa = prod(a.produto_id) || {}, pb = prod(b.produto_id) || {};
+      const d = ordemProduto(pa) - ordemProduto(pb);
+      if (d) return d;
+      const na = String(pa.nome || '').localeCompare(String(pb.nome || ''), 'pt-BR');
+      if (na) return na;
+      const ta = ORDEM_TAMANHO[a.tamanho] ?? 9, tb = ORDEM_TAMANHO[b.tamanho] ?? 9;
+      return ta - tb;
+    });
+  }
+
   function tabelaPermitida(cliente) {
     const v = cliente && cliente.tabela_permitida;
     return (v === 'simples' || v === 'lucro') ? v : 'ambas';
@@ -563,6 +608,7 @@
 
   const api = {
     TABELAS_PERMITIDAS, NOME_TABELA, tabelaPermitida, tabelasDoCliente,
+    ORDEM_PRODUTOS, ORDEM_TAMANHO, ordemProduto, ordenarProdutos, ordenarItens,
     fmtCNPJ,
     round2, fmtMoney, fmtPct, calcItem, calcTotais, aplicarDesconto, calcComissao, cicloDoDia,
     pctComissao, recebimentoComissao, PCT_NOVO, PCT_SIMPLES, PCT_LUCRO,

@@ -158,6 +158,8 @@
   ];
 
   async function gerarPDFPedido({ pedido, itens, cliente, rep, produtos, observacoes }) {
+    // o papel sai sempre na ordem oficial do catálogo, placa P antes da G
+    itens = C.ordenarItens(itens, (id) => produtos.find(p => p.id === id));
     const pdf = PDFWriter();
     const pages = [];
     let pg = Page(), y = H - M;
@@ -497,6 +499,8 @@
   // caber, então texto pequeno vira letra de formiga. `escala` (Configurações)
   // deixa aumentar mais ainda sem mexer no código.
   async function gerarCupomImagem({ pedido, itens, cliente, rep, produtos, observacoes, escala }) {
+    // mesma ordem do talão: catálogo oficial, placa P antes da G
+    itens = C.ordenarItens(itens, (id) => produtos.find(p => p.id === id));
     const W = 384, M = 12, IN = W - 2 * M, CX = W / 2;
     const k = Math.min(1.6, Math.max(0.8, Number(escala) || 1));   // multiplicador da letra
     const F = (px) => Math.round(px * k);

@@ -386,5 +386,68 @@ eq('+ e − não redesenham a tela do item (só trocam o número)',
 eq('digitar a quantidade não reescreve o campo (cursor fica no lugar)',
   /oninput:[^\n]*val\.value\s*=/.test(pedidoJs), false);
 
+console.log('\nOrdem oficial do catálogo:');
+eq('a lista tem os 10 produtos, sem repetir Paris', C.ORDEM_PRODUTOS.length, 10);
+eq('(BRAG) abre a lista', C.ORDEM_PRODUTOS[0], '(BRAG) BRINCO ARGOLINHA');
+eq('(ANEL) fecha a lista', C.ORDEM_PRODUTOS[9], '(ANEL) ANEL REGULÁVEL');
+eq('placa P vem antes da G', C.ORDEM_TAMANHO.P < C.ORDEM_TAMANHO.G, true);
+eq('avulso vem depois das duas', C.ORDEM_TAMANHO.AV > C.ORDEM_TAMANHO.G, true);
+const cat = [
+  { id: 'a', nome: '(LUXO) LUXO PRATA' }, { id: 'b', nome: '(BRAG) BRINCO ARGOLINHA' },
+  { id: 'c', nome: 'TORNOZELEIRA' }, { id: 'd', nome: '(BRP) BRINCO PEQUENO CLASSIC' }
+];
+eq('produtos fora da lista oficial vão para o fim',
+  C.ordenarProdutos(cat).map(p => p.nome).join(' | '),
+  '(BRAG) BRINCO ARGOLINHA | (BRP) BRINCO PEQUENO CLASSIC | (LUXO) LUXO PRATA | TORNOZELEIRA');
+const itensCat = [
+  { produto_id: 'a', tamanho: 'P' }, { produto_id: 'b', tamanho: 'G' },
+  { produto_id: 'b', tamanho: 'P' }, { produto_id: 'a', tamanho: 'G' },
+  { produto_id: 'c', tamanho: 'P' }
+];
+const de = (id) => cat.find(p => p.id === id);
+eq('itens do pedido: ordem do catálogo e P antes de G',
+  C.ordenarItens(itensCat, de).map(i => i.produto_id + i.tamanho).join(' '),
+  'bP bG aP aG cP');
+eq('ordenarItens não mexe no array original', itensCat[0].tamanho + itensCat[0].produto_id, 'Pa');
+
+console.log('\nConferência da placa (furo vendido / furo que fica):');
+// a conta da placa é a mesma do item: o que sobra na placa é devolvido
+const placaPara = (placas, upp, vendidas, quebradas) => {
+  const dev = Math.max(0, placas * upp - vendidas - (quebradas || 0));
+  return C.calcItem({ placas, unidPorPlaca: upp, devDisplay: dev,
+    devQuebrada: quebradas || 0, precoUnit: 10 });
+};
+eq('1 placa de 48, 19 furos vazios = 19 vendidas', placaPara(1, 48, 19, 0).vendidas, 19);
+eq('e 29 voltam como trocadas', 48 - 19, 29);
+eq('2 placas de 48 com 67 vendidas fecham a conta', placaPara(2, 48, 67, 0).vendidas, 67);
+eq('placa toda vendida não deixa devolução', placaPara(1, 64, 64, 0).vendidas, 64);
+eq('placa cheia (nada vendido) zera a venda', placaPara(1, 64, 0, 0).vendidas, 0);
+eq('quebrada continua saindo do vendido', placaPara(1, 48, 19, 2).vendidas, 19);
+
+console.log('\nDistribuição dos furos na tela:');
+const fs2 = require('fs');
+const placaJs = fs2.readFileSync(require('path').join(__dirname, '..', 'public/js/placa.js'), 'utf8');
+eq('cada modelo de placa tem cor própria', /PLACAS = \{/.test(placaJs), true);
+eq('a placa abre em tela cheia, não num modal apertado', /placa-tela/.test(placaJs), true);
+eq('dá para selecionar a fileira inteira', /placa-fileira/.test(placaJs), true);
+eq('dá para conferir mais de uma placa do mesmo produto', /Adicionar outra placa/.test(placaJs), true);
+
+console.log('\nLaranja do faturamento e azul da prioridade:');
+eq('laranja é uma cor própria, não o amarelo', idxHtml.includes('--laranja:#FF8A2B'), true);
+eq('o selo de faturado no New Star usa o laranja',
+  /\.selo-nf\{[^}]*\}/s.test(idxHtml) && idxHtml.includes('background:var(--laranja)'), true);
+eq('o botão de faturado usa o laranja',
+  /\.btn\.laranja,\.btn-mini\.laranja\{background:var\(--laranja\)/.test(idxHtml), true);
+eq('prioridade é azul', idxHtml.includes('--azul-prio:#2E8BE6'), true);
+eq('e o selo de prioridade usa esse azul',
+  /\.badge\.prioritario\{background:var\(--azul-prio\)/.test(idxHtml), true);
+eq('tirar o pedido encerra a prioridade do cliente',
+  /prioridade: false/.test(lerPub('public/js/app.js')), true);
+
+console.log('\nAbertura do app:');
+eq('a abertura tem teto de tempo e não trava a tela', /LIMITE = 2600/.test(idxHtml), true);
+eq('um toque pula a abertura', /capa\.addEventListener\('pointerdown', sair\)/.test(idxHtml), true);
+eq('se o vídeo falhar, a abertura sai do mesmo jeito', /v\.addEventListener\('error'/.test(idxHtml), true);
+
 console.log(`\n${ok} ok, ${fail} falhas`);
 process.exit(fail ? 1 : 0);

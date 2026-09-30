@@ -121,8 +121,36 @@
     return (v && Object.prototype.hasOwnProperty.call(VIEWS, v)) ? v : 'hoje';
   })();
 
+  // ── nomes novos do catálogo nas bases que já estão instaladas ──
+  // O seed só roda na primeira instalação, então quem já usa o app continuaria
+  // com o nome antigo. Isto renomeia UMA vez, sem mexer em preço, placa nem
+  // pedido nenhum: o produto é o mesmo, só o nome muda.
+  const RENOME_PRODUTOS = {
+    'BRAG - BRINCO ARGOLINHA': '(BRAG) BRINCO ARGOLINHA',
+    'BRP - BRINCO PEQUENO CLASSIC': '(BRP) BRINCO PEQUENO CLASSIC',
+    'PONTO DE LUZ - ZIRCÔNIA': '(PONTO DE LUZ) PONTO DE LUZ ZIRCÔNIA',
+    'LUXO DOURADO': '(LUXO) LUXO DOURADO',
+    'LUXO PRATA': '(LUXO) LUXO PRATA',
+    'PARIS - GARGANTILHA': '(PARIS) GARGANTILHA PARIS',
+    'PULA - PULSEIRA ADULTA': '(PULA) PULSEIRA ADULTA',
+    'PUL - PULSEIRA INFANTIL': '(PUL) PULSEIRA INFANTIL',
+    'NEW YORK - GARGANTILHA': '(NEW YORK) GARGANTILHA NEW YORK',
+    'ANEL REGULÁVEL': '(ANEL) ANEL REGULÁVEL'
+  };
+  function renomearCatalogo() {
+    if (localStorage.getItem('ns_renome_prod') === '1') return;
+    let mudou = 0;
+    for (const p of DB.all('produtos')) {
+      const novo = RENOME_PRODUTOS[p.nome];
+      if (novo && novo !== p.nome) { DB.update('produtos', p.id, { nome: novo }); mudou++; }
+    }
+    localStorage.setItem('ns_renome_prod', '1');
+    if (mudou) console.log('[catálogo] ' + mudou + ' produtos renomeados');
+  }
+
   function iniciarApp() {
     $('#topbar').style.display = ''; $('#tabs').style.display = ''; $('#fab').style.display = '';
+    try { renomearCatalogo(); } catch (e) {}
     montarTopbar();
     nav(viewAtual);
     // sempre sincroniza (fila + download) ao abrir e re-renderiza com os dados novos
@@ -1340,8 +1368,7 @@
     const upsell = Object.keys(porLinha).filter(l => !linhasTrab.has(l));
 
     const chips = el('div', { class: 'chips mt4' },
-      DB.all('produtos').filter(p => p.ativo !== false)
-        .sort((a, b) => (a.linha || '').localeCompare(b.linha || ''))
+      C.ordenarProdutos(DB.all('produtos').filter(p => p.ativo !== false))
         .map(p => el('button', {
           class: 'chip' + (minhas.has(p.id) ? ' ativo' : ''),
           onclick: (e) => {
@@ -2715,7 +2742,7 @@
       wrap.innerHTML = '';
       wrap.appendChild(el('button', { class: 'btn w100', onclick: () => editar(null) }, '+ Novo produto'));
       wrap.appendChild(el('div', { class: 'col gap4 mt8' },
-        DB.all('produtos').sort((a, b) => (a.codigo || '').localeCompare(b.codigo || ''))
+        C.ordenarProdutos(DB.all('produtos'))
           .map(p => el('div', { class: 'hist-linha' },
             el('span', null, p.ativo === false ? ico('bloquear', 'ic-sm') : null, (p.codigo || '') + ' · ' + p.nome +
               (p.variacao ? ' (' + p.variacao + ')' : '') +
@@ -2936,6 +2963,14 @@
         if (c && ehDiaUtil && c.rota_dia !== diaHoje) {
           porNaRota(c, diaHoje, c.representante_id);
           toast(nomeExib(c) + ' entrou na rota de ' + diaHoje + ' como atendido.');
+        }
+        // A prioridade serve para NÃO esquecer o cliente. Tirado o pedido, ela
+        // já cumpriu o papel e sai sozinha — senão a lista de prioritários vai
+        // crescendo com quem já foi atendido.
+        if (c && c.prioridade) {
+          DB.update('clientes', c.id, { prioridade: false });
+          c.prioridade = false;
+          toast('Prioridade de ' + nomeExib(c) + ' encerrada — pedido tirado.');
         }
       }
       if (viewAtual === 'hoje' || viewAtual === 'pedidos') nav(viewAtual);
