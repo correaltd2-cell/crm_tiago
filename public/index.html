@@ -698,9 +698,7 @@ body.destravando{opacity:.999}
   border:1px solid var(--borda2);border-radius:26px;box-shadow:var(--sombra-2);position:relative;overflow:hidden}
 .login-box::before{content:'';position:absolute;left:0;right:0;top:0;height:1px;
   background:var(--lilas-tint)}
-/* a estrela é chapada: sombra discreta, sem o brilho colorido que sujava o
-   contorno geométrico contra o branco do cartão */
-.login-logo{filter:drop-shadow(0 6px 14px rgba(41,15,93,.22));animation:flutua 5s ease-in-out infinite;
+.login-logo{filter:drop-shadow(0 8px 18px rgba(var(--glow-rgb),.45));animation:flutua 5s ease-in-out infinite;
   display:flex;justify-content:center}
 .login-logo{width:110px;height:110px;object-fit:contain;display:block}
 .logo-mark{display:inline-flex;align-items:center;gap:8px}
