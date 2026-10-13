@@ -1821,6 +1821,27 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   const tecla = (t) => page10.locator('.calc-tecla', { hasText: new RegExp('^' + t + '$') }).first().click();
   await tecla('4'); await tecla('×'); await tecla('8'); await tecla('=');
   check('calculadora faz 4 × 8 = 32', (await page10.textContent('.calc-visor')).trim() === '32');
+  // a conta tem que ficar à vista em cima, como na calculadora do celular
+  check('a conta montada aparece acima do número',
+    (await page10.textContent('.calc-conta')).trim() === '4 × 8 =');
+  check('e o botão já diz quanto vai lançar',
+    (await page10.textContent('.calc-caixa > button')).includes('32'));
+  // logo depois do operador ainda não há segundo número: não pode virar 4 × 4
+  await page10.locator('.calc-tecla', { hasText: /^C$/ }).first().click();
+  await page10.locator('.calc-tecla', { hasText: /^9$/ }).first().click();
+  await page10.locator('.calc-tecla', { hasText: /^×$/ }).first().click();
+  check('tocar no operador não multiplica o número por ele mesmo',
+    (await page10.textContent('.calc-caixa > button')).trim().endsWith('· 9'));
+  await page10.locator('.calc-tecla', { hasText: /^2$/ }).first().click();
+  check('e com o segundo número o botão passa a mostrar o resultado (18)',
+    (await page10.textContent('.calc-caixa > button')).trim().endsWith('· 18'));
+  // conta encadeada, como em qualquer calculadora
+  const teclar = (k) => page10.locator('.calc-tecla',
+    { hasText: new RegExp('^' + k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$') }).first().click();
+  for (const k of ['C', '4', '×', '8', '+', '2', '=']) await teclar(k);
+  check('conta encadeada: 4 × 8 + 2 = 34',
+    (await page10.textContent('.calc-visor')).trim() === '34');
+  for (const k of ['C', '4', '×', '8']) await teclar(k);
   await page10.locator('button:has-text("Lançar em Devolvida")').click();
   await page10.waitForTimeout(250);
   check('o resultado entra no campo Devolvida — Display sem digitar',
@@ -1855,6 +1876,25 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
     }));
   check('e já vem com o que estava conferido (48 − 32 devolvidas = 16 vendidas)',
     (await page10.locator('.furo.vazio').count()) === 16);
+  // a placa INTEIRA tem que caber na tela: rolando, o vendedor perde as
+  // primeiras fileiras de vista e não consegue bater com a placa da mão
+  const coube = await page10.evaluate(() => {
+    const palco = document.querySelector('.placa-palco');
+    const furos = [...document.querySelectorAll('.furo')];
+    const cab = document.querySelector('.placa-cabeca').getBoundingClientRect();
+    const ult = furos[furos.length - 1].getBoundingClientRect();
+    const rod = document.querySelector('.placa-rodape').getBoundingClientRect();
+    return {
+      rola: palco.scrollHeight - palco.clientHeight,
+      cabecaVisivel: cab.top >= 0,
+      ultimoVisivel: ult.bottom <= rod.top + 1,
+      furoAlt: Math.round(furos[0].getBoundingClientRect().height)
+    };
+  });
+  check('a placa cabe inteira na tela, sem precisar rolar', coube.rola <= 1);
+  check('o topo da placa e a última fileira ficam visíveis juntos',
+    coube.cabecaVisivel && coube.ultimoVisivel);
+  check('e o furo continua grande o bastante para o dedo', coube.furoAlt >= 19);
 
   await page10.locator('.placa-concluir').click();
   await page10.waitForTimeout(250);

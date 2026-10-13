@@ -830,6 +830,10 @@ body.sem-rolagem{overflow:hidden}
    arco de 425 de altura, furo 94×116 com 11 de folga lateral e 37 embaixo). */
 .placa-tela{position:fixed;inset:0;z-index:90;background:var(--roxo);
   display:flex;flex-direction:column;animation:surge .18s ease-out}
+/* no celular a barra do navegador come parte da tela: dvh é a altura REAL */
+@supports (height:100dvh){.placa-tela{height:100dvh}}
+/* a placa é dimensionada no JS para caber inteira; aqui fica só o centro */
+.placa-cartao{margin:0 auto}
 /* o X flutua sobre o fundo roxo, como na referência */
 .placa-x{position:absolute;top:calc(12px + env(safe-area-inset-top));right:14px;z-index:3;
   width:40px;height:40px;border-radius:11px;background:#15151c;color:#fff;border:none;
@@ -889,30 +893,18 @@ body.sem-rolagem{overflow:hidden}
 @keyframes furo-muda{0%{transform:scale(1)}40%{transform:scale(1.22)}100%{transform:scale(1)}}
 .furo-muda{animation:furo-muda .2s ease-out}
 /* gargantilha e pulseira: régua de ganchos no alto, com a peça pendurada */
-.placa-cartao.p-pendente{container-type:normal;width:max-content;min-width:100%}
-.placa-cartao.p-pendente .placa-cabeca{padding:14px 16px 12px;
-  justify-content:flex-start;gap:26px}
-.placa-cartao.p-pendente .placa-nome span{font-size:1.18rem}
-.placa-cartao.p-pendente .placa-arte{width:74px;height:62px}
-.placa-cartao.p-pendente .placa-corpo{padding:16px 16px 120px}
-.placa-cartao.p-pendente .placa-grade{grid-template-columns:repeat(var(--cols),30px);
-  column-gap:4px}
-.placa-cartao.p-pendente .furo{aspect-ratio:auto;height:26px;margin-bottom:0;
-  border-radius:3px 3px 5px 5px;position:relative;overflow:visible}
+/* gargantilha e pulseira: régua de ganchos com a peça pendurada. Tudo em cqw,
+   igual às outras placas, para o encaixe na tela valer aqui também. */
+.placa-cartao.p-pendente .placa-grade{grid-template-columns:repeat(var(--cols),1fr);
+  column-gap:1.1cqw}
+.placa-cartao.p-pendente .furo{aspect-ratio:auto;height:7.5cqw;min-height:17px;
+  margin-bottom:27cqw;border-radius:12% 12% 18% 18%;position:relative;overflow:visible}
 .placa-cartao.p-pendente .furo .fio{position:absolute;left:50%;top:100%;
-  width:52%;height:170px;transform:translateX(-50%);border-radius:0 0 4px 4px;
+  width:52%;height:25cqw;transform:translateX(-50%);border-radius:0 0 4px 4px;
   background:var(--peca)}
 .placa-cartao.p-pendente .furo .fio.cheio{width:100%;border-radius:0 0 6px 6px}
 .placa-cartao.p-pendente .furo.vazio .fio{display:none}
-.placa-cartao.p-pendente .placa-corpo{padding-bottom:195px}
-/* placa comprida (22 ganchos): rola de lado em vez de espremer os ganchos */
-.placa-rolagem{overflow-x:auto;padding-bottom:6px;-webkit-overflow-scrolling:touch}
-.placa-rolagem::-webkit-scrollbar{height:4px}
-.placa-rolagem::-webkit-scrollbar-thumb{background:rgba(255,255,255,.3);border-radius:4px}
-.placa-rolagem .placa-linha-cartao{max-width:none;width:max-content;min-width:100%}
-.placa-rolagem .placa-cartao{min-width:300px}
-.placa-dica{max-width:440px;margin:8px auto 0;padding-left:28px;text-align:center;
-  font-size:.74rem;font-weight:600;color:#bcabe4}
+.placa-cartao.p-pendente .placa-corpo{padding:4.5cqw 5.7cqw 3cqw}
 
 .placa-atalhos{display:flex;gap:8px;max-width:440px;margin:14px auto 0;padding-left:28px}
 .placa-atalho{flex:1;padding:11px 10px;border-radius:12px;font-size:.84rem;font-weight:700;
@@ -936,24 +928,35 @@ body.sem-rolagem{overflow:hidden}
   white-space:nowrap;box-shadow:0 10px 22px -10px rgba(0,0,0,.7)}
 .placa-concluir:active{transform:scale(.95)}
 
-/* ── calculadora ── */
+/* ── calculadora: mesma cara da calculadora do celular ── */
 .calc-caixa{display:flex;flex-direction:column}
-.calc-conta{min-height:19px;margin-top:-4px;text-align:right;color:var(--sub);
-  font-size:.85rem;font-weight:600;font-variant-numeric:tabular-nums}
-.calc-visor{text-align:right;font-size:2.3rem;font-weight:800;color:var(--roxo);
-  line-height:1.15;padding:2px 2px 12px;font-variant-numeric:tabular-nums;
-  overflow-x:auto;white-space:nowrap}
-.calc-teclado{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
-.calc-tecla{height:56px;border-radius:14px;font-size:1.3rem;font-weight:800;
+/* a tela: conta em cima, número grande embaixo, tudo alinhado à direita */
+.calc-tela{background:var(--roxo);border-radius:var(--r-md);padding:14px 16px 12px;
+  display:flex;flex-direction:column;align-items:stretch;gap:2px;min-height:106px;
+  justify-content:flex-end;box-shadow:var(--sombra-2)}
+.calc-conta{text-align:right;color:#bcabe4;font-size:1.02rem;font-weight:600;
+  line-height:1.3;min-height:1.35em;font-variant-numeric:tabular-nums;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.calc-visor{text-align:right;font-size:2.7rem;font-weight:800;color:#fff;
+  line-height:1.12;font-variant-numeric:tabular-nums;white-space:nowrap;
+  overflow:hidden;transition:font-size .12s}
+.calc-visor.medio{font-size:2.05rem}
+.calc-visor.pequeno{font-size:1.5rem}
+.calc-teclado{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-top:12px}
+.calc-tecla{height:58px;border-radius:16px;font-size:1.42rem;font-weight:700;
   background:var(--bg2);color:var(--roxo);border:1px solid var(--borda);
+  display:flex;align-items:center;justify-content:center;
   transition:transform .1s,filter .15s}
-.calc-tecla:active{transform:scale(.94);filter:brightness(.95)}
-.calc-tecla.op{background:var(--lilas-tint);color:var(--lilas-escuro);border-color:var(--lilas)}
-.calc-tecla.apaga{background:var(--vermelho-tint);color:var(--vermelho-escuro);border-color:var(--vermelho);
-  font-size:1.05rem}
-.calc-tecla.igual{background:var(--roxo);color:#fff;border-color:var(--roxo-escuro)}
+.calc-tecla:active{transform:scale(.93);filter:brightness(.94)}
+.calc-tecla.op{background:var(--lilas-tint);color:var(--lilas-escuro);
+  border-color:var(--lilas);font-size:1.6rem;font-weight:800}
+.calc-tecla.apaga{background:var(--vermelho-tint);color:var(--vermelho-escuro);
+  border-color:var(--vermelho);font-size:1.12rem;font-weight:800}
+.calc-tecla.igual{background:var(--roxo);color:#fff;border-color:var(--roxo-escuro);
+  font-size:1.7rem;font-weight:800}
 .calc-tecla.alto{grid-row:span 2;height:auto}
 .calc-tecla.zero{grid-column:span 2}
+
 @media (prefers-reduced-motion:reduce){.furo-muda{animation:none !important}}
 
 /* ═══════════ ABERTURA DO APP ═══════════

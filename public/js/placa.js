@@ -134,8 +134,13 @@
   const COLUNAS_CONHECIDAS = { 16: 8, 32: 8, 48: 8, 64: 8, 72: 9, 96: 8, 99: 9 };
   function grade(total, tipo) {
     if (total <= 0) return { colunas: 1, linhas: 0 };
-    // gargantilha e pulseira ficam PENDURADAS: uma régua só de ganchos no alto
-    if (tipo === 'pendente') return { colunas: total, linhas: 1 };
+    // Gargantilha e pulseira ficam PENDURADAS numa régua de ganchos. Até 12
+    // cabem numa fileira só; acima disso a régua é partida em duas, senão o
+    // gancho fica fino demais para o dedo acertar (22 numa linha dá 14px).
+    if (tipo === 'pendente') {
+      const colunas = total <= 12 ? total : Math.ceil(total / 2);
+      return { colunas, linhas: Math.ceil(total / colunas) };
+    }
     const col = COLUNAS_CONHECIDAS[total];
     if (col) return { colunas: col, linhas: Math.ceil(total / col) };
     const exatos = [8, 9, 10, 7, 6, 12].filter(c => total % c === 0);
@@ -263,26 +268,58 @@
       corpo.appendChild(gradeEl);
       cartao.appendChild(corpo);
 
-      const linhaPlaca = el('div', { class: 'placa-linha-cartao' }, fileiras, cartao);
-      if (pendente) {
-        palcoEl.appendChild(el('div', { class: 'placa-rolagem' }, linhaPlaca));
-        palcoEl.appendChild(el('p', { class: 'placa-dica' },
-          'Arraste a placa de lado para ver os outros ganchos'));
-      } else palcoEl.appendChild(linhaPlaca);
+      palcoEl.appendChild(el('div', { class: 'placa-linha-cartao' }, fileiras, cartao));
 
+      // A placa tem que caber INTEIRA na tela. Rolar faz o vendedor perder as
+      // primeiras fileiras de vista, e aí ele não consegue bater a conferência
+      // com a placa física que está na mão. Como tudo dentro do cartão está em
+      // cqw, a altura é proporcional à largura: mede-se a proporção e calcula-se
+      // a largura que faz a placa fechar na altura disponível.
+      const FURO_MIN = pendente ? 15 : 19;   // abaixo disso o dedo não acerta mais
+      function encaixarNaTela() {
+        const f0 = gradeEl.children[0];
+        if (!f0 || !palcoEl.clientHeight) return;
+        cartao.style.maxWidth = '';
+        // duas passadas: a primeira acerta a largura, a segunda corrige o que
+        // mudou de altura no cabeçalho ao encolher a letra
+        for (let passo = 0; passo < 2; passo++) {
+          const largura = cartao.getBoundingClientRect().width;
+          const altura = cartao.getBoundingClientRect().height;
+          if (!largura || !altura) return;
+          const sobra = palcoEl.clientHeight - (palcoEl.scrollHeight - altura);
+          if (sobra <= 0) return;
+          const proporcao = altura / largura;
+          const alvo = Math.min(largura, Math.floor(sobra / proporcao));
+          // não encolhe a ponto de o furo virar um pontinho: aí volta a rolar
+          const furoAgora = f0.getBoundingClientRect().height;
+          const minimo = largura * (FURO_MIN / furoAgora);
+          cartao.style.maxWidth = Math.max(alvo, Math.ceil(minimo)) + 'px';
+        }
+      }
       // os botões de fileira ficam do lado de fora, então precisam ser medidos
       // pela placa de verdade para casar linha a linha
-      if (!pendente) requestAnimationFrame(() => {
+      function alinharFileiras() {
         const f0 = gradeEl.children[0], f1 = gradeEl.children[g.colunas];
         if (!f0) return;
         const r0 = f0.getBoundingClientRect();
-        const alt = r0.height;
         const gap = f1 ? (f1.getBoundingClientRect().top - r0.bottom) : 0;
-        fileiras.style.setProperty('--furo-alt', alt + 'px');
+        fileiras.style.setProperty('--furo-alt', r0.height + 'px');
         fileiras.style.setProperty('--furo-gap', gap + 'px');
         fileiras.style.setProperty('--topo-grade',
           (r0.top - fileiras.getBoundingClientRect().top) + 'px');
+      }
+      requestAnimationFrame(() => {
+        encaixarNaTela();
+        alinharFileiras();
       });
+      // virou o celular de lado: refaz a conta do encaixe
+      if (!overlay._aoGirar) {
+        overlay._aoGirar = () => {
+          const g2 = overlay.querySelector('.placa-grade');
+          if (g2) requestAnimationFrame(() => { encaixarNaTela(); alinharFileiras(); });
+        };
+        window.addEventListener('resize', overlay._aoGirar);
+      }
 
       palcoEl.appendChild(el('div', { class: 'placa-atalhos' },
         el('button', {
@@ -326,7 +363,11 @@
       }
     }
 
-    const fechar = () => { overlay.remove(); document.body.classList.remove('sem-rolagem'); };
+    const fechar = () => {
+      if (overlay._aoGirar) window.removeEventListener('resize', overlay._aoGirar);
+      overlay.remove();
+      document.body.classList.remove('sem-rolagem');
+    };
 
     overlay.append(
       el('button', { class: 'placa-x', 'aria-label': 'Voltar sem salvar', onclick: fechar },
@@ -353,83 +394,118 @@
   }
 
   // ─────────── calculadora ───────────
-  // Serve para a conta do dia a dia: "4 fileiras × 8 = 32". Fica dentro do
-  // pedido justamente para o vendedor não precisar sair do app.
+  // Funciona igual à do celular: em cima a conta que está sendo montada
+  // ("9 × 2"), embaixo o número grande. Serve para a conta do balcão sem
+  // precisar sair do pedido.
   function calculadora({ aoLancar, rotuloLancar }) {
     const { modal } = window.NSUI;
-    let acumulado = null, operacao = null, digitando = '0', recomecar = false;
-    const visor = el('div', { class: 'calc-visor' }, '0');
-    const conta = el('div', { class: 'calc-conta' }, '');
+    let anterior = null;      // número guardado antes do operador
+    let op = null;            // + − × ÷
+    let atual = '0';          // o que está sendo digitado
+    let novoNumero = true;    // o próximo dígito começa um número novo
+    let fechado = '';         // conta já resolvida, mostrada depois do =
 
-    const mostrar = () => {
-      texto(visor, digitando);
-      texto(conta, acumulado == null ? '' :
-        formata(acumulado) + ' ' + (operacao || '') + (recomecar ? '' : ' ' + digitando), false);
-    };
-    const formata = (n) => {
+    const visor = el('div', { class: 'calc-visor' }, '0');
+    const conta = el('div', { class: 'calc-conta' }, '\u00a0');
+    const rotuloBase = rotuloLancar || 'Lançar no devolvido';
+    const btnLancar = el('button', { class: 'btn big w100 mt12' }, rotuloBase);
+
+    // número no padrão brasileiro, sem casa decimal sobrando
+    const fmt = (n) => {
       const v = Math.round(Number(n) * 1e6) / 1e6;
       return String(v).replace('.', ',');
     };
+    const num = (t) => Number(String(t).replace(',', '.')) || 0;
+
+    function resolver() {
+      if (anterior == null || op == null) return num(atual);
+      const b = num(atual);
+      if (op === '+') return anterior + b;
+      if (op === '−') return anterior - b;
+      if (op === '×') return anterior * b;
+      if (op === '÷') return b === 0 ? 0 : anterior / b;
+      return b;
+    }
+
+    // o que vai ser lançado: o número da tela, ou a conta pendente quando o
+    // segundo número já foi digitado. Logo depois de tocar no operador ainda
+    // não há segundo número — aí vale o que está na tela, não ele vezes ele.
+    const valorFinal = () => (op != null && !novoNumero) ? resolver() : num(atual);
+
+    function mostrar() {
+      texto(visor, atual, false);
+      // a letra encolhe quando o número fica comprido, para nunca cortar
+      visor.classList.toggle('medio', atual.length > 9);
+      visor.classList.toggle('pequeno', atual.length > 13);
+      const linha = fechado ? fechado
+        : anterior == null ? ''
+          : fmt(anterior) + ' ' + op + (novoNumero ? '' : ' ' + atual);
+      texto(conta, linha || '\u00a0', false);
+      // o botão diz exatamente o número que vai ser lançado
+      const r = Math.round(valorFinal());
+      btnLancar.textContent = rotuloBase + (r > 0 ? ' · ' + r : '');
+    }
+
     const digito = (d) => {
-      if (recomecar) { digitando = '0'; recomecar = false; }
-      if (d === ',') { if (!digitando.includes(',')) digitando += ','; }
-      else digitando = digitando === '0' ? d : digitando + d;
+      if (novoNumero) { atual = '0'; novoNumero = false; fechado = ''; }
+      if (d === ',') { if (!atual.includes(',')) atual += ','; }
+      else if (atual.length < 14) atual = atual === '0' ? d : atual + d;
       mostrar();
     };
-    const num = () => Number(String(digitando).replace(',', '.')) || 0;
-    const resolve = () => {
-      if (acumulado == null || operacao == null) return num();
-      const b = num();
-      if (operacao === '+') return acumulado + b;
-      if (operacao === '−') return acumulado - b;
-      if (operacao === '×') return acumulado * b;
-      if (operacao === '÷') return b === 0 ? 0 : acumulado / b;
-      return b;
-    };
-    const op = (o) => {
-      const r = resolve();
-      acumulado = r; operacao = o; recomecar = true;
-      digitando = formata(r);
+    const operador = (o) => {
+      // encadeia: 2 + 3 + 4 resolve o 2 + 3 antes de guardar o próximo
+      if (op != null && !novoNumero) anterior = resolver();
+      else if (anterior == null) anterior = num(atual);
+      atual = fmt(anterior); op = o; novoNumero = true; fechado = '';
       mostrar();
     };
     const igual = () => {
-      const r = resolve();
-      acumulado = null; operacao = null; recomecar = true;
-      digitando = formata(r);
+      if (op == null) return;
+      const conta1 = fmt(anterior) + ' ' + op + ' ' + atual + ' =';
+      atual = fmt(resolver());
+      anterior = null; op = null; novoNumero = true; fechado = conta1;
       mostrar();
     };
-    const limpar = () => { acumulado = null; operacao = null; digitando = '0'; recomecar = false; mostrar(); };
+    const limpar = () => {
+      anterior = null; op = null; atual = '0'; novoNumero = true; fechado = '';
+      mostrar();
+    };
     const apagar = () => {
-      if (recomecar) return limpar();
-      digitando = digitando.length > 1 ? digitando.slice(0, -1) : '0';
+      if (novoNumero) return limpar();
+      atual = atual.length > 1 ? atual.slice(0, -1) : '0';
+      if (atual === '0') novoNumero = true;
       mostrar();
     };
 
     const tecla = (rotulo, acao, cls) => el('button', {
-      class: 'calc-tecla' + (cls ? ' ' + cls : ''), type: 'button', onclick: acao
+      class: 'calc-tecla' + (cls ? ' ' + cls : ''), type: 'button',
+      'aria-label': rotulo === '⌫' ? 'Apagar o último número' : rotulo,
+      onclick: acao
     }, rotulo);
 
+    // mesma disposição da calculadora do celular: operadores na coluna da
+    // direita, zero largo embaixo e o igual em destaque
     const teclado = el('div', { class: 'calc-teclado' },
       tecla('C', limpar, 'apaga'), tecla('⌫', apagar, 'apaga'),
-      tecla('÷', () => op('÷'), 'op'), tecla('×', () => op('×'), 'op'),
+      tecla('÷', () => operador('÷'), 'op'), tecla('×', () => operador('×'), 'op'),
       tecla('7', () => digito('7')), tecla('8', () => digito('8')), tecla('9', () => digito('9')),
-      tecla('−', () => op('−'), 'op'),
+      tecla('−', () => operador('−'), 'op'),
       tecla('4', () => digito('4')), tecla('5', () => digito('5')), tecla('6', () => digito('6')),
-      tecla('+', () => op('+'), 'op'),
+      tecla('+', () => operador('+'), 'op'),
       tecla('1', () => digito('1')), tecla('2', () => digito('2')), tecla('3', () => digito('3')),
       tecla('=', igual, 'igual alto'),
       tecla('0', () => digito('0'), 'zero'), tecla(',', () => digito(',')));
 
     const m = modal(el('div', { class: 'calc-caixa' },
-      conta, visor, teclado,
-      el('button', {
-        class: 'btn big w100 mt12', onclick: () => {
-          const r = Math.round(resolve());
-          if (r < 0) return toast('Não dá para lançar um número negativo.', 'erro');
-          m.fechar();
-          aoLancar(r);
-        }
-      }, rotuloLancar || 'Lançar no devolvido')), { titulo: 'Calculadora' });
+      el('div', { class: 'calc-tela' }, conta, visor),
+      teclado, btnLancar), { titulo: 'Calculadora' });
+
+    btnLancar.onclick = () => {
+      const r = Math.round(valorFinal());
+      if (r < 0) return toast('Não dá para lançar um número negativo.', 'erro');
+      m.fechar();
+      aoLancar(r);
+    };
     mostrar();
   }
 
