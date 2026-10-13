@@ -773,6 +773,25 @@ body.destravando{opacity:.999}
 .card-pedido.com-obs{border-left-color:var(--vermelho)}
 .item-lista.prioritario{background:var(--azul-prio-tint)}
 .card-visita.prioritario{background:var(--azul-prio-tint)}
+/* ÚLTIMO PEDIDO em destaque na lista de clientes: é o que o vendedor procura
+   primeiro. A cor segue o farol — vermelho quem passou do ciclo sem comprar. */
+.ped-chip{display:flex;align-items:center;gap:7px;margin-top:7px;
+  border-radius:10px;padding:6px 10px;font-size:.82rem;font-weight:700;
+  border:1px solid var(--borda);background:var(--bg2);color:var(--texto);
+  font-variant-numeric:tabular-nums;flex-wrap:wrap}
+.ped-chip .ic{flex:0 0 auto;opacity:.75}
+.ped-chip .ped-rot{font-size:.6rem;font-weight:900;letter-spacing:.09em;opacity:.7}
+.ped-chip strong{font-weight:800}
+.ped-chip .ped-dias{margin-left:auto;font-weight:900;padding:2px 9px;border-radius:999px;
+  background:rgba(41,15,93,.1);white-space:nowrap}
+.ped-chip.verde{background:var(--verde-tint);border-color:var(--verde);color:var(--verde-escuro)}
+.ped-chip.verde .ped-dias{background:rgba(92,143,31,.16)}
+.ped-chip.amarelo{background:var(--amarelo-tint);border-color:var(--amarelo-escuro);color:#7a5e04}
+.ped-chip.amarelo .ped-dias{background:rgba(201,164,28,.22)}
+.ped-chip.vermelho{background:var(--vermelho-tint);border-color:var(--vermelho);color:var(--vermelho-escuro)}
+.ped-chip.vermelho .ped-dias{background:var(--vermelho);color:#fff}
+.ped-chip.cinza{background:var(--bg2);border-color:var(--borda2);color:var(--sub)}
+
 /* a linha da data/classe não pode encostar na etiqueta do CNPJ */
 span.sub{display:inline-block}
 .cnpj-chip+.sub,.cnpj-chip+.selos,.cnpj-chip+.row{margin-top:9px}

@@ -1917,6 +1917,72 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page10.waitForTimeout(200);
   check('e a prioridade sai sozinha depois que o pedido é tirado',
     await page10.evaluate(() => !window.NSDB.all('clientes')[0].prioridade));
+
+  // ══ aba Clientes: último pedido à vista e atraso contado por DIAS SEM PEDIDO ══
+  await page10.evaluate(() => {
+    document.querySelectorAll('.ns-overlay').forEach(o => o.remove());
+    const atras = (d) => {
+      const x = new Date(); x.setDate(x.getDate() - d);
+      return x.toISOString().slice(0, 10);
+    };
+    const c = window.NSDB.all('clientes')[0];
+    // classe B = ciclo de 60 dias. 132 dias sem pedido = bem atrasado.
+    // A ÚLTIMA VISITA é de ontem de propósito: pela régua antiga ele apareceria
+    // "em dia", e é justamente isso que não pode mais acontecer.
+    window.NSDB.update('clientes', c.id, {
+      classe: 'B', ultimo_pedido_em: atras(132), ultima_visita_em: atras(1),
+      prioridade: false
+    });
+  });
+  await page10.click('#tabs button[data-v=clientes]');
+  await page10.waitForTimeout(400);
+  const cartaoCli = await page10.evaluate(() => {
+    const c = document.querySelector('#view .item-lista');
+    if (!c) return null;
+    const faixa = c.querySelector('.ped-chip');
+    return {
+      selo: (c.querySelector('.badge') || {}).textContent || '',
+      faixa: faixa ? faixa.textContent.replace(/\s+/g, ' ').trim() : '',
+      vermelha: !!(faixa && faixa.classList.contains('vermelho')),
+      farol: !!c.querySelector('.st-tag.vermelho') || c.className.includes('st-vermelho')
+    };
+  });
+  check('a lista de clientes mostra a DATA do último pedido',
+    /\d{2}\/\d{2}\/\d{4}/.test(cartaoCli.faixa));
+  check('e mostra os DIAS sem pedido', cartaoCli.faixa.includes('132 dias'));
+  check('o atraso é contado pelos dias sem pedido, não pela visita',
+    cartaoCli.selo === '132d sem pedido');
+  check('e o farol fica vermelho mesmo tendo sido visitado ontem',
+    cartaoCli.vermelha && cartaoCli.farol);
+
+  // cliente que comprou dentro do ciclo continua em dia
+  await page10.evaluate(() => {
+    const atras = (d) => { const x = new Date(); x.setDate(x.getDate() - d); return x.toISOString().slice(0, 10); };
+    const c = window.NSDB.all('clientes')[0];
+    window.NSDB.update('clientes', c.id, { ultimo_pedido_em: atras(12) });
+  });
+  await page10.click('#tabs button[data-v=hoje]');
+  await page10.click('#tabs button[data-v=clientes]');
+  await page10.waitForTimeout(400);
+  const emDia = await page10.evaluate(() => {
+    const c = document.querySelector('#view .item-lista');
+    return { selo: (c.querySelector('.badge') || {}).textContent || '',
+      verde: !!c.querySelector('.ped-chip.verde') };
+  });
+  check('quem comprou dentro do ciclo fica em dia', emDia.selo === 'em dia' && emDia.verde);
+
+  // o painel usa a MESMA régua, para "atrasado" não significar duas coisas
+  check('o painel conta o atraso pela mesma régua (dias sem pedido)',
+    await page10.evaluate(() => {
+      const atras = (d) => { const x = new Date(); x.setDate(x.getDate() - d); return x.toISOString().slice(0, 10); };
+      const c = window.NSDB.all('clientes')[0];
+      window.NSDB.update('clientes', c.id, { ultimo_pedido_em: atras(132), ultima_visita_em: atras(1) });
+      return true;
+    }));
+  await page10.click('#tabs button[data-v=dash]');
+  await page10.waitForTimeout(500);
+  check('e o alerta do painel mostra os dias sem pedido',
+    (await page10.textContent('#view')).includes('132d sem pedido'));
   await page10.close();
 
   await browser.close();

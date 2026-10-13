@@ -307,18 +307,21 @@
     const s = sessao();
     return s.consolidado ? null : s.rep.id;
   }
+  // Mesma régua do farol da aba Clientes: atrasado é quem passou do ciclo SEM
+  // PEDIDO. Em "dias" vai o que importa para o vendedor — há quantos dias
+  // aquele cliente não compra.
   function alertasCiclo(repId) {
-    const hoje = hojeISO();
     const avisoDias = Number(DB.config('alerta_vencendo_dias', 7));
     const out = { atrasados: [], vencendo: [] };
     for (const c of clientesDoRep(repId)) {
-      if (!c.proxima_visita_prevista) continue;
-      const dif = Math.round((new Date(c.proxima_visita_prevista) - new Date(hoje)) / 86400000);
-      if (dif < 0) out.atrasados.push({ c, dias: -dif });
-      else if (dif <= avisoDias) out.vencendo.push({ c, dias: dif });
+      const dias = diasSemPedido(c);
+      if (dias >= 9999) continue;           // nunca comprou: não é atraso de ciclo
+      const falta = cicloDoCliente(c) - dias;
+      if (falta < 0) out.atrasados.push({ c, dias, falta });
+      else if (falta <= avisoDias) out.vencendo.push({ c, dias, falta });
     }
     out.atrasados.sort((a, b) => b.dias - a.dias);
-    out.vencendo.sort((a, b) => a.dias - b.dias);
+    out.vencendo.sort((a, b) => a.falta - b.falta);
     return out;
   }
   function visitouHoje(clienteId) {
@@ -384,6 +387,20 @@
   }
   // texto amigável (9999 = nunca comprou/visitou)
   const txtDias = (n, oque) => n >= 9999 ? 'sem ' + oque + ' registrado' : n + 'd sem ' + oque;
+  // Faixa do ÚLTIMO PEDIDO: a informação que o vendedor mais procura na lista.
+  // Mostra a data e há quantos dias o cliente não compra, com a cor do farol —
+  // vermelho quando já passou do ciclo da classe.
+  function faixaUltimoPedido(c) {
+    const dias = diasSemPedido(c);
+    const nunca = dias >= 9999;
+    const ciclo = cicloDoCliente(c);
+    const cor = nunca ? 'cinza' : (dias > ciclo ? 'vermelho' : (ciclo - dias <= 7 ? 'amarelo' : 'verde'));
+    return el('div', { class: 'ped-chip ' + cor },
+      ico('recibo', 'ic-sm'),
+      el('span', { class: 'ped-rot' }, 'ÚLTIMO PEDIDO'),
+      el('strong', null, nunca ? 'nunca comprou' : dataBR(c.ultimo_pedido_em) || '—'),
+      nunca ? null : el('span', { class: 'ped-dias' }, dias + ' dias'));
+  }
   // ordem padrão da seleção: prioridade (A→C) e depois quem está há mais tempo sem pedido
   function ordenarParaRota(lista) {
     return lista.sort((a, b) =>
@@ -1106,14 +1123,18 @@
     d.setDate(d.getDate() + cicloDoCliente(c));
     return d.toISOString().slice(0, 10);
   }
+  // O FAROL é contado pelos DIAS SEM PEDIDO, não pelos dias de atraso da visita.
+  // Numa consignação quem repõe a mercadoria é o PEDIDO: visitar e sair sem
+  // pedido não abastece a farmácia, então o relógio continua correndo.
+  // Vermelho = passou do ciclo da classe (A 45 · B 60 · C 90 · D 120) sem comprar.
   function statusCliente(c, hoje, avisoDias) {
-    const prox = proximaVisitaDe(c);
-    if (!prox) return { k: 'cinza', rot: 'sem visita registrada', ordem: 3, sub: 9e9 };
-    c = Object.assign({}, c, { proxima_visita_prevista: prox });
-    const dif = Math.round((new Date(prox) - new Date(hoje)) / 86400000);
-    if (dif < 0) return { k: 'vermelho', rot: (-dif) + 'd atrasado', ordem: 0, sub: dif };
-    if (dif <= avisoDias) return { k: 'amarelo', rot: 'vence em ' + dif + 'd', ordem: 1, sub: dif };
-    return { k: 'verde', rot: 'em dia · próxima ' + dataBR(c.proxima_visita_prevista), ordem: 2, sub: dif };
+    const dias = diasSemPedido(c);
+    if (dias >= 9999) return { k: 'cinza', rot: 'nunca comprou', ordem: 3, sub: 9e9 };
+    const ciclo = cicloDoCliente(c);
+    const falta = ciclo - dias;        // quanto ainda falta para fechar o ciclo
+    if (falta < 0) return { k: 'vermelho', rot: dias + 'd sem pedido', ordem: 0, sub: falta };
+    if (falta <= avisoDias) return { k: 'amarelo', rot: 'vence em ' + falta + 'd', ordem: 1, sub: falta };
+    return { k: 'verde', rot: 'em dia · ' + dias + 'd sem pedido', ordem: 2, sub: falta };
   }
 
   // ================= FILTROS CENTRALIZADOS =================
@@ -1242,8 +1263,11 @@
   function potencialDoCliente(clienteId) {
     return C.potencialCliente(ultimoPedidoValor(clienteId));
   }
+  // Sem potencial calculado não vira mais o selo "SEM PEDIDO": a faixa do
+  // último pedido logo acima já diz isso, e dois avisos da mesma coisa, com
+  // palavras diferentes, só confundem quem lê a lista correndo.
   function seloPotencial(pot) {
-    if (!pot) return el('span', { class: 'badge pot pot-sem' }, 'SEM PEDIDO');
+    if (!pot) return null;
     return el('span', { class: 'badge pot pot-' + pot },
       ico('tendencia', 'ic-sm'), C.nomePotencial(pot).toUpperCase());
   }
@@ -1326,11 +1350,12 @@
               el('span', { class: 'cnpj-rot' },
                 String(c.cnpj_cpf).replace(/\D/g, '').length === 11 ? 'CPF' : 'CNPJ'),
               C.fmtCNPJ(c.cnpj_cpf)) : null,
-            el('div', { class: 'row gap8 mt4 selos' },
+            faixaUltimoPedido(c),
+            (ehProspec(c) || ehPrioritario(c) || pot) ? el('div', { class: 'row gap8 mt4 selos' },
               ehProspec(c) ? el('span', { class: 'badge prospec' }, 'PROSPECÇÃO') : null,
               ehPrioritario(c) ? el('span', { class: 'badge prioritario' },
                 ico('estrela', 'ic-sm'), 'PRIORIDADE') : null,
-              seloPotencial(pot)),
+              seloPotencial(pot)) : null,
             el('span', { class: 'sub mt4' },
               'Classe ' + C.classeDe(c) + ' · ' + cicloDoCliente(c) + ' dias · ' +
               [c.cidade, c.uf].filter(Boolean).join(' - ') +
@@ -1807,7 +1832,8 @@
     const alertasEl = el('div', { class: 'col gap4 mt8' });
     alertas.atrasados.slice(0, 20).forEach(a => alertasEl.appendChild(
       el('button', { class: 'item-lista compacto', onclick: () => fichaCliente(a.c.id) },
-        el('span', { class: 'row gap8' }, farol('vermelho'), a.c.nome), el('span', { class: 'sub' }, a.dias + 'd atrasado'))));
+        el('span', { class: 'row gap8' }, farol('vermelho'), a.c.nome),
+        el('span', { class: 'sub' }, a.dias + 'd sem pedido'))));
     alertas.vencendo.slice(0, 20).forEach(a => alertasEl.appendChild(
       el('button', { class: 'item-lista compacto', onclick: () => fichaCliente(a.c.id) },
         el('span', { class: 'row gap8' }, farol('amarelo'), a.c.nome), el('span', { class: 'sub' }, 'vence em ' + a.dias + 'd'))));
