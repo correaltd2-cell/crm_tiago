@@ -394,86 +394,93 @@
   }
 
   // ─────────── calculadora ───────────
-  // Funciona igual à do celular: em cima a conta que está sendo montada
-  // ("9 × 2"), embaixo o número grande. Serve para a conta do balcão sem
-  // precisar sair do pedido.
+  // O número grande mostra a CONTA INTEIRA sendo montada ("9 × 2"), para o
+  // vendedor enxergar o que está fazendo. Só no "=" ele vira o resultado, e
+  // aí a conta que gerou o número fica na linha de cima ("9 × 2 =").
   function calculadora({ aoLancar, rotuloLancar }) {
     const { modal } = window.NSUI;
-    let anterior = null;      // número guardado antes do operador
-    let op = null;            // + − × ÷
-    let atual = '0';          // o que está sendo digitado
-    let novoNumero = true;    // o próximo dígito começa um número novo
-    let fechado = '';         // conta já resolvida, mostrada depois do =
+    const OPS = ['+', '−', '×', '÷'];
+    let pecas = ['0'];        // ['4','×','8','+','2'] — números e operadores
+    let fechado = '';         // a conta já resolvida, mostrada em cima
+    let recemResolvido = false;
 
     const visor = el('div', { class: 'calc-visor' }, '0');
     const conta = el('div', { class: 'calc-conta' }, '\u00a0');
     const rotuloBase = rotuloLancar || 'Lançar no devolvido';
     const btnLancar = el('button', { class: 'btn big w100 mt12' }, rotuloBase);
 
-    // número no padrão brasileiro, sem casa decimal sobrando
+    const ehOp = (t) => OPS.indexOf(t) >= 0;
     const fmt = (n) => {
       const v = Math.round(Number(n) * 1e6) / 1e6;
       return String(v).replace('.', ',');
     };
     const num = (t) => Number(String(t).replace(',', '.')) || 0;
 
-    function resolver() {
-      if (anterior == null || op == null) return num(atual);
-      const b = num(atual);
-      if (op === '+') return anterior + b;
-      if (op === '−') return anterior - b;
-      if (op === '×') return anterior * b;
-      if (op === '÷') return b === 0 ? 0 : anterior / b;
-      return b;
+    // resolve da esquerda para a direita, como qualquer calculadora de celular
+    function resolver(lista) {
+      const p = lista.slice();
+      if (ehOp(p[p.length - 1])) p.pop();     // operador solto no fim não conta
+      if (!p.length) return 0;
+      let total = num(p[0]);
+      for (let i = 1; i < p.length - 1; i += 2) {
+        const o = p[i], b = num(p[i + 1]);
+        if (o === '+') total += b;
+        else if (o === '−') total -= b;
+        else if (o === '×') total *= b;
+        else if (o === '÷') total = b === 0 ? 0 : total / b;
+      }
+      return total;
     }
 
-    // o que vai ser lançado: o número da tela, ou a conta pendente quando o
-    // segundo número já foi digitado. Logo depois de tocar no operador ainda
-    // não há segundo número — aí vale o que está na tela, não ele vezes ele.
-    const valorFinal = () => (op != null && !novoNumero) ? resolver() : num(atual);
-
     function mostrar() {
-      texto(visor, atual, false);
-      // a letra encolhe quando o número fica comprido, para nunca cortar
-      visor.classList.toggle('medio', atual.length > 9);
-      visor.classList.toggle('pequeno', atual.length > 13);
-      const linha = fechado ? fechado
-        : anterior == null ? ''
-          : fmt(anterior) + ' ' + op + (novoNumero ? '' : ' ' + atual);
-      texto(conta, linha || '\u00a0', false);
-      // o botão diz exatamente o número que vai ser lançado
-      const r = Math.round(valorFinal());
+      const texto1 = pecas.join(' ');
+      texto(visor, texto1, false);
+      // a letra encolhe conforme a conta cresce, para nunca cortar na tela
+      visor.classList.toggle('medio', texto1.length > 10);
+      visor.classList.toggle('pequeno', texto1.length > 15);
+      visor.classList.toggle('mini', texto1.length > 22);
+      texto(conta, fechado || '\u00a0', false);
+      const r = Math.round(resolver(pecas));
       btnLancar.textContent = rotuloBase + (r > 0 ? ' · ' + r : '');
     }
 
     const digito = (d) => {
-      if (novoNumero) { atual = '0'; novoNumero = false; fechado = ''; }
-      if (d === ',') { if (!atual.includes(',')) atual += ','; }
-      else if (atual.length < 14) atual = atual === '0' ? d : atual + d;
+      // depois do "=" um número novo começa uma conta nova
+      if (recemResolvido) { pecas = ['0']; fechado = ''; recemResolvido = false; }
+      const i = pecas.length - 1;
+      if (ehOp(pecas[i])) { pecas.push(d === ',' ? '0,' : d); return mostrar(); }
+      let t = pecas[i];
+      if (d === ',') { if (!t.includes(',')) t += ','; }
+      else if (t.length < 12) t = t === '0' ? d : t + d;
+      pecas[i] = t;
       mostrar();
     };
     const operador = (o) => {
-      // encadeia: 2 + 3 + 4 resolve o 2 + 3 antes de guardar o próximo
-      if (op != null && !novoNumero) anterior = resolver();
-      else if (anterior == null) anterior = num(atual);
-      atual = fmt(anterior); op = o; novoNumero = true; fechado = '';
+      // depois do "=" o operador continua a conta a partir do resultado
+      if (recemResolvido) { fechado = ''; recemResolvido = false; }
+      const i = pecas.length - 1;
+      if (ehOp(pecas[i])) pecas[i] = o;        // trocou de ideia no operador
+      else pecas.push(o);
       mostrar();
     };
     const igual = () => {
-      if (op == null) return;
-      const conta1 = fmt(anterior) + ' ' + op + ' ' + atual + ' =';
-      atual = fmt(resolver());
-      anterior = null; op = null; novoNumero = true; fechado = conta1;
+      if (pecas.length < 3) return;            // ainda não há conta para fechar
+      const limpa = pecas.slice();
+      if (ehOp(limpa[limpa.length - 1])) limpa.pop();
+      if (limpa.length < 3) return;
+      fechado = limpa.join(' ') + ' =';
+      pecas = [fmt(resolver(limpa))];
+      recemResolvido = true;
       mostrar();
     };
-    const limpar = () => {
-      anterior = null; op = null; atual = '0'; novoNumero = true; fechado = '';
-      mostrar();
-    };
+    const limpar = () => { pecas = ['0']; fechado = ''; recemResolvido = false; mostrar(); };
     const apagar = () => {
-      if (novoNumero) return limpar();
-      atual = atual.length > 1 ? atual.slice(0, -1) : '0';
-      if (atual === '0') novoNumero = true;
+      if (recemResolvido) return limpar();
+      const i = pecas.length - 1;
+      if (ehOp(pecas[i]) || pecas[i].length <= 1) {
+        if (pecas.length > 1) pecas.pop(); else pecas[0] = '0';
+      } else pecas[i] = pecas[i].slice(0, -1);
+      if (!pecas.length) pecas = ['0'];
       mostrar();
     };
 
@@ -483,8 +490,7 @@
       onclick: acao
     }, rotulo);
 
-    // mesma disposição da calculadora do celular: operadores na coluna da
-    // direita, zero largo embaixo e o igual em destaque
+    // mesma disposição da calculadora do celular
     const teclado = el('div', { class: 'calc-teclado' },
       tecla('C', limpar, 'apaga'), tecla('⌫', apagar, 'apaga'),
       tecla('÷', () => operador('÷'), 'op'), tecla('×', () => operador('×'), 'op'),
@@ -501,7 +507,7 @@
       teclado, btnLancar), { titulo: 'Calculadora' });
 
     btnLancar.onclick = () => {
-      const r = Math.round(valorFinal());
+      const r = Math.round(resolver(pecas));
       if (r < 0) return toast('Não dá para lançar um número negativo.', 'erro');
       m.fechar();
       aoLancar(r);

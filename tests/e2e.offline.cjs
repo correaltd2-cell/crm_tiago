@@ -1819,7 +1819,12 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await mi10.locator('button[aria-label="Calculadora"]').click();
   await page10.waitForSelector('.calc-teclado');
   const tecla = (t) => page10.locator('.calc-tecla', { hasText: new RegExp('^' + t + '$') }).first().click();
-  await tecla('4'); await tecla('×'); await tecla('8'); await tecla('=');
+  await tecla('4'); await tecla('×'); await tecla('8');
+  // enquanto monta, a CONTA INTEIRA fica no número grande, para o vendedor
+  // enxergar o que está fazendo; só o "=" troca pelo resultado
+  check('a conta inteira aparece em destaque enquanto é digitada',
+    (await page10.textContent('.calc-visor')).trim() === '4 × 8');
+  await page10.locator('.calc-tecla', { hasText: /^=$/ }).first().click();
   check('calculadora faz 4 × 8 = 32', (await page10.textContent('.calc-visor')).trim() === '32');
   // a conta tem que ficar à vista em cima, como na calculadora do celular
   check('a conta montada aparece acima do número',
@@ -1842,7 +1847,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   check('conta encadeada: 4 × 8 + 2 = 34',
     (await page10.textContent('.calc-visor')).trim() === '34');
   for (const k of ['C', '4', '×', '8']) await teclar(k);
-  await page10.locator('button:has-text("Lançar em Devolvida")').click();
+  await page10.locator('button:has-text("Lançar no devolvido")').click();
   await page10.waitForTimeout(250);
   check('o resultado entra no campo Devolvida — Display sem digitar',
     await page10.evaluate(() => {

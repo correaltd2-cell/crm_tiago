@@ -300,7 +300,7 @@
             class: 'btn-ferramenta', 'aria-label': 'Calculadora',
             title: 'Calculadora — lança o resultado no devolvido',
             onclick: () => window.NSPlaca.calculadora({
-              rotuloLancar: 'Lançar em Devolvida — Display',
+              rotuloLancar: 'Lançar no devolvido',
               aoLancar: (n) => {
                 item.dev_display = n;
                 refazStepper();
