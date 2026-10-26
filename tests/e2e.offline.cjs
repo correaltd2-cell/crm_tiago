@@ -524,10 +524,11 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page.click('#view button:has-text("Prospecção")');
   await page.waitForSelector('.ns-overlay');
   const mp = page.locator('.ns-overlay').last();
+  // ordem dos campos: nome, CEP, cidade, UF, endereço, contato, telefone
   await mp.locator('input').nth(0).fill('DROGARIA NOVA PROSPEC');
-  await mp.locator('input').nth(1).fill('Chapecó');
-  await mp.locator('input').nth(2).fill('SC');
-  await mp.locator('input').nth(3).fill('Rua Teste, 100');
+  await mp.locator('input').nth(2).fill('Chapecó');
+  await mp.locator('input').nth(3).fill('SC');
+  await mp.locator('input').nth(4).fill('Rua Teste, 100');
   await mp.locator('button:has-text("Salvar prospecção")').click();
   await page.waitForTimeout(300);
   const prospec = await page.evaluate(() =>
@@ -2028,7 +2029,131 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page10.waitForTimeout(500);
   check('e o alerta do painel mostra os dias sem pedido',
     (await page10.textContent('#view')).includes('132d sem pedido'));
+
+  // ══ GPS e rota puxando o endereço pelo CEP ══
+  const buscas = await page10.evaluate(() => {
+    const R = window.NSRota;
+    return {
+      comRua: R.consultasDe({ endereco: 'Rua Marechal Floriano, 123', bairro: 'Centro',
+        cidade: 'Três de Maio', uf: 'RS', cep: '98910000' }),
+      soCep: R.consultasDe({ cep: '98910-000' }),
+      soCidade: R.consultasDe({ cidade: 'Três de Maio', uf: 'RS' }),
+      fmt: R.cepFormatado('98910000'),
+      lixo: R.cepFormatado('989')
+    };
+  });
+  check('o CEP é formatado com o traço para o Google entender',
+    buscas.fmt === '98910-000' && buscas.lixo === '');
+  check('a primeira busca do endereço já leva rua, número e CEP juntos',
+    buscas.comRua[0].includes('Rua Marechal Floriano, 123') && buscas.comRua[0].includes('98910-000'));
+  check('se a rua falhar, ainda sobra a busca pelo CEP sozinho',
+    buscas.comRua.some(q => q.startsWith('98910-000')));
+  check('cliente só com CEP é procurado pelo CEP', buscas.soCep[0] === '98910-000, Brasil');
+  check('e quem não tem CEP continua sendo procurado pela cidade',
+    buscas.soCidade.length === 1 && buscas.soCidade[0] === 'Três de Maio, RS, Brasil');
+
+  // o CEP já consultado uma vez funciona offline (é o caso do vendedor na estrada)
+  const cepOffline = await page10.evaluate(async () => {
+    localStorage.setItem('ns_cep_98930000', JSON.stringify({
+      cep: '98930000', endereco: 'Rua Cristóvão Colombo', bairro: 'Centro',
+      cidade: 'Horizontina', uf: 'RS'
+    }));
+    return await window.NSRota.buscarCep('98930-000');
+  });
+  check('CEP já consultado antes responde sem internet',
+    cepOffline && cepOffline.cidade === 'Horizontina' && cepOffline.endereco === 'Rua Cristóvão Colombo');
+  check('CEP que o app nunca viu e sem internet não trava nada',
+    (await page10.evaluate(() => window.NSRota.buscarCep('12345678'))) === null);
+
+  // o botão de GPS: o endereço que vai para o Google Maps leva o CEP
+  const destinos = await page10.evaluate(() => {
+    const L = window.NSApp.linkMaps;
+    const alvo = (u) => decodeURIComponent(String(u).split('destination=')[1] || '');
+    return {
+      completo: alvo(L({ endereco: 'Rua Pereira, 45', bairro: 'Centro', cidade: 'Horizontina', uf: 'RS', cep: '98930000' })),
+      soCep: alvo(L({ cidade: 'Horizontina', uf: 'RS', cep: '98930-000' })),
+      semCep: alvo(L({ endereco: 'Rua Pereira, 45', cidade: 'Horizontina', uf: 'RS' }))
+    };
+  });
+  check('o GPS manda o endereço com o CEP no fim',
+    destinos.completo === 'Rua Pereira, 45, Centro, Horizontina, RS, 98930-000, Brasil');
+  check('cliente sem rua vai pelo CEP, não pelo centro da cidade',
+    destinos.soCep === 'Horizontina, RS, 98930-000, Brasil');
+  check('e quem não tem CEP continua indo pelo endereço escrito',
+    destinos.semCep === 'Rua Pereira, 45, Horizontina, RS, Brasil');
+
+  // cadastro: digitar o CEP preenche rua, bairro, cidade e UF — sem apagar nada
+  const preenchido = await page10.evaluate(async () => {
+    document.querySelectorAll('.ns-overlay').forEach(o => o.remove());
+    localStorage.setItem('ns_cep_98920000', JSON.stringify({
+      cep: '98920000', endereco: 'Avenida Santa Rosa', bairro: 'São José',
+      cidade: 'Santa Rosa', uf: 'RS'
+    }));
+    const c = window.NSDB.all('clientes')[0];
+    window.NSApp.editarCliente(c.id);
+    const campo = (rot) => [...document.querySelectorAll('.ns-overlay .campo')]
+      .find(l => (l.querySelector('.sub') || {}).textContent === rot);
+    const inputDe = (rot) => { const l = campo(rot); return l ? l.querySelector('input') : null; };
+    const cep = inputDe('CEP'), rua = inputDe('Endereço (rua e número)');
+    const bairro = inputDe('Bairro'), cidade = inputDe('Cidade *');
+    // a cidade JÁ tem valor no cadastro: o CEP não pode trocar
+    const cidadeAntes = cidade.value;
+    rua.value = ''; bairro.value = '';
+    cep.value = '98920-000';
+    cep.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 300));
+    return {
+      rua: rua.value, bairro: bairro.value,
+      cidade: cidade.value, cidadeAntes,
+      dica: (campo('CEP').querySelector('.dica-cep') || {}).textContent || ''
+    };
+  });
+  check('digitando o CEP, a rua entra sozinha no cadastro',
+    preenchido.rua === 'Avenida Santa Rosa');
+  check('o bairro também vem do CEP', preenchido.bairro === 'São José');
+  check('e o que já estava preenchido não é apagado pelo CEP',
+    preenchido.cidade === preenchido.cidadeAntes);
+  check('o app avisa o que veio do CEP e que falta o número',
+    preenchido.dica.includes('Veio do CEP') && preenchido.dica.includes('falta o número'));
+  await page10.evaluate(() => document.querySelectorAll('.ns-overlay').forEach(o => o.remove()));
   await page10.close();
+
+  // ══ com sinal: o CEP busca o endereço na internet e guarda para depois ══
+  const page11 = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  page11.on('pageerror', (e) => erros.push('pageerror(p11): ' + e.message));
+  await page11.route('**/firestore.googleapis.com/**', (r) => r.abort());
+  let consultasViaCep = 0;
+  await page11.route('**/viacep.com.br/**', (r) => {
+    consultasViaCep++;
+    r.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({
+        cep: '98930-000', logradouro: 'Rua Cristóvão Colombo', bairro: 'Centro',
+        localidade: 'Horizontina', uf: 'RS'
+      })
+    });
+  });
+  await page11.addInitScript((s) => {
+    for (const [k, v] of Object.entries(s)) localStorage.setItem(k, JSON.stringify(v));
+  }, seed);
+  await page11.goto('http://localhost:8899/');
+  await page11.waitForSelector('.login-box input[type=email]');
+  const online = await page11.evaluate(async () => {
+    const primeira = await window.NSRota.buscarCep('98930-000');
+    const segunda = await window.NSRota.buscarCep('98930000');  // de novo: já está guardado
+    const comp = await window.NSRota.completarPeloCep({
+      cep: '98930000', endereco: 'Rua da Loja, 77', cidade: ''
+    });
+    return { primeira, segunda, guardado: !!localStorage.getItem('ns_cep_98930000'), falta: comp.falta };
+  });
+  check('com sinal, o CEP traz o endereço da internet',
+    online.primeira && online.primeira.endereco === 'Rua Cristóvão Colombo' &&
+    online.primeira.cidade === 'Horizontina');
+  check('o mesmo CEP não é consultado duas vezes',
+    consultasViaCep === 1 && online.segunda.cidade === 'Horizontina' && online.guardado);
+  check('o CEP completa só o que falta e respeita a rua já digitada',
+    online.falta.cidade === 'Horizontina' && online.falta.endereco === undefined);
+  await page11.close();
 
   await browser.close();
   server.close();

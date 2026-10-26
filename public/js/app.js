@@ -3,7 +3,7 @@
 (function () {
   'use strict';
   const { $, $$, el, escH, toast, modal, confirmar, dataBR, hojeISO, mesISO, baixar,
-    ico, icoHTML, rot, farol, repor } = window.NSUI;
+    ico, icoHTML, rot, farol, repor, piscar, texto } = window.NSUI;
   const C = window.NSCalc, DB = window.NSDB, R = window.NSRota;
 
   // ================= MARCA =================
@@ -1040,15 +1040,63 @@
   // ---- GPS / Google Maps ----
   // O endereço escrito leva à porta certa; a coordenada só entra quando não há
   // endereço (a coordenada "aproximada" cai no centro da cidade, não no cliente).
+  // O CEP vai junto do endereço escrito: é ele que desempata rua com nome
+  // repetido e corrige cidade errada. Quando o cadastro só tem o CEP, o GPS vai
+  // pelo CEP — que cai na rua certa, e não no meio da cidade.
   function linkMaps(c) {
-    const dest = (c.endereco && c.cidade)
-      ? encodeURIComponent([c.endereco, c.bairro, c.cidade, c.uf].filter(Boolean).join(', ') + ', Brasil')
+    const cep = R.cepFormatado(c.cep);
+    const rua = String(c.endereco || '').trim();
+    const escrito = (rua && c.cidade) ? [rua, c.bairro, c.cidade, c.uf, cep].filter(Boolean).join(', ')
+      : (cep ? [rua, c.cidade, c.uf, cep].filter(Boolean).join(', ') : '');
+    const dest = escrito ? encodeURIComponent(escrito + ', Brasil')
       : (c.lat != null ? c.lat + ',' + c.lng : encodeURIComponent(R.enderecoCompleto(c)));
     // este endereço abre o APLICATIVO do Google Maps no celular e o site no computador
     return 'https://www.google.com/maps/dir/?api=1&destination=' + dest;
   }
   function abrirGPS(c) { window.open(linkMaps(c), '_blank'); }
-  const temEndereco = (c) => !!((c.endereco && c.cidade) || c.cidade || c.lat != null);
+  const temEndereco = (c) => !!((c.endereco && c.cidade) || c.cidade || R.cepFormatado(c.cep) || c.lat != null);
+
+  // ---- CEP puxa o endereço ----
+  // Serve para o cadastro completo e para a prospecção: o vendedor digita o CEP
+  // e a rua, o bairro, a cidade e a UF entram sozinhos. O que já estava escrito
+  // NUNCA é apagado — o CEP só preenche o que está em branco.
+  function ligarBuscaCep(campos, dica) {
+    const padrao = dica ? dica.textContent : '';
+    let ultimo = '';
+    async function puxar() {
+      const d = String(campos.cep.value || '').replace(/\D+/g, '');
+      if (d.length !== 8) { if (dica) texto(dica, padrao, false); ultimo = ''; return; }
+      if (d === ultimo) return;
+      ultimo = d;
+      const fmt = d.slice(0, 5) + '-' + d.slice(5);
+      if (dica) texto(dica, 'Buscando o endereço do CEP ' + fmt + '…', false);
+      const dados = await R.buscarCep(d);
+      if (String(campos.cep.value || '').replace(/\D+/g, '') !== d) return; // já mudou de CEP
+      if (!dados) {
+        if (dica) texto(dica, navigator.onLine
+          ? 'Não achei este CEP. Confira o número ou escreva o endereço na mão.'
+          : 'Sem internet agora — escreva o endereço na mão, ou volte no CEP quando pegar sinal.', false);
+        return;
+      }
+      const postos = [];
+      for (const campo of ['endereco', 'bairro', 'cidade', 'uf']) {
+        if (!campos[campo] || !dados[campo]) continue;
+        if (String(campos[campo].value || '').trim()) continue;
+        campos[campo].value = dados[campo];
+        piscar(campos[campo], 'campo-veio-do-cep');
+        postos.push(campo);
+      }
+      campos.cep.value = fmt;
+      if (!dica) return;
+      texto(dica, postos.length
+        ? 'Veio do CEP: ' + [dados.endereco, dados.bairro, dados.cidade, dados.uf].filter(Boolean).join(', ') +
+          '. Agora só falta o número.'
+        : 'CEP confere com o endereço que já está no cadastro.', false);
+    }
+    campos.cep.addEventListener('input', puxar);
+    campos.cep.addEventListener('blur', puxar);
+    return puxar;
+  }
   // botão de GPS reaproveitado em todas as telas que mostram o endereço
   function botaoMaps(c, extra) {
     if (!temEndereco(c)) return null;
@@ -2510,11 +2558,17 @@
   // ---------- Geocodificação em massa ----------
   function telaGeocode() {
     const repId = repEfetivoId();
-    const pend = clientesDoRep(repId).filter(c => c.geocoding_status === 'pendente' || c.geocoding_status === 'falhou' || c.lat == null);
+    const todos = clientesDoRep(repId);
+    const pend = todos.filter(c => c.geocoding_status === 'pendente' || c.geocoding_status === 'falhou' || c.lat == null);
+    // quem tem CEP mas está sem rua, bairro ou cidade: o CEP resolve sem Google
+    const faltaEnd = todos.filter(c => R.cepFormatado(c.cep) &&
+      (!String(c.endereco || '').trim() || !String(c.bairro || '').trim() || !String(c.cidade || '').trim()));
     const info = el('p', { class: 'sub mt8' }, pend.length + ' cliente(s) sem coordenada precisa.');
     const barra = el('div', { class: 'sub mt8' });
+    const barraCep = el('div', { class: 'sub mt8' });
     const m = modal(el('div', null,
-      el('p', null, 'Geocodifica pelo endereço completo via Google (status por cliente: preciso / aproximado / falhou).'),
+      el('p', null, 'Geocodifica pelo endereço completo e pelo CEP via Google ' +
+        '(status por cliente: preciso / aproximado / falhou).'),
       info, barra,
       el('button', {
         class: 'btn big w100 mt12', onclick: async (e) => {
@@ -2525,7 +2579,32 @@
           toast(n + ' cliente(s) geocodificado(s).');
           m.fechar();
         }
-      }, rot('globo', 'Geocodificar pendentes'))), { titulo: 'Geocodificação em massa' });
+      }, rot('globo', 'Geocodificar pendentes')),
+      el('p', { class: 'sub mt12' },
+        'Pelo CEP dá para completar rua, bairro, cidade e UF sem precisar da chave do Google. ' +
+        faltaEnd.length + ' cliente(s) com CEP e endereço incompleto.'),
+      barraCep,
+      el('button', {
+        class: 'btn w100 mt8', onclick: async (e) => {
+          if (!faltaEnd.length) return toast('Nenhum cliente com CEP e endereço incompleto.');
+          if (!navigator.onLine) return toast('Necessário estar online para buscar os CEPs.', 'erro');
+          e.currentTarget.disabled = true;
+          let n = 0;
+          for (let i = 0; i < faltaEnd.length; i++) {
+            const c = faltaEnd[i];
+            const comp = await R.completarPeloCep(c);
+            if (comp && Object.keys(comp.falta).length) {
+              DB.update('clientes', c.id, Object.assign({ geocoding_status: 'pendente' }, comp.falta));
+              Object.assign(c, comp.falta);
+              n++;
+            }
+            texto(barraCep, (i + 1) + ' / ' + faltaEnd.length + ' consultados…', false);
+            await new Promise(r => setTimeout(r, 120));
+          }
+          toast(n + ' endereço(s) completado(s) pelo CEP.');
+          m.fechar();
+        }
+      }, rot('mapa', 'Completar endereços pelo CEP'))), { titulo: 'Endereços e geocodificação' });
   }
 
   // ---------- Admin: Clientes ----------
@@ -2630,14 +2709,20 @@
         el('span', { class: 'sub' }, rotulo + (obrig ? ' *' : '')), campos[campo]);
     };
     const s = sessao();
+    // o CEP entra antes da cidade: digitando o CEP, cidade, UF e rua vêm prontos
+    const dicaCep = el('span', { class: 'sub dica-cep' }, 'Digite o CEP e o endereço vem sozinho.');
+    const campoCep = inp('cep', 'CEP (opcional)');
+    campoCep.appendChild(dicaCep);
+    campos.cep.setAttribute('inputmode', 'numeric');
     const mm = modal(el('div', { class: 'col gap8' },
       el('p', { class: 'sub' },
         'Para as farmácias que o supervisor passa para prospectar. Elas entram na rota ' +
         'igual aos clientes, com a cor roxa, e depois dá para "Transformar em cliente".'),
       inp('nome', 'Nome da farmácia', true),
+      campoCep,
       inp('cidade', 'Cidade', true),
       inp('uf', 'UF', true),
-      inp('endereco', 'Endereço'),
+      inp('endereco', 'Endereço (rua e número)'),
       inp('contato', 'Contato (opcional)'),
       inp('telefone', 'Telefone (opcional)'),
       el('button', {
@@ -2649,6 +2734,7 @@
           DB.insert('clientes', {
             representante_id: s.rep ? s.rep.id : s.eu.id,
             nome, cidade, uf,
+            cep: campos.cep.value.trim() || null,
             endereco: campos.endereco.value.trim() || null,
             contato: campos.contato.value.trim() || null,
             telefone: campos.telefone.value.trim() || null,
@@ -2660,6 +2746,7 @@
           if (aoSalvar) aoSalvar();
         }
       }, rot('salvar', 'Salvar prospecção'))), { titulo: 'Nova prospecção' });
+    ligarBuscaCep(campos, dicaCep);
   }
 
   // Prospecção → cliente: mantém o histórico (visitas, notas, id) e abre o
@@ -2681,6 +2768,11 @@
       campos[campo] = el('input', { class: 'input', type: tipo || 'text', value: c[campo] != null ? c[campo] : '', placeholder: rotulo });
       return el('label', { class: 'campo' }, el('span', { class: 'sub' }, rotulo), campos[campo]);
     };
+    // CEP primeiro: digitando o CEP, a rua, o bairro, a cidade e a UF já entram
+    const dicaCep = el('span', { class: 'sub dica-cep' }, 'Digite o CEP e o endereço vem sozinho.');
+    const campoCep = inp('cep', 'CEP');
+    campoCep.appendChild(dicaCep);
+    campos.cep.setAttribute('inputmode', 'numeric');
     const repSel = el('select', { class: 'input' },
       DB.all('representantes').filter(r => r.papel === 'vendedor')
         .map(r => el('option', { value: r.id, selected: c.representante_id === r.id ? '' : null }, r.nome)));
@@ -2705,7 +2797,8 @@
       inp('cnpj_cpf', 'CNPJ/CPF'),
       inp('inscricao_estadual', 'Inscrição Estadual'),
       inp('contato', 'Contato'), inp('email', 'E-mail', 'email'), inp('telefone', 'Telefone'), inp('celular', 'Celular'),
-      inp('endereco', 'Endereço'), inp('bairro', 'Bairro'), inp('cidade', 'Cidade *'), inp('uf', 'UF *'), inp('cep', 'CEP'),
+      campoCep,
+      inp('endereco', 'Endereço (rua e número)'), inp('bairro', 'Bairro'), inp('cidade', 'Cidade *'), inp('uf', 'UF *'),
       inp('rede', 'Rede (ex.: Clamed)'), inp('recebimento_dias', 'Prazo comissão (dias — Clamed = 45)', 'number'),
       el('label', { class: 'campo' },
         el('span', { class: 'sub' }, 'Tabela de preço permitida neste cliente'), tabSel,
@@ -2757,6 +2850,7 @@
           if (aoSalvar) aoSalvar();
         }
       }, rot('lixeira', 'Excluir cliente')) : null), { titulo: id ? 'Editar cliente' : 'Novo cliente', full: true });
+    ligarBuscaCep(campos, dicaCep);
   }
 
   // ---------- Admin: Produtos ----------
@@ -2979,6 +3073,7 @@
   // ================= BOOT =================
   window.NSApp = {
     sessao, nav, recalcularCicloCliente, marcarFaturado, avisarPendentesNewStar, editarCliente,
+    linkMaps, ligarBuscaCep,
     // Pedido digitado para quem não estava na rota: o cliente entra na rota de
     // HOJE já atendido, e o atendimento conta na meta de visitação.
     aoConcluirPedido(pedido) {

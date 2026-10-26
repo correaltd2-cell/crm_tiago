@@ -22,26 +22,121 @@
     return mapsPromise;
   }
 
+  // ---------- CEP ----------
+  // O CEP é o caminho mais curto para o endereço certo: com ele vem a rua, o
+  // bairro, a cidade e a UF, e o vendedor só precisa digitar o número da casa.
+  // O que o CEP devolve fica guardado no aparelho, então o mesmo CEP continua
+  // funcionando depois, sem internet.
+  const CEP_CACHE = 'ns_cep_';
+  const soDigitos = (v) => String(v == null ? '' : v).replace(/\D+/g, '');
+  function cepValido(cep) { const d = soDigitos(cep); return d.length === 8 ? d : ''; }
+  function cepFormatado(cep) { const d = cepValido(cep); return d ? d.slice(0, 5) + '-' + d.slice(5) : ''; }
+
+  function cepGuardado(d) {
+    try { const b = localStorage.getItem(CEP_CACHE + d); return b ? JSON.parse(b) : null; }
+    catch (e) { return null; }
+  }
+  function guardarCep(d, dados) {
+    try { localStorage.setItem(CEP_CACHE + d, JSON.stringify(dados)); } catch (e) { /* cheio: só não guarda */ }
+  }
+
+  // Dois serviços gratuitos e sem chave: se o primeiro estiver fora do ar, o
+  // segundo responde. Nenhum dos dois cobra nada e os dois aceitam o navegador.
+  const SERVICOS_CEP = [
+    ['https://viacep.com.br/ws/{cep}/json/', (j) => (j && !j.erro) ? {
+      endereco: j.logradouro || '', bairro: j.bairro || '',
+      cidade: j.localidade || '', uf: String(j.uf || '').toUpperCase()
+    } : null],
+    ['https://brasilapi.com.br/api/cep/v1/{cep}', (j) => (j && j.cep) ? {
+      endereco: j.street || '', bairro: j.neighborhood || '',
+      cidade: j.city || '', uf: String(j.state || '').toUpperCase()
+    } : null]
+  ];
+
+  async function buscarCep(cep) {
+    const d = cepValido(cep);
+    if (!d) return null;
+    const salvo = cepGuardado(d);
+    if (salvo) return salvo;
+    if (!navigator.onLine) return null;
+    for (const [molde, mapear] of SERVICOS_CEP) {
+      try {
+        const r = await fetch(molde.replace('{cep}', d), { cache: 'no-store' });
+        if (!r.ok) continue;
+        const dados = mapear(await r.json());
+        if (dados && dados.cidade) {
+          dados.cep = d;
+          guardarCep(d, dados);
+          return dados;
+        }
+      } catch (e) { /* tenta o próximo serviço */ }
+    }
+    return null;
+  }
+
+  // Completa o endereço do cliente pelo CEP SEM apagar nada: o que já está no
+  // cadastro vale mais do que o que o CEP devolve (o número da rua, por exemplo,
+  // o CEP não tem). Retorna só os campos que estavam em branco.
+  async function completarPeloCep(c) {
+    const dados = await buscarCep(c && c.cep);
+    if (!dados) return null;
+    const falta = {};
+    const por = (campo) => {
+      if (dados[campo] && !String((c && c[campo]) || '').trim()) falta[campo] = dados[campo];
+    };
+    por('endereco'); por('bairro'); por('cidade'); por('uf');
+    return { dados, falta };
+  }
+
   // ---------- Geocoding ----------
   function enderecoCompleto(c) {
-    return [c.endereco, c.bairro, c.cidade, c.uf, c.cep, 'Brasil']
+    return [c.endereco, c.bairro, c.cidade, c.uf, cepFormatado(c.cep) || c.cep, 'Brasil']
       .filter(Boolean).join(', ');
+  }
+
+  // O Google acerta mais quando recebe a forma mais específica primeiro: rua +
+  // número + CEP. Se essa falhar, desce para a rua sem CEP, depois para o CEP
+  // sozinho (que já cai na rua certa) e só no fim para a cidade.
+  function consultasDe(c, viaCep) {
+    const cep = cepFormatado(c && c.cep);
+    const parte = (campo) => String((c && c[campo]) || '').trim() || (viaCep && viaCep[campo]) || '';
+    const rua = parte('endereco'), bairro = parte('bairro');
+    const cidade = parte('cidade'), uf = parte('uf');
+    const juntar = (...p) => p.filter(Boolean).join(', ');
+    const lista = [];
+    if (rua && cep) lista.push(juntar(rua, bairro, cidade, uf, cep, 'Brasil'));
+    if (rua) lista.push(juntar(rua, bairro, cidade, uf, 'Brasil'));
+    if (cep) lista.push(juntar(cep, cidade, uf, 'Brasil'));
+    if (cidade) lista.push(juntar(cidade, uf, 'Brasil'));
+    return lista.filter((v, i, a) => v && a.indexOf(v) === i);
   }
 
   async function geocodificar(cliente) {
     const maps = await loadGoogleMaps();
     if (!maps) throw new Error('Google Maps indisponível (sem chave ou offline)');
+    // o CEP entra na busca e, quando o cadastro está sem rua, é ele que diz a rua
+    const comp = await completarPeloCep(cliente);
+    const preenchido = (comp && Object.keys(comp.falta).length) ? comp.falta : null;
     const geocoder = new maps.Geocoder();
-    return new Promise((resolve) => {
-      geocoder.geocode({ address: enderecoCompleto(cliente), region: 'br' }, (res, status) => {
+    const uma = (address) => new Promise((resolve) => {
+      geocoder.geocode({ address, region: 'br' }, (res, status) => {
         if (status === 'OK' && res && res[0]) {
           const g = res[0], loc = g.geometry.location;
           const lt = g.geometry.location_type;
           const precisao = (lt === 'ROOFTOP' || lt === 'RANGE_INTERPOLATED') ? 'preciso' : 'aproximado';
           resolve({ lat: loc.lat(), lng: loc.lng(), status: precisao });
-        } else resolve({ status: 'falhou' });
+        } else resolve(null);
       });
     });
+    let melhor = null;
+    for (const address of consultasDe(cliente, comp ? comp.dados : null)) {
+      const r = await uma(address);
+      if (r && r.status === 'preciso') { melhor = r; break; }   // achou a porta: para aqui
+      if (r && !melhor) melhor = r;                             // guarda o aproximado e tenta melhorar
+    }
+    if (!melhor) return { status: 'falhou', preenchido };
+    melhor.preenchido = preenchido;
+    return melhor;
   }
 
   // Geocodificação em massa (respeita rate limit do Geocoder)
@@ -51,9 +146,12 @@
       try {
         const r = await geocodificar(c);
         const agora = new Date().toISOString();
-        DB.update('clientes', c.id, r.status === 'falhou'
+        const body = r.status === 'falhou'
           ? { geocoding_status: 'falhou', geocoding_atualizado_em: agora }
-          : { lat: r.lat, lng: r.lng, geocoding_status: r.status, geocoding_atualizado_em: agora });
+          : { lat: r.lat, lng: r.lng, geocoding_status: r.status, geocoding_atualizado_em: agora };
+        // o endereço que veio do CEP fica salvo no cadastro, para o vendedor ver
+        if (r.preenchido) { Object.assign(body, r.preenchido); Object.assign(c, r.preenchido); }
+        DB.update('clientes', c.id, body);
       } catch (e) { break; }
       feitos++;
       if (onProgress) onProgress(feitos, clientes.length);
@@ -166,5 +264,8 @@
     return custo;
   }
 
-  window.NSRota = { loadGoogleMaps, geocodificar, geocodificarPendentes, matriz, montarRota, salvarRota, enderecoCompleto };
+  window.NSRota = {
+    loadGoogleMaps, geocodificar, geocodificarPendentes, matriz, montarRota, salvarRota,
+    enderecoCompleto, consultasDe, buscarCep, completarPeloCep, cepFormatado, cepValido
+  };
 })();

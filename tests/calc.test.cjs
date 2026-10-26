@@ -444,6 +444,31 @@ eq('e o selo de prioridade usa esse azul',
 eq('tirar o pedido encerra a prioridade do cliente',
   /prioridade: false/.test(lerPub('public/js/app.js')), true);
 
+console.log('\nEndereço pelo CEP (GPS e rota):');
+const rotaJs = lerPub('public/js/rota.js');
+const appJs2 = lerPub('public/js/app.js');
+eq('a busca de CEP usa serviço gratuito e sem chave', /viacep\.com\.br\/ws\/\{cep\}\/json\//.test(rotaJs), true);
+eq('e tem um segundo serviço de reserva', /brasilapi\.com\.br\/api\/cep\/v1\//.test(rotaJs), true);
+eq('o CEP consultado fica guardado para funcionar offline depois',
+  /CEP_CACHE = 'ns_cep_'/.test(rotaJs) && /localStorage\.setItem\(CEP_CACHE/.test(rotaJs), true);
+eq('a busca de CEP é exportada para o app usar', /buscarCep, completarPeloCep/.test(rotaJs), true);
+eq('a geocodificação tenta rua+CEP, depois CEP sozinho, depois cidade',
+  /if \(rua && cep\) lista\.push/.test(rotaJs) && /if \(cep\) lista\.push/.test(rotaJs) &&
+  /if \(cidade\) lista\.push/.test(rotaJs), true);
+eq('o CEP nunca apaga o que já está no cadastro',
+  /if \(dados\[campo\] && !String\(\(c && c\[campo\]\) \|\| ''\)\.trim\(\)\)/.test(rotaJs), true);
+eq('o link do GPS leva o CEP junto do endereço',
+  /const cep = R\.cepFormatado\(c\.cep\);/.test(appJs2) &&
+  /\[rua, c\.bairro, c\.cidade, c\.uf, cep\]/.test(appJs2), true);
+eq('cliente que só tem CEP também ganha o botão de GPS',
+  /temEndereco = \(c\) =>[^;]*R\.cepFormatado\(c\.cep\)/.test(appJs2), true);
+eq('o cadastro puxa o endereço quando o CEP é digitado',
+  /function ligarBuscaCep/.test(appJs2) &&
+  /campos\.cep\.addEventListener\('input', puxar\)/.test(appJs2), true);
+eq('e a prospecção também tem CEP', /campoCep = inp\('cep', 'CEP \(opcional\)'\)/.test(appJs2), true);
+eq('dá para completar os endereços pelo CEP sem a chave do Google',
+  /Completar endereços pelo CEP/.test(appJs2), true);
+
 console.log('\nAbertura do app:');
 eq('a abertura tem teto de tempo e não trava a tela', /LIMITE = 2600/.test(idxHtml), true);
 eq('um toque pula a abertura', /capa\.addEventListener\('pointerdown', sair\)/.test(idxHtml), true);

@@ -383,9 +383,14 @@ body.destravando{opacity:.999}
 @keyframes item-entra{from{opacity:0;transform:translateY(10px) scale(.985)}to{opacity:1;transform:none}}
 .card-item.entrando{animation:item-entra .26s cubic-bezier(.2,.8,.3,1)}
 .card-item{transition:box-shadow .18s,border-color .18s}
+/* campo que o CEP acabou de preencher: fica verde por um instante */
+@keyframes veio-do-cep{0%{background:var(--verde-tint, #eafbe7);border-color:var(--verde)}
+  100%{background:transparent}}
+.campo-veio-do-cep{animation:veio-do-cep 1.1s ease-out}
+.dica-cep{margin-top:4px;line-height:1.35}
 @media (prefers-reduced-motion:reduce){
   .tocado{transform:none !important}
-  .valor-muda,.qtde-muda,.card-item.entrando{animation:none !important}
+  .valor-muda,.qtde-muda,.card-item.entrando,.campo-veio-do-cep{animation:none !important}
 }
 
 /* ═══ ROTA: hierarquia clara, poucos botões ═══ */
