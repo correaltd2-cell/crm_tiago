@@ -122,9 +122,13 @@
     if (e) return e;
     // produto sem referência de placa: usa a cor do app e parte o nome em duas
     const m = nome.match(/^\(([^)]+)\)\s*(.*)$/);
-    return Object.assign({}, PADRAO, {
-      sigla: m ? m[1] : nome.slice(0, 12), nome: m ? m[2] : ''
-    });
+    const sigla = m ? m[1] : nome.slice(0, 12);
+    let resto = m ? m[2] : '';
+    // "(GIFT) GIFT COLLECTION" não pode virar "GIFT / GIFT COLLECTION":
+    // a sigla já está escrita na linha de cima
+    if (resto.toUpperCase().indexOf(sigla.toUpperCase() + ' ') === 0)
+      resto = resto.slice(sigla.length + 1);
+    return Object.assign({}, PADRAO, { sigla, nome: resto });
   }
 
   // ─────────── distribuição dos furos ───────────
