@@ -564,8 +564,29 @@
     '(PULA) PULSEIRA ADULTA',
     '(PUL) PULSEIRA INFANTIL',
     '(NEW YORK) GARGANTILHA NEW YORK',
-    '(ANEL) ANEL REGULÁVEL'
+    '(ANEL) ANEL REGULÁVEL',
+    '(GIFT) GIFT COLLECTION'
   ];
+
+  // ── produtos que vêm em DISPLAY, e não em placa ──
+  // O GIFT COLLECTION é o primeiro: no balcão ele é um display de 27 (P) ou
+  // 45 (G) peças. Muda SÓ a palavra na tela, no PDF e no cupom — a conta das
+  // unidades, do devolvido e do valor é exatamente a mesma da placa.
+  const PRODUTOS_DISPLAY = ['(GIFT) GIFT COLLECTION'];
+  function ehDisplay(produto) {
+    if (!produto) return false;
+    if (produto.suporte) return String(produto.suporte).toLowerCase() === 'display';
+    return PRODUTOS_DISPLAY.indexOf(String(produto.nome || '')) >= 0;
+  }
+  // rotuloSuporte(p) → 'Placa' | 'Display' · plural → 'Placas' | 'Displays'
+  function rotuloSuporte(produto, plural) {
+    const d = ehDisplay(produto);
+    return plural ? (d ? 'Displays' : 'Placas') : (d ? 'Display' : 'Placa');
+  }
+  // "Placas deixadas" / "Displays deixados" — o português muda com o gênero
+  function rotuloDeixadas(produto) {
+    return ehDisplay(produto) ? 'Displays deixados' : 'Placas deixadas';
+  }
   // quem não está na lista oficial vai depois, em ordem alfabética
   function ordemProduto(produto) {
     const i = ORDEM_PRODUTOS.indexOf((produto && produto.nome) || '');
@@ -609,6 +630,7 @@
   const api = {
     TABELAS_PERMITIDAS, NOME_TABELA, tabelaPermitida, tabelasDoCliente,
     ORDEM_PRODUTOS, ORDEM_TAMANHO, ordemProduto, ordenarProdutos, ordenarItens,
+    PRODUTOS_DISPLAY, ehDisplay, rotuloSuporte, rotuloDeixadas,
     fmtCNPJ,
     round2, fmtMoney, fmtPct, calcItem, calcTotais, aplicarDesconto, calcComissao, cicloDoDia,
     pctComissao, recebimentoComissao, PCT_NOVO, PCT_SIMPLES, PCT_LUCRO,

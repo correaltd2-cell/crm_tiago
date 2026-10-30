@@ -123,7 +123,7 @@
             el('div', { class: 'sub' },
               (it.tamanho === 'AV'
                 ? `Avulso · ${it.unid_colocadas} un`
-                : `Placa ${it.tamanho} ×${it.placas} = ${it.unid_colocadas} un`) +
+                : `${C.rotuloSuporte(p)} ${it.tamanho} ×${it.placas} = ${it.unid_colocadas} un`) +
               ` · dev.display ${it.dev_display} · quebrada ${it.dev_quebrada}`),
             el('div', { class: 'row space mt4' },
               el('span', null, it.unid_vendidas < 0
@@ -202,7 +202,7 @@
                 },
                   el('strong', null, (p.codigo ? p.codigo + ' · ' : '') + nomeProd(p)),
                   el('span', { class: 'sub' }, (semUnid ? 'unidades por placa a cadastrar · '
-                    : `P=${p.unid_placa_p}un · G=${p.unid_placa_g}un · `) +
+                    : `${C.rotuloSuporte(p)} P=${p.unid_placa_p}un · G=${p.unid_placa_g}un · `) +
                     (semPreco ? 'preço a cadastrar' : C.fmtMoney(preco)))));
               });
           }
@@ -308,9 +308,10 @@
               }
             })
           }, ico('calculadora'));
+          const supNome = C.rotuloSuporte(p).toLowerCase();      // placa ou display
           const btnPlaca = el('button', {
-            class: 'btn-ferramenta placa', 'aria-label': 'Conferir a placa',
-            title: 'Conferir a placa — marque o que foi vendido',
+            class: 'btn-ferramenta placa', 'aria-label': 'Conferir ' + (C.ehDisplay(p) ? 'o ' : 'a ') + supNome,
+            title: 'Conferir ' + (C.ehDisplay(p) ? 'o ' : 'a ') + supNome + ' — marque o que foi vendido',
             disabled: avulso ? '' : null,
             onclick: () => window.NSPlaca.conferir({
               produto: p, tamanho: item.tamanho, unidPorPlaca: uppDe(),
@@ -324,7 +325,8 @@
                 item.placas = placas;
                 item.dev_display = Math.max(0, placas * unidPorPlaca - vendidas - (item.dev_quebrada || 0));
                 refazStepper();
-                toast(vendidas + ' un vendidas em ' + placas + (placas > 1 ? ' placas.' : ' placa.'));
+                toast(vendidas + ' un vendidas em ' + placas + ' ' +
+                  (placas > 1 ? C.rotuloSuporte(p, true) : C.rotuloSuporte(p)).toLowerCase() + '.');
               }
             })
           }, ico('placa'));
@@ -336,7 +338,7 @@
             el('div', { class: 'sub' }, `Preço (${ped.tabela === 'lucro' ? 'Lucro Presumido' : 'Simples'}): ${C.fmtMoney(preco)}`),
             el('div', { class: 'row gap8 mt12' }, tamBtns),
             el('div', { class: 'col gap8 mt12' },
-              stepper(avulso ? 'Unidades avulsas' : 'Placas deixadas (0 = só recolher)', 'placas', 0),
+              stepper(avulso ? 'Unidades avulsas' : C.rotuloDeixadas(p) + ' (0 = só recolher)', 'placas', 0),
               stepper('Devolvida — Display', 'dev_display', 0),
               stepper('Devolvida — Quebrada', 'dev_quebrada', 0)),
             resumo,

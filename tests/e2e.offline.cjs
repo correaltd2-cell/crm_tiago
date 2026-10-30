@@ -79,8 +79,8 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
     roteirizados: window.NS_SEED.clientes.filter(c => c.semana_padrao != null).length,
     comEndereco: window.NS_SEED.clientes.filter(c => c.endereco && c.cep).length
   }));
-  check('seed: 314 clientes da lista nova, 25 Clamed, 18 produtos',
-    seedInfo.clientes === 314 && seedInfo.clamed === 25 && seedInfo.produtos === 18);
+  check('seed: 314 clientes da lista nova, 25 Clamed, 19 produtos',
+    seedInfo.clientes === 314 && seedInfo.clamed === 25 && seedInfo.produtos === 19);
   check('plano por urgência: 210 com dia fixo (6/dia × 35 dias úteis), todos com endereço',
     seedInfo.roteirizados === 210 && seedInfo.comEndereco === 314);
   const finaisSemana = await page.evaluate(() =>
@@ -91,10 +91,11 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   const ordemOficial = ['(BRAG) BRINCO ARGOLINHA', '(BRP) BRINCO PEQUENO CLASSIC',
     '(PONTO DE LUZ) PONTO DE LUZ ZIRCÔNIA', '(LUXO) LUXO DOURADO', '(LUXO) LUXO PRATA',
     '(PARIS) GARGANTILHA PARIS', '(PULA) PULSEIRA ADULTA', '(PUL) PULSEIRA INFANTIL',
-    '(NEW YORK) GARGANTILHA NEW YORK', '(ANEL) ANEL REGULÁVEL'];
+    '(NEW YORK) GARGANTILHA NEW YORK', '(ANEL) ANEL REGULÁVEL',
+    '(GIFT) GIFT COLLECTION'];
   const catalogo = await page.evaluate(() => window.NS_SEED.produtos.map(p => ({
     nome: p.nome, variacao: p.variacao, preco: p.preco_simples })));
-  check('os 10 produtos usam a nomenclatura (SIGLA) NOME',
+  check('os 11 produtos usam a nomenclatura (SIGLA) NOME',
     ordemOficial.every(n => catalogo.some(p => p.nome === n)));
   check('e sem variação repetida no nome',
     catalogo.filter(p => ordemOficial.includes(p.nome)).every(p => !p.variacao));
@@ -142,7 +143,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   const modalItem = page.locator('.ns-overlay').last().locator('.ns-modal');
   await modalItem.waitFor();
   check('produto lista preço da tabela Lucro (14,50)', (await modalItem.textContent()).includes('14,50'));
-  await modalItem.locator('.item-lista').click();
+  await modalItem.locator('.item-lista:has-text("BRAG")').click();
 
   // placa P, dev display 5, quebrada 2 → 41 × 14,50 = 594,50
   const steppers = modalItem.locator('.stepper');
@@ -157,7 +158,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page.click('text=+ Adicionar produto');
   const modalAv = page.locator('.ns-overlay').last().locator('.ns-modal');
   await modalAv.waitFor();
-  await modalAv.locator('.item-lista').first().click();
+  await modalAv.locator('.item-lista:has-text("BRAG")').click();
   await modalAv.locator('button:has-text("Avulso")').click();
   await modalAv.locator('.stepper').first().locator('button', { hasText: '+' }).click();
   await modalAv.locator('.stepper').first().locator('button', { hasText: '+' }).click();
@@ -592,7 +593,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page.click('text=+ Adicionar produto');
   const mDesc = page.locator('.ns-overlay').last().locator('.ns-modal');
   await mDesc.waitFor();
-  await mDesc.locator('.item-lista').click();
+  await mDesc.locator('.item-lista:has-text("BRAG")').click();
   await mDesc.locator('button:has-text("Adicionar")').click();
   await page.waitForTimeout(200);
   await page.click('button:has-text("Conferir")');
@@ -1078,7 +1079,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page.click('text=+ Adicionar produto');
   const modalRet = page.locator('.ns-overlay').last().locator('.ns-modal');
   await modalRet.waitFor();
-  await modalRet.locator('.item-lista').first().click();
+  await modalRet.locator('.item-lista:has-text("BRAG")').click();
   const stRet = modalRet.locator('.stepper');
   await stRet.nth(0).locator('button', { hasText: '\u2212' }).click();               // placas 1 \u2192 0
   for (let k = 0; k < 4; k++) await stRet.nth(1).locator('button', { hasText: '+' }).click(); // dev display 4
@@ -1513,7 +1514,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page3.waitForSelector('text=Primeira instalação', { state: 'detached', timeout: 10000 }); // tela re-renderizada
   check('instalação carregou 314 clientes no Firestore e no cache',
     (store.clientes && Object.keys(store.clientes).length === 314 &&
-     store.produtos && Object.keys(store.produtos).length === 18 &&
+     store.produtos && Object.keys(store.produtos).length === 19 &&
      store.representantes && Object.keys(store.representantes).length === 2) === true);
 
   await page3.fill('input[type=email]', 'denilson@newstar.com.br');
@@ -1574,7 +1575,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   const mLucro = page4.locator('.ns-overlay').last().locator('.ns-modal');
   await mLucro.waitFor();
   check('preço aplicado é o da tabela travada (14,50)', (await mLucro.textContent()).includes('14,50'));
-  await mLucro.locator('.item-lista').click();
+  await mLucro.locator('.item-lista:has-text("BRAG")').click();
   await page4.waitForTimeout(120);
   check('cálculo roda com a tabela travada (48 × 14,50 = 696,00)',
     (await mLucro.locator('.calc-live').textContent()).replace(/ /g, ' ').includes('696,00'));
@@ -1644,6 +1645,12 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
     // já houve puxada completa há pouco: a próxima tem de ser incremental
     localStorage.setItem('ns_ultimo_pull_iso', JSON.stringify(new Date(Date.now() - 3600000).toISOString()));
     localStorage.setItem('ns_ultimo_pull_completo', JSON.stringify(Date.now()));
+    // catálogo já completo: aqui se mede a PUXADA, sem escritura no meio
+    const prods = JSON.parse(localStorage.getItem('ns_c_produtos'));
+    prods.push({ id: 'prod-gift-collection', nome: '(GIFT) GIFT COLLECTION',
+      preco_simples: 54.9, preco_lucro: 59.9, unid_placa_p: 27, unid_placa_g: 45,
+      suporte: 'display', ativo: true });
+    localStorage.setItem('ns_c_produtos', JSON.stringify(prods));
   }, seed);
   await page6.goto('http://localhost:8899/');
   await page6.waitForSelector('.login-box input[type=email]');
@@ -1677,6 +1684,14 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   }));
   await page7.addInitScript((s) => {
     for (const [k, v] of Object.entries(s)) localStorage.setItem(k, JSON.stringify(v));
+    // este teste é sobre o AVISO de limite de leitura: o catálogo já entra
+    // completo, para não sobrar escritura na fila e o selo falar só do erro
+    // da puxada (fila pendente tem aviso próprio, testado em outro lugar)
+    const prods = JSON.parse(localStorage.getItem('ns_c_produtos'));
+    prods.push({ id: 'prod-gift-collection', nome: '(GIFT) GIFT COLLECTION',
+      preco_simples: 54.9, preco_lucro: 59.9, unid_placa_p: 27, unid_placa_g: 45,
+      suporte: 'display', ativo: true });
+    localStorage.setItem('ns_c_produtos', JSON.stringify(prods));
   }, seed);
   await page7.goto('http://localhost:8899/');
   await page7.waitForSelector('.login-box input[type=email]');
@@ -1810,7 +1825,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page10.click('text=+ Adicionar produto');
   const mi10 = page10.locator('.ns-overlay').last().locator('.ns-modal');
   await mi10.waitFor();
-  await mi10.locator('.item-lista').first().click();
+  await mi10.locator('.item-lista:has-text("BRAG")').click();
   await page10.waitForTimeout(150);
   check('as duas ferramentas aparecem ao lado do produto',
     await mi10.locator('button[aria-label="Calculadora"]').isVisible() &&
@@ -2029,6 +2044,75 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page10.waitForTimeout(500);
   check('e o alerta do painel mostra os dias sem pedido',
     (await page10.textContent('#view')).includes('132d sem pedido'));
+
+  // ══ GIFT COLLECTION: produto novo, que vem em DISPLAY e não em placa ══
+  await page10.evaluate(() => document.querySelectorAll('.ns-overlay').forEach(o => o.remove()));
+  check('o produto novo entrou sozinho na base que já estava instalada',
+    await page10.evaluate(() => {
+      const g = window.NSDB.all('produtos').filter(p => p.nome === '(GIFT) GIFT COLLECTION');
+      return g.length === 1 && g[0].preco_simples === 54.9 && g[0].preco_lucro === 59.9 &&
+        g[0].unid_placa_p === 27 && g[0].unid_placa_g === 45;
+    }));
+  check('e não duplica se o app abrir de novo',
+    await page10.evaluate(() => {
+      window.NSApp.completarCatalogo(); window.NSApp.completarCatalogo();
+      return window.NSDB.all('produtos').filter(p => p.nome === '(GIFT) GIFT COLLECTION').length === 1;
+    }));
+
+  await page10.click('#tabs button[data-v=hoje]');
+  await page10.click('#fab');
+  await page10.waitForSelector('.ns-modal');
+  await page10.fill('.ns-modal input', 'farm');
+  await page10.click('.ns-modal .item-lista');
+  await page10.click('text=Tabela Simples');
+  await page10.click('text=+ Adicionar produto');
+  const mg = page10.locator('.ns-overlay').last().locator('.ns-modal');
+  await mg.waitFor();
+  check('a lista de produtos já diz que o GIFT vem em display',
+    (await mg.locator('.item-lista:has-text("GIFT COLLECTION")').textContent())
+      .includes('Display P=27un · G=45un'));
+  check('e mostra o preço da tabela simples (54,90)',
+    (await mg.locator('.item-lista:has-text("GIFT COLLECTION")').textContent()).includes('54,90'));
+  await mg.locator('.item-lista:has-text("GIFT COLLECTION")').click();
+  await page10.waitForTimeout(200);
+  const gift = await page10.evaluate(() => {
+    const m = [...document.querySelectorAll('.ns-overlay')].pop();
+    const tams = [...m.querySelectorAll('.btn-tam')].map(b => b.textContent.trim());
+    const steps = [...m.querySelectorAll('.stepper-label')].map(b => b.textContent.trim());
+    const conf = m.querySelector('.btn-ferramenta.placa');
+    return { tams, steps, conf: conf.getAttribute('aria-label'), preco: m.querySelector('.sub').textContent };
+  });
+  check('as três opções do GIFT aparecem: P 27, G 45 e avulso',
+    gift.tams[0] === 'P (27 un)' && gift.tams[1] === 'G (45 un)' && gift.tams[2] === 'Avulso (un)');
+  check('o pedido fala em DISPLAY, não em placa', gift.steps[0] === 'Displays deixados (0 = só recolher)');
+  check('e o botão de conferência também', gift.conf === 'Conferir o display');
+  check('preço da tabela simples no pedido é 54,90', gift.preco.includes('54,90'));
+
+  // a conferência visual funciona igual: 27 posições no display P
+  await page10.locator('.btn-ferramenta.placa').last().click();
+  await page10.waitForSelector('.placa-tela');
+  check('o display P abre com as 27 posições', (await page10.locator('.furo').count()) === 27);
+  check('e a aba chama Display, não Placa',
+    (await page10.textContent('.placa-aba')).startsWith('Display 1'));
+  await page10.locator('.placa-atalho:has-text("Vendeu tudo")').click();
+  await page10.locator('.placa-concluir').click();
+  await page10.waitForTimeout(300);
+  check('vendeu o display inteiro: 27 vendidas, 0 devolvidas',
+    await page10.evaluate(() => {
+      const m = [...document.querySelectorAll('.ns-overlay')].pop();
+      const linhas = [...m.querySelectorAll('.calc-live .row')].map(r => r.textContent);
+      return linhas.some(l => l.includes('Unidades colocadas') && l.includes('27')) &&
+        linhas.some(l => l.includes('= Vendidas') && l.includes('27'));
+    }));
+  check('e o valor fecha em 27 × 54,90 = R$ 1.482,30',
+    (await page10.textContent('.calc-live')).includes('1.482,30'));
+  await page10.locator('.ns-overlay').last().locator('button:has-text("Adicionar")').click();
+  await page10.waitForTimeout(300);
+  check('no talão o item sai escrito como Display P',
+    (await page10.locator('.card-item').last().textContent()).includes('Display P ×1 = 27 un'));
+  await page10.evaluate(() => document.querySelectorAll('.ns-overlay').forEach(o => o.remove()));
+  await page10.click('#tabs button[data-v=dash]');
+  await page10.waitForTimeout(300);
 
   // ══ GPS e rota puxando o endereço pelo CEP ══
   const buscas = await page10.evaluate(() => {

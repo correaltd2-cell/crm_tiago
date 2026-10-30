@@ -387,9 +387,10 @@ eq('digitar a quantidade não reescreve o campo (cursor fica no lugar)',
   /oninput:[^\n]*val\.value\s*=/.test(pedidoJs), false);
 
 console.log('\nOrdem oficial do catálogo:');
-eq('a lista tem os 10 produtos, sem repetir Paris', C.ORDEM_PRODUTOS.length, 10);
+eq('a lista tem os 11 produtos, sem repetir Paris', C.ORDEM_PRODUTOS.length, 11);
 eq('(BRAG) abre a lista', C.ORDEM_PRODUTOS[0], '(BRAG) BRINCO ARGOLINHA');
-eq('(ANEL) fecha a lista', C.ORDEM_PRODUTOS[9], '(ANEL) ANEL REGULÁVEL');
+eq('(ANEL) é o décimo', C.ORDEM_PRODUTOS[9], '(ANEL) ANEL REGULÁVEL');
+eq('(GIFT) fecha a lista', C.ORDEM_PRODUTOS[10], '(GIFT) GIFT COLLECTION');
 eq('placa P vem antes da G', C.ORDEM_TAMANHO.P < C.ORDEM_TAMANHO.G, true);
 eq('avulso vem depois das duas', C.ORDEM_TAMANHO.AV > C.ORDEM_TAMANHO.G, true);
 const cat = [
@@ -430,7 +431,8 @@ const placaJs = fs2.readFileSync(require('path').join(__dirname, '..', 'public/j
 eq('cada modelo de placa tem cor própria', /PLACAS = \{/.test(placaJs), true);
 eq('a placa abre em tela cheia, não num modal apertado', /placa-tela/.test(placaJs), true);
 eq('dá para selecionar a fileira inteira', /placa-fileira/.test(placaJs), true);
-eq('dá para conferir mais de uma placa do mesmo produto', /Adicionar outra placa/.test(placaJs), true);
+eq('dá para conferir mais de uma placa do mesmo produto',
+  /Adicionar outro ' \+ SUP\.toLowerCase\(\) \+ ' deste produto/.test(placaJs), true);
 
 console.log('\nLaranja do faturamento e azul da prioridade:');
 eq('laranja é uma cor própria, não o amarelo', idxHtml.includes('--laranja:#FF8A2B'), true);
@@ -443,6 +445,48 @@ eq('e o selo de prioridade usa esse azul',
   /\.badge\.prioritario\{background:var\(--azul-prio\)/.test(idxHtml), true);
 eq('tirar o pedido encerra a prioridade do cliente',
   /prioridade: false/.test(lerPub('public/js/app.js')), true);
+
+console.log('\nGIFT COLLECTION (produto em display):');
+const GIFT = '(GIFT) GIFT COLLECTION';
+const seedJs = lerPub('public/js/seed.js');
+const giftSeed = (() => {
+  const g = {}; global.window = g;
+  delete require.cache[require.resolve(path.join(__dirname, '..', 'public/js/seed.js'))];
+  require(path.join(__dirname, '..', 'public/js/seed.js'));
+  return g.NS_SEED.produtos.find(p => p.nome === GIFT);
+})();
+eq('o produto está no catálogo de instalação', !!giftSeed, true);
+eq('preço da tabela simples é 54,90', giftSeed.preco_simples, 54.9);
+eq('preço do lucro presumido é 59,90', giftSeed.preco_lucro, 59.9);
+eq('display P tem 27 unidades', giftSeed.unid_placa_p, 27);
+eq('display G tem 45 unidades', giftSeed.unid_placa_g, 45);
+eq('e ele é marcado como display, não placa', giftSeed.suporte, 'display');
+eq('a palavra certa é Display', C.rotuloSuporte(giftSeed), 'Display');
+eq('no plural, Displays', C.rotuloSuporte(giftSeed, true), 'Displays');
+eq('e o rótulo do pedido concorda em gênero', C.rotuloDeixadas(giftSeed), 'Displays deixados');
+eq('os outros produtos continuam sendo placa',
+  C.rotuloSuporte({ nome: '(BRAG) BRINCO ARGOLINHA' }), 'Placa');
+eq('e no plural, Placas', C.rotuloSuporte({ nome: '(ANEL) ANEL REGULÁVEL' }, true), 'Placas');
+eq('item sem produto não quebra o rótulo', C.rotuloSuporte(null), 'Placa');
+eq('o campo suporte do cadastro manda mais que a lista fixa',
+  C.rotuloSuporte({ nome: '(BRAG) BRINCO ARGOLINHA', suporte: 'display' }), 'Display');
+// a conta do display é a MESMA da placa: 2 displays de 27 com 10 devolvidas
+const giftCalc = C.calcItem({ placas: 2, unidPorPlaca: 27, devDisplay: 10, devQuebrada: 0, precoUnit: 54.9 });
+eq('2 displays P = 54 unidades colocadas', giftCalc.colocadas, 54);
+eq('e 44 vendidas depois de 10 devolvidas', giftCalc.vendidas, 44);
+eq('valor = 44 × 54,90', giftCalc.valor, Math.round(44 * 54.9 * 100) / 100);
+const appJsG = lerPub('public/js/app.js');
+eq('quem já usa o app recebe o produto sem reinstalar',
+  /PRODUTOS_NOVOS/.test(appJsG) && /prod-gift-collection/.test(appJsG), true);
+eq('o id é fixo, então dois celulares não criam produto repetido',
+  /id: 'prod-gift-collection'/.test(appJsG), true);
+eq('e o produto existente nunca é sobrescrito',
+  /if \(existe\.has\(novo\.nome\) \|\| porId\.has\(novo\.id\)\) continue;/.test(appJsG), true);
+eq('o cupom da térmica também conhece o display',
+  /rotuloSuporte\(p\)/.test(apiCupom) && apiCupom.includes(GIFT), true);
+eq('o PDF do pedido escreve Placa ou Display conforme o produto',
+  (lerPub('public/js/pdf.js').match(/C\.rotuloSuporte\(p\)/g) || []).length, 2);
+eq('o seed não duplicou o produto', (seedJs.match(/prod-gift-collection/g) || []).length, 1);
 
 console.log('\nEndereço pelo CEP (GPS e rota):');
 const rotaJs = lerPub('public/js/rota.js');

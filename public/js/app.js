@@ -148,19 +148,44 @@
     if (mudou) console.log('[catálogo] ' + mudou + ' produtos renomeados');
   }
 
+  // ── produtos novos do catálogo nas bases que já estão instaladas ──
+  // Mesmo caso do renome: o seed só roda na primeira instalação. Entra com o id
+  // FIXO, então se o celular do Denilson e o do Guilherme cadastrarem ao mesmo
+  // tempo, os dois gravam o MESMO documento — nunca sai produto repetido.
+  // Nada é sobrescrito: se o produto já existe, não encosta no preço dele.
+  const PRODUTOS_NOVOS = [{
+    id: 'prod-gift-collection', codigo: null, nome: '(GIFT) GIFT COLLECTION',
+    variacao: null, linha: 'Gift Collection',
+    preco_simples: 54.9, preco_lucro: 59.9,
+    unid_placa_p: 27, unid_placa_g: 45, suporte: 'display', ativo: true
+  }];
+  function completarCatalogo() {
+    const existe = new Set(DB.all('produtos').map(p => String(p.nome || '')));
+    const porId = new Set(DB.all('produtos').map(p => p.id));
+    for (const novo of PRODUTOS_NOVOS) {
+      if (existe.has(novo.nome) || porId.has(novo.id)) continue;
+      DB.insert('produtos', Object.assign({}, novo));
+      console.log('[catálogo] produto incluído: ' + novo.nome);
+    }
+  }
+
   function iniciarApp() {
     $('#topbar').style.display = ''; $('#tabs').style.display = ''; $('#fab').style.display = '';
     try { renomearCatalogo(); } catch (e) {}
     montarTopbar();
     nav(viewAtual);
     // sempre sincroniza (fila + download) ao abrir e re-renderiza com os dados novos
+    // O produto novo entra DEPOIS da sincronização de propósito: gravar antes
+    // põe uma escritura na fila, e uma escritura na fila faz a abertura pular a
+    // puxada. Sem sinal não há puxada nenhuma, então ali entra na hora.
     if (navigator.onLine && DB.configured())
       Promise.resolve(DB.sync()).then(() => {
         if (!sessao()) return; // representante removido do servidor — mantém a tela atual
+        try { completarCatalogo(); } catch (e) {}
         montarTopbar(); nav(viewAtual);
         avisarPendentesNewStar();
       }).catch(() => {});
-    else avisarPendentesNewStar();
+    else { try { completarCatalogo(); } catch (e) {} avisarPendentesNewStar(); }
   }
 
   // ── aviso de pedidos que faltam faturar no New Star ──
@@ -2866,7 +2891,7 @@
           .map(p => el('div', { class: 'hist-linha' },
             el('span', null, p.ativo === false ? ico('bloquear', 'ic-sm') : null, (p.codigo || '') + ' · ' + p.nome +
               (p.variacao ? ' (' + p.variacao + ')' : '') +
-              ` · P=${p.unid_placa_p} G=${p.unid_placa_g} · ` +
+              ` · ${C.rotuloSuporte(p)} P=${p.unid_placa_p} G=${p.unid_placa_g} · ` +
               (p.preco_simples != null ? C.fmtMoney(Number(p.preco_simples)) : 'sem preço') + ' / ' +
               (p.preco_lucro != null ? C.fmtMoney(Number(p.preco_lucro)) : 'sem preço')),
             el('button', { class: 'btn-link', onclick: () => editar(p) }, 'editar')))));
@@ -2879,11 +2904,18 @@
         return el('label', { class: 'campo' }, el('span', { class: 'sub' }, rotulo), f[k]);
       };
       const ativo = el('input', { type: 'checkbox', checked: p.ativo !== false ? '' : null });
+      // placa ou display: muda só a palavra que o vendedor lê no pedido, no PDF
+      // e no cupom. A conta das unidades é a mesma nos dois casos.
+      const ehDisp = C.ehDisplay(p);
+      const supSel = el('select', { class: 'input' },
+        el('option', { value: 'placa', selected: ehDisp ? null : '' }, 'Placa'),
+        el('option', { value: 'display', selected: ehDisp ? '' : null }, 'Display'));
       const mm = modal(el('div', { class: 'col gap8' },
         inp('codigo', 'Código'), inp('nome', 'Nome *'), inp('variacao', 'Variação'), inp('linha', 'Linha de produto'),
         inp('preco_simples', 'Preço Tabela Simples', 'number', '0.01'),
         inp('preco_lucro', 'Preço Lucro Presumido', 'number', '0.01'),
-        inp('unid_placa_p', 'Unidades placa P *', 'number'), inp('unid_placa_g', 'Unidades placa G *', 'number'),
+        el('label', { class: 'campo' }, el('span', { class: 'sub' }, 'Vem em placa ou em display?'), supSel),
+        inp('unid_placa_p', 'Unidades no P *', 'number'), inp('unid_placa_g', 'Unidades no G *', 'number'),
         el('label', { class: 'row gap8' }, ativo, 'Ativo'),
         el('button', {
           class: 'btn big w100', onclick: () => {
@@ -2895,7 +2927,7 @@
               preco_simples: f.preco_simples.value === '' ? null : Number(f.preco_simples.value),
               preco_lucro: f.preco_lucro.value === '' ? null : Number(f.preco_lucro.value),
               unid_placa_p: parseInt(f.unid_placa_p.value, 10), unid_placa_g: parseInt(f.unid_placa_g.value, 10),
-              ativo: ativo.checked
+              suporte: supSel.value, ativo: ativo.checked
             };
             if (p.id) DB.update('produtos', p.id, body); else DB.insert('produtos', body);
             mm.fechar(); render();
@@ -3073,7 +3105,7 @@
   // ================= BOOT =================
   window.NSApp = {
     sessao, nav, recalcularCicloCliente, marcarFaturado, avisarPendentesNewStar, editarCliente,
-    linkMaps, ligarBuscaCep,
+    linkMaps, ligarBuscaCep, completarCatalogo,
     // Pedido digitado para quem não estava na rota: o cliente entra na rota de
     // HOJE já atendido, e o atendimento conta na meta de visitação.
     aoConcluirPedido(pedido) {

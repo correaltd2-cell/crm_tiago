@@ -157,6 +157,11 @@
   // aoConcluir({ placas, vendidas }) → quantas placas e quantas unidades saíram.
   function conferir({ produto, tamanho, unidPorPlaca, placas, vendidasIniciais, aoConcluir }) {
     const est = estiloPlaca(produto);
+    // GIFT COLLECTION vem em DISPLAY, não em placa: a tela é a mesma, só a
+    // palavra muda, para o vendedor achar o nome que ele usa no balcão.
+    const C = window.NSCalc;
+    const SUP = C.rotuloSuporte(produto);              // Placa | Display
+    const SUP_PL = C.rotuloSuporte(produto, true);     // Placas | Displays
     const upp = Math.max(1, Number(unidPorPlaca) || 1);
     const g = grade(upp, est.tipo);
     const pendente = est.tipo === 'pendente';
@@ -252,7 +257,7 @@
           const vendida = s.has(i);
           gradeEl.appendChild(el('button', {
             class: 'furo' + (vendida ? ' vazio' : ''), type: 'button',
-            'aria-label': 'Posição ' + (i + 1) + (vendida ? ' — vendida' : ' — na placa'),
+            'aria-label': 'Posição ' + (i + 1) + (vendida ? ' — vendida' : ' — n' + (SUP === 'Display' ? 'o ' : 'a ') + SUP.toLowerCase()),
             'aria-pressed': vendida ? 'true' : 'false',
             onclick: (e) => {
               if (s.has(i)) s.delete(i); else s.add(i);
@@ -340,20 +345,20 @@
         abasEl.appendChild(el('button', {
           class: 'placa-aba' + (i === atual ? ' ativa' : ''),
           onclick: () => { atual = i; desenharAbas(); desenharPlaca(); }
-        }, 'Placa ' + (i + 1), el('span', { class: 'placa-aba-num' }, String(s.size))));
+        }, SUP + ' ' + (i + 1), el('span', { class: 'placa-aba-num' }, String(s.size))));
       });
       abasEl.appendChild(el('button', {
-        class: 'placa-aba mais', 'aria-label': 'Adicionar outra placa deste produto',
+        class: 'placa-aba mais', 'aria-label': 'Adicionar outro ' + SUP.toLowerCase() + ' deste produto',
         onclick: () => {
-          if (sel.length >= 12) return toast('12 placas do mesmo produto já é o limite.', 'erro');
+          if (sel.length >= 12) return toast('12 ' + SUP_PL.toLowerCase() + ' do mesmo produto já é o limite.', 'erro');
           sel.push(new Set());
           atual = sel.length - 1;
           desenharAbas(); desenharPlaca(); atualizaPlacar();
         }
-      }, ico('mais', 'ic-sm'), 'Placa'));
+      }, ico('mais', 'ic-sm'), SUP));
       if (sel.length > 1) {
         abasEl.appendChild(el('button', {
-          class: 'placa-aba tirar', 'aria-label': 'Tirar esta placa',
+          class: 'placa-aba tirar', 'aria-label': 'Tirar est' + (SUP === 'Display' ? 'e ' : 'a ') + SUP.toLowerCase(),
           onclick: () => {
             sel.splice(atual, 1);
             atual = Math.max(0, atual - 1);

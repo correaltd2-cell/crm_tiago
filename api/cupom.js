@@ -62,9 +62,18 @@ const ORDEM_PRODUTOS = [
   '(PULA) PULSEIRA ADULTA',
   '(PUL) PULSEIRA INFANTIL',
   '(NEW YORK) GARGANTILHA NEW YORK',
-  '(ANEL) ANEL REGUL\u00c1VEL'
+  '(ANEL) ANEL REGUL\u00c1VEL',
+  '(GIFT) GIFT COLLECTION'
 ];
 const ORDEM_TAMANHO = { P: 0, G: 1, AV: 2 };
+// GIFT COLLECTION vem em DISPLAY, nao em placa (mesma copia que esta no app)
+const PRODUTOS_DISPLAY = ['(GIFT) GIFT COLLECTION'];
+function ehDisplay(p) {
+  if (!p) return false;
+  if (p.suporte) return String(p.suporte).toLowerCase() === 'display';
+  return PRODUTOS_DISPLAY.indexOf(String(p.nome || '')) >= 0;
+}
+function rotuloSuporte(p) { return ehDisplay(p) ? 'Display' : 'Placa'; }
 function ordemProduto(p) {
   const i = ORDEM_PRODUTOS.indexOf((p && p.nome) || '');
   return i < 0 ? ORDEM_PRODUTOS.length : i;
@@ -110,7 +119,7 @@ function montarLinhas({ pedido, itens, cliente, rep, produtos, observacoes, base
     t((p.codigo ? p.codigo + ' ' : '') + (p.nome || '') + (p.variacao ? ' (' + p.variacao + ')' : ''), { bold: 1 });
     t(it.tamanho === 'AV'
       ? 'Avulso: ' + it.unid_colocadas + ' un'
-      : 'Placa ' + it.tamanho + ' x' + it.placas + ' = ' + it.unid_colocadas + ' un');
+      : rotuloSuporte(p) + ' ' + it.tamanho + ' x' + it.placas + ' = ' + it.unid_colocadas + ' un');
     // no CUPOM a devolucao se chama TROCA (no PDF continua "Devolvido")
     t('Qtd. trocada: ' + it.dev_display + ' | Qtd. quebrada: ' + it.dev_quebrada);
     t('Qtd. vendida: ' + it.unid_vendidas + ' | Valor unit.: ' + fmtBR(it.preco_unit));

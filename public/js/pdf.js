@@ -380,7 +380,7 @@
       for (const l of wrap(nome, 7, CIN, true)) txt(l, 7, { b: true }, 9);
       txt(it.tamanho === 'AV'
         ? 'Avulso · ' + it.unid_colocadas + ' un'
-        : 'Placa ' + it.tamanho + ' ×' + it.placas + ' = ' + it.unid_colocadas + ' un', 6.5, {}, 8);
+        : C.rotuloSuporte(p) + ' ' + it.tamanho + ' ×' + it.placas + ' = ' + it.unid_colocadas + ' un', 6.5, {}, 8);
       txt('Qtd. devolvida: ' + it.dev_display + ' · Qtd. quebrada: ' + it.dev_quebrada, 6.5, {}, 8);
       txt('Qtd. vendida: ' + it.unid_vendidas + ' · Valor unit.: ' + C.fmtMoney(Number(it.preco_unit)), 6.5, {}, 9);
       txt('TOTAL ' + C.fmtMoney(Number(it.valor_total)), 8.5, { b: true, al: 'right' }, 12);
@@ -610,7 +610,7 @@
         if (p.variacao) t(p.variacao, F(17));
         t(it.tamanho === 'AV'
           ? 'Avulso ' + it.unid_colocadas + ' un'
-          : 'Placa ' + it.tamanho + ' ' + it.placas + 'x = ' + it.unid_colocadas + ' un', F(19));
+          : C.rotuloSuporte(p) + ' ' + it.tamanho + ' ' + it.placas + 'x = ' + it.unid_colocadas + ' un', F(19));
         y += Math.round(3 * k);
         // no CUPOM a devolução se chama TROCA (no PDF continua "Devolvido")
         rotulado('Trocadas', String(it.dev_display), F(19), true);
