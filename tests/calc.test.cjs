@@ -446,6 +446,36 @@ eq('e o selo de prioridade usa esse azul',
 eq('tirar o pedido encerra a prioridade do cliente',
   /prioridade: false/.test(lerPub('public/js/app.js')), true);
 
+console.log('\nCarteira compartilhada entre os vendedores:');
+const appEq = lerPub('public/js/app.js');
+eq('a carteira compartilhada vem ligada por padrão',
+  /DB\.config\('carteira_compartilhada', true\) !== false/.test(appEq), true);
+eq('com ela ligada, todo vendedor enxerga todos os clientes',
+  /\(!repId \|\| carteiraCompartilhada\(\) \|\| c\.representante_id === repId\)/.test(appEq), true);
+eq('dá para desligar em Admin → Configurações',
+  /carteira_compartilhada', carteiraSel\.value === '1'/.test(appEq), true);
+eq('a rota fica num campo de cada vendedor',
+  /const campoDia = \(repId\) => 'rota_dia__'/.test(appEq) &&
+  /const campoOrdem = \(repId\) => 'rota_ordem__'/.test(appEq), true);
+eq('o id do vendedor vira um nome de campo válido no Firestore',
+  /replace\(\/\[\^A-Za-z0-9\]\/g, '_'\)/.test(appEq), true);
+eq('quem já tinha rota montada não perde nada (campos antigos valem de reserva)',
+  /return \(c\.representante_id === repId\) \? \(c\.rota_dia \|\| null\) : null;/.test(appEq), true);
+eq('cada gravação mexe só nos campos do próprio vendedor',
+  /patch\[campoDia\(repId\)\] = dia;/.test(appEq) &&
+  /patch\[campoOrdem\(repId\)\] = ordem;/.test(appEq), true);
+eq('tirar da rota não apaga a rota do outro vendedor',
+  /function tirarDaRota\(c, repId\) \{\s*gravarRota\(c, repId \|\| repDaRota\(\), null, null\);/.test(appEq), true);
+eq('o app avisa quando o outro vendedor tem o mesmo cliente no mesmo dia',
+  /function outrosNaRota/.test(appEq) && /também tem este cliente/.test(appEq), true);
+eq('o aviso de rota dobrada tem estilo próprio',
+  /\.aviso-dupla\{/.test(idxHtml), true);
+eq('o pedido entra na rota de QUEM VENDEU, não na do dono do cadastro',
+  /const repPed = pedido\.representante_id \|\| repDaRota\(\)/.test(appEq), true);
+eq('o pedido continua sendo gravado no nome de quem está logado',
+  /representante_id: rep\.id,/.test(lerPub('public/js/pedido.js')), true);
+eq('e a visita também', /cliente_id: ped\.cliente_id, representante_id: rep\.id, data_visita/.test(lerPub('public/js/pedido.js')), true);
+
 console.log('\nGIFT COLLECTION (produto em display):');
 const GIFT = '(GIFT) GIFT COLLECTION';
 const seedJs = lerPub('public/js/seed.js');

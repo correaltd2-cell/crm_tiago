@@ -64,6 +64,16 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await page.addInitScript((s) => {
     for (const [k, v] of Object.entries(s)) localStorage.setItem(k, JSON.stringify(v));
     Object.defineProperty(navigator, 'onLine', { get: () => false }); // simula sem sinal
+    // A rota do app fica em campos POR VENDEDOR dentro do cliente
+    // (rota_dia__<vendedor>), porque cada um monta a sua. Os testes que gravam
+    // no banco direto usam este atalho para mexer nos campos certos.
+    window.__rota = (id, dia, ordem) => {
+      const ss = window.NSApp.sessao();
+      const k = String(ss && ss.rep ? ss.rep.id : '').replace(/[^A-Za-z0-9]/g, '_');
+      const pa = { rota_dia: dia, rota_ordem: ordem };
+      pa['rota_dia__' + k] = dia; pa['rota_ordem__' + k] = ordem;
+      window.NSDB.update('clientes', id, pa);
+    };
   }, seed);
 
   let ok = 0, fail = 0;
@@ -875,7 +885,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
     // garante ORDEM A em 1º e a sequência fora de ordem geográfica (A, B, C)
     ['ORDEM A', 'ORDEM B', 'ORDEM C'].forEach((nome, i) => {
       const c = window.NSDB.all('clientes').find(x => x.nome === nome);
-      window.NSDB.update('clientes', c.id, { rota_ordem: i + 1 });
+      window.__rota(c.id, c.rota_dia, i + 1);
     });
     window.NSDB.removeWhere('visitas', v => {
       const c = window.NSDB.byId('clientes', v.cliente_id);
@@ -903,7 +913,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
     // pedido precisa continuar na rota, é o que o próximo bloco verifica
     window.NSDB.all('clientes')
       .filter(c => c.rota_dia && /^ORDEM |PROSPEC/.test(c.nome))
-      .forEach(c => window.NSDB.update('clientes', c.id, { rota_dia: null, rota_ordem: null }));
+      .forEach(c => window.__rota(c.id, null, null));
   });
   // rota manual: criar rota do dia, adicionar cliente, registrar visita sem pedido
   await page.evaluate(() => document.querySelectorAll('.ns-overlay').forEach(o => o.remove()));
@@ -929,7 +939,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
     // tira da rota para o cenário seguinte começar do zero
     await page.evaluate(() => {
       window.NSDB.all('clientes').filter(c => c.rota_dia)
-        .forEach(c => window.NSDB.update('clientes', c.id, { rota_dia: null, rota_ordem: null }));
+        .forEach(c => window.__rota(c.id, null, null));
       window.NSApp.nav('hoje');
     });
     await page.waitForTimeout(250);
@@ -1408,11 +1418,10 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
       cidade: 'PF', uf: 'RS', status: 'ativo', classe: 'B',
       rota_dia: null, rota_ordem: null });
     const dia = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta'][Math.min(4, Math.max(0, new Date().getDay() - 1))];
-    window.NSDB.update('clientes', c.id, { rota_dia: dia, rota_ordem: 1 });
-    const h = new Date();
-    const seg = new Date(h); seg.setDate(h.getDate() - ((h.getDay() || 7) - 1));
-    const data = new Date(seg); data.setDate(seg.getDate() + ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta'].indexOf(dia));
-    const iso = data.getFullYear() + '-' + String(data.getMonth() + 1).padStart(2, '0') + '-' + String(data.getDate()).padStart(2, '0');
+    window.__rota(c.id, dia, 1);
+    // a data da aba é a que o APP calcula (no fim de semana ele já mostra a
+    // semana que vem): calcular à parte fazia o teste quebrar aos domingos
+    const iso = window.NSApp.dataDoDia(dia);
     const v = window.NSDB.insert('visitas', { cliente_id: c.id, representante_id: rep.id,
       data_visita: iso, realizada: true, fez_pedido: false });
     window.NSApp.nav('hoje');
@@ -2238,6 +2247,115 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   check('o CEP completa só o que falta e respeita a rua já digitada',
     online.falta.cidade === 'Horizontina' && online.falta.endereco === undefined);
   await page11.close();
+
+  // ══ carteira compartilhada: Denilson e Gustavo na mesma carteira ══
+  // Os dois enxergam os MESMOS clientes, mas cada um monta a SUA rota, e o
+  // pedido, a visita e a comissão continuam no nome de quem atendeu.
+  const REP2 = '22222222-2222-4222-8222-222222222222';
+  const seedEquipe = JSON.parse(JSON.stringify(seed));
+  seedEquipe.ns_c_representantes.push({
+    id: REP2, nome: 'Gustavo', email: 'gustavo@newstar.com.br',
+    senha_hash: sha256('123456'), papel: 'vendedor', contato: '(49) 99999-0001',
+    comissao_pct: 10, comissao_pct_novo: 15, custo_km: 0.8,
+    cidade_base: 'Passo Fundo', lat_base: -28.2622, lng_base: -52.4083, ativo: true
+  });
+  // o cliente é do DENILSON e já está na rota de segunda dele, pelos campos
+  // ANTIGOS: é o caso de quem já usava o app antes desta atualização
+  seedEquipe.ns_c_clientes[0].rota_dia = 'Segunda';
+  seedEquipe.ns_c_clientes[0].rota_ordem = 1;
+  seedEquipe.ns_c_clientes.push({
+    id: 'cli-equipe-2', representante_id: REP_ID, nome: 'FARMACIA DO GUSTAVO LTDA',
+    cnpj_cpf: '99.888.777/0001-66', cidade: 'Passo Fundo', uf: 'RS',
+    status: 'ativo', classe: 'B', lat: -28.25, lng: -52.41
+  });
+
+  const page12 = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  page12.on('pageerror', (e) => erros.push('pageerror(p12): ' + e.message));
+  await page12.route('**/firestore.googleapis.com/**', (r) => r.abort());
+  await page12.addInitScript((s) => {
+    for (const [k, v] of Object.entries(s)) localStorage.setItem(k, JSON.stringify(v));
+    localStorage.setItem('ns_dia_rota', 'Segunda');   // dia fixo, para o teste não depender do calendário
+    Object.defineProperty(navigator, 'onLine', { get: () => false });
+  }, seedEquipe);
+  await page12.goto('http://localhost:8899/');
+  await page12.waitForSelector('.login-box input[type=email]', { timeout: 15000 });
+  await page12.fill('input[type=email]', 'gustavo@newstar.com.br');
+  await page12.fill('input[type=password]', '123456');
+  await page12.click('text=Entrar');
+  await page12.waitForSelector('#tabs', { state: 'visible' });
+
+  // 1) mesma carteira: o Gustavo vê os clientes que estão no nome do Denilson
+  await page12.click('#tabs button[data-v=clientes]');
+  await page12.waitForTimeout(400);
+  const vistos = await page12.evaluate(() =>
+    Array.from(document.querySelectorAll('#view .item-lista strong')).map(x => x.textContent));
+  check('Gustavo enxerga os clientes que estão no nome do Denilson',
+    vistos.some(n => n.includes('FARMACIA TESTE')) && vistos.some(n => n.includes('FARMACIA DO GUSTAVO')));
+
+  // 2) a rota continua sendo de cada um: a de segunda do Denilson não é do Gustavo
+  await page12.click('#tabs button[data-v=hoje]');
+  await page12.waitForTimeout(400);
+  check('a rota de segunda do Denilson NÃO aparece para o Gustavo',
+    (await page12.locator('#view .card-visita').count()) === 0);
+
+  // 3) o Gustavo monta a rota dele com o mesmo cliente, no mesmo dia
+  await page12.locator('#view button:has-text("rota de")').first().click();
+  await page12.waitForSelector('.ns-overlay');
+  const mEq = page12.locator('.ns-overlay').last();
+  await mEq.locator('input').first().fill('FARMACIA TESTE');
+  await page12.waitForTimeout(250);
+  await mEq.locator('button:has-text("Adicionar à rota")').first().click();
+  await page12.waitForTimeout(250);
+  check('o app avisa que o outro vendedor já tem este cliente no mesmo dia',
+    (await page12.textContent('#ns-toast')).includes('Denilson'));
+  await mEq.locator('button:has-text("Concluir")').click();
+  await page12.waitForTimeout(400);
+  check('e o cliente entra na rota do Gustavo',
+    (await page12.locator('#view .card-visita').count()) === 1);
+  check('com o aviso de rota dobrada à vista no cartão',
+    (await page12.textContent('#view')).includes('também tem este cliente'));
+
+  // 4) cada rota no seu campo: a do Denilson intacta, a do Gustavo separada
+  const campos = await page12.evaluate((rep2) => {
+    const c = window.NSDB.all('clientes').find(x => x.nome === 'FARMACIA TESTE LTDA');
+    const k = 'rota_dia__' + rep2.replace(/[^A-Za-z0-9]/g, '_');
+    return { denilson: c.rota_dia, gustavo: c[k] };
+  }, REP2);
+  check('a rota antiga do Denilson continua gravada como era',
+    campos.denilson === 'Segunda');
+  check('e a do Gustavo fica num campo só dele', campos.gustavo === 'Segunda');
+
+  // 5) tirar da rota mexe SÓ na rota de quem tirou
+  await page12.evaluate(() => {
+    const c = window.NSDB.all('clientes').find(x => x.nome === 'FARMACIA TESTE LTDA');
+    window.NSApp.nav('hoje');
+    return c.id;
+  });
+  await page12.locator('#view .card-visita .cv-topo').first().click();
+  await page12.waitForTimeout(300);
+  await page12.evaluate(() => document.querySelectorAll('.ns-overlay').forEach(o => o.remove()));
+  const aposSair = await page12.evaluate((rep2) => {
+    const c = window.NSDB.all('clientes').find(x => x.nome === 'FARMACIA TESTE LTDA');
+    const k = 'rota_dia__' + rep2.replace(/[^A-Za-z0-9]/g, '_');
+    // o Gustavo tira o cliente da rota dele
+    const p = {}; p[k] = null; p['rota_ordem__' + rep2.replace(/[^A-Za-z0-9]/g, '_')] = null;
+    window.NSDB.update('clientes', c.id, p);
+    const d = window.NSDB.all('clientes').find(x => x.nome === 'FARMACIA TESTE LTDA');
+    return { denilson: d.rota_dia, gustavo: d[k] };
+  }, REP2);
+  check('o Gustavo saindo da rota não apaga a rota do Denilson',
+    aposSair.denilson === 'Segunda' && !aposSair.gustavo);
+
+  // 6) desligando a carteira compartilhada, cada um volta a ver só a sua
+  const soMinha = await page12.evaluate(() => {
+    window.NSDB.upsertConfig('carteira_compartilhada', false);
+    window.NSApp.nav('clientes');
+    return Array.from(document.querySelectorAll('#view .item-lista strong')).map(x => x.textContent);
+  });
+  check('desligando a carteira compartilhada, o Gustavo não vê mais os clientes do Denilson',
+    soMinha.length === 0);
+  await page12.evaluate(() => window.NSDB.upsertConfig('carteira_compartilhada', true));
+  await page12.close();
 
   await browser.close();
   server.close();

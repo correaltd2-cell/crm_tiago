@@ -324,9 +324,18 @@
   }
 
   // ================= HELPERS DE DOMÍNIO =================
+  // ── carteira compartilhada ──
+  // Ligada (padrão), TODOS os vendedores enxergam TODOS os clientes ativos: é a
+  // mesma carteira para a equipe inteira. O que continua separado por vendedor:
+  //   • a ROTA do dia (cada um monta a sua — campos rota_dia__<vendedor>)
+  //   • a VISITA e o PEDIDO (ficam no nome de quem atendeu/vendeu)
+  //   • a COMISSÃO (sai do pedido, então também é de quem vendeu)
+  // Desligando em Admin → Configurações, cada vendedor volta a ver só os
+  // clientes que estão no nome dele, como era antes.
+  const carteiraCompartilhada = () => DB.config('carteira_compartilhada', true) !== false;
   function clientesDoRep(repId) {
     return DB.all('clientes').filter(c => c.status !== 'inativo' &&
-      (!repId || c.representante_id === repId));
+      (!repId || carteiraCompartilhada() || c.representante_id === repId));
   }
   function repEfetivoId() {
     const s = sessao();
@@ -431,39 +440,97 @@
     return lista.sort((a, b) =>
       C.classeRank(a) - C.classeRank(b) || diasSemPedido(b) - diasSemPedido(a));
   }
+  // ── a rota é de CADA vendedor ──
+  // Na carteira compartilhada os dois enxergam os mesmos clientes, mas o
+  // roteiro é pessoal: cada vendedor tem os campos dele dentro do cliente
+  // (rota_dia__<vendedor> / rota_ordem__<vendedor>). Assim um nunca apaga a
+  // rota do outro — nem trabalhando offline, porque cada gravação mexe só nos
+  // campos do próprio vendedor.
+  // Os campos ANTIGOS (rota_dia / rota_ordem) continuam valendo como a rota de
+  // quem é o dono do cadastro, até ele mexer pela primeira vez: quem já tinha
+  // rota montada não perde nada quando o app atualiza.
+  const sufixoRep = (repId) => String(repId || '').replace(/[^A-Za-z0-9]/g, '_');
+  const campoDia = (repId) => 'rota_dia__' + sufixoRep(repId);
+  const campoOrdem = (repId) => 'rota_ordem__' + sufixoRep(repId);
+  const temCampo = (c, k) => Object.prototype.hasOwnProperty.call(c, k);
+  // de quem é a rota que está na tela: o vendedor logado, ou o que o gestor
+  // escolheu ver. No consolidado ("todos") não existe rota para montar.
+  function repDaRota() {
+    const s = sessao();
+    return (s && !s.consolidado) ? s.rep.id : null;
+  }
+  function rotaDiaDe(c, repId) {
+    if (!c) return null;
+    if (!repId) {   // gestor vendo "todos": vale a rota de qualquer vendedor
+      const k = Object.keys(c).find(x => x.indexOf('rota_dia__') === 0 && c[x]);
+      return k ? c[k] : (c.rota_dia || null);
+    }
+    const k = campoDia(repId);
+    if (temCampo(c, k)) return c[k] || null;
+    return (c.representante_id === repId) ? (c.rota_dia || null) : null;
+  }
+  function rotaOrdemDe(c, repId) {
+    const k = campoOrdem(repId);
+    if (repId && temCampo(c, k)) return c[k];
+    return (!repId || c.representante_id === repId) ? c.rota_ordem : null;
+  }
+  // grava dia e posição do vendedor. Para o DONO do cadastro os campos antigos
+  // continuam sendo atualizados junto, para nada depender da migração.
+  function gravarRota(c, repId, dia, ordem) {
+    const patch = {};
+    patch[campoDia(repId)] = dia;
+    patch[campoOrdem(repId)] = ordem;
+    if (c.representante_id === repId) { patch.rota_dia = dia; patch.rota_ordem = ordem; }
+    Object.assign(c, patch);
+    DB.update('clientes', c.id, patch);
+  }
+  // outro vendedor já tem este cliente no MESMO dia? (evita visita dobrada)
+  function outrosNaRota(c, dia, repId) {
+    if (!dia || !carteiraCompartilhada()) return [];
+    return DB.all('representantes')
+      .filter(r => r.papel === 'vendedor' && r.ativo !== false && r.id !== repId)
+      .filter(r => rotaDiaDe(c, r.id) === dia)
+      .map(r => r.nome);
+  }
   // A ordem da rota é SEMPRE a que o vendedor deixou salva (campo rota_ordem).
   // O desempate é por id, nunca pela ordem em que o Firestore devolveu os dados —
   // era isso que fazia a rota aparecer embaralhada depois de fechar e abrir o app.
   function clientesDaRota(repId, dia) {
-    return clientesDoRep(repId).filter(c => c.rota_dia === dia)
-      .sort((a, b) => (ordemDe(a) - ordemDe(b)) || String(a.id).localeCompare(String(b.id)));
+    return clientesDoRep(repId).filter(c => rotaDiaDe(c, repId) === dia)
+      .sort((a, b) => (ordemDe(a, repId) - ordemDe(b, repId)) ||
+        String(a.id).localeCompare(String(b.id)));
   }
   // quem ainda não tem posição salva vai para o fim (e nunca embaralha os demais)
-  const ordemDe = (c) => {
-    const n = Number(c.rota_ordem);
+  const ordemDe = (c, repId) => {
+    const n = Number(rotaOrdemDe(c, repId));
     return (Number.isFinite(n) && n > 0) ? n : 1e9;
   };
   // grava a ordem manual: a posição na lista vira rota_ordem 1, 2, 3…
-  function gravarOrdem(lista) {
+  function gravarOrdem(lista, repId) {
+    repId = repId || repDaRota();
     lista.forEach((c, i) => {
-      if (Number(c.rota_ordem) !== i + 1) {
-        c.rota_ordem = i + 1;
-        DB.update('clientes', c.id, { rota_ordem: i + 1 });
-      }
+      if (Number(rotaOrdemDe(c, repId)) !== i + 1)
+        gravarRota(c, repId, rotaDiaDe(c, repId), i + 1);
     });
   }
   // conserta posições faltando ou repetidas (rotas antigas, ou dois clientes que
   // caíram no mesmo número) gravando 1,2,3… uma única vez, sem mexer na sequência
-  function normalizarOrdem(lista) {
-    const precisa = lista.some((c, i) => Number(c.rota_ordem) !== i + 1);
-    if (precisa) gravarOrdem(lista);
+  function normalizarOrdem(lista, repId) {
+    repId = repId || repDaRota();
+    const precisa = lista.some((c, i) => Number(rotaOrdemDe(c, repId)) !== i + 1);
+    if (precisa) gravarOrdem(lista, repId);
     return lista;
+  }
+  // tira o cliente da rota DESTE vendedor (a do outro fica como está)
+  function tirarDaRota(c, repId) {
+    gravarRota(c, repId || repDaRota(), null, null);
   }
   // põe o cliente na rota de um dia, no fim da fila
   function porNaRota(cliente, dia, repId) {
-    const atuais = clientesDaRota(repId || cliente.representante_id, dia);
-    const ultima = atuais.reduce((m, c) => Math.max(m, Number(c.rota_ordem) || 0), 0);
-    DB.update('clientes', cliente.id, { rota_dia: dia, rota_ordem: ultima + 1 });
+    repId = repId || repDaRota() || cliente.representante_id;
+    const atuais = clientesDaRota(repId, dia);
+    const ultima = atuais.reduce((m, c) => Math.max(m, Number(rotaOrdemDe(c, repId)) || 0), 0);
+    gravarRota(cliente, repId, dia, ultima + 1);
   }
   // prospecção = possível cliente que ainda não compra; entra na rota igual
   const ehProspec = (c) => c && c.status === 'prospect';
@@ -653,6 +720,12 @@
         (ehProspec(c) || ehPrioritario(c)) ? el('div', { class: 'row gap8 mt8 selos' },
           ehPrioritario(c) ? el('span', { class: 'badge prioritario' }, ico('estrela', 'ic-sm'), 'PRIORIDADE') : null,
           ehProspec(c) ? el('span', { class: 'badge prospec' }, 'PROSPECÇÃO') : null) : null,
+        // o outro vendedor tem o mesmo cliente hoje: combine antes de ir
+        (() => {
+          const outros = outrosNaRota(c, diaRota, rep.id);
+          return outros.length ? el('div', { class: 'aviso-dupla mt8' }, ico('alerta', 'ic-sm'),
+            outros.join(' e ') + ' também tem este cliente em ' + diaRota) : null;
+        })(),
         el('div', { class: 'cv-info mt8', onclick: () => fichaCliente(c.id) },
           el('div', null, ico('pin', 'ic-sm'),
             [c.endereco, c.bairro, c.cidade].filter(Boolean).join(', ') || 'sem endereço'),
@@ -781,7 +854,7 @@
           if (!(await confirmar('Resetar a rota de ' + diaRota + '?\n\nOs ' + lista.length +
             ' cliente(s) voltam para a lista de disponíveis.',
           { titulo: 'Resetar rota', ok: 'Resetar', perigo: true }))) return;
-          lista.forEach(c => DB.update('clientes', c.id, { rota_dia: null, rota_ordem: null }));
+          lista.forEach(c => tirarDaRota(c));
           toast('Rota de ' + diaRota + ' zerada.');
           m.fechar(); nav('hoje');
         }
@@ -830,7 +903,7 @@
   }
 
   function removerDaRota(c) {
-    DB.update('clientes', c.id, { rota_dia: null, rota_ordem: null });
+    tirarDaRota(c);
     toast(c.nome + ' saiu da rota e voltou para a lista de clientes.');
     nav('hoje');
   }
@@ -844,7 +917,7 @@
 
     function render() {
       wrap.innerHTML = '';
-      const disponiveis = clientesDoRep(rep.id).filter(c => c.status !== 'inativo' && !c.rota_dia);
+      const disponiveis = clientesDoRep(rep.id).filter(c => c.status !== 'inativo' && !rotaDiaDe(c, rep.id));
       const cidades = Array.from(new Set(disponiveis.map(c => c.cidade).filter(Boolean))).sort();
       const regioes = Array.from(new Set(disponiveis.map(c => c.regiao || C.regiaoDoCliente(c)).filter(Boolean))).sort();
 
@@ -900,7 +973,7 @@
       function renderLista() {
         const q = f.busca.trim().toLowerCase();
         const qNum = q.replace(/\D/g, '');
-        let cls = clientesDoRep(rep.id).filter(c => c.status !== 'inativo' && !c.rota_dia);
+        let cls = clientesDoRep(rep.id).filter(c => c.status !== 'inativo' && !rotaDiaDe(c, rep.id));
         if (q) cls = cls.filter(c => (c.nome || '').toLowerCase().includes(q) ||
           (c.nome_fantasia || '').toLowerCase().includes(q) ||
           (c.razao_social || '').toLowerCase().includes(q) ||
@@ -939,8 +1012,15 @@
             el('div', { class: 'row gap8 mt8' },
               el('button', {
                 class: 'btn-mini grow', onclick: () => {
+                  // se o outro vendedor já tem este cliente no mesmo dia, avisa
+                  // na hora — dois na mesma farmácia no mesmo dia é visita perdida
+                  const outros = outrosNaRota(c, diaRota, rep.id);
                   porNaRota(c, diaRota, rep.id);
-                  toast(nomeExib(c) + ' entrou na rota de ' + diaRota + '.');
+                  toast(outros.length
+                    ? nomeExib(c) + ' entrou na rota de ' + diaRota + ' — atenção: ' +
+                      outros.join(' e ') + ' também tem este cliente em ' + diaRota + '.'
+                    : nomeExib(c) + ' entrou na rota de ' + diaRota + '.',
+                  outros.length ? 'erro' : undefined);
                   render();
                 }
               }, rot('mais', 'Adicionar à rota')),
@@ -1010,7 +1090,7 @@
   }
 
   function naoVisitei(c) {
-    DB.update('clientes', c.id, { rota_dia: null, rota_ordem: null });
+    tirarDaRota(c);
     toast(c.nome + ' saiu da rota e voltou para a lista de clientes disponíveis.');
     nav('hoje');
   }
@@ -2831,7 +2911,10 @@
       inp('condicao_pagamento_padrao', 'Prazo de pagamento deste cliente (ex.: 30 dias)'),
       inp('semana_padrao', 'Semana do ciclo (1-7)', 'number'),
       el('label', { class: 'campo' }, el('span', { class: 'sub' }, 'Dia da semana'), diaSel),
-      el('label', { class: 'campo' }, el('span', { class: 'sub' }, 'Representante'), repSel),
+      el('label', { class: 'campo' }, el('span', { class: 'sub' }, 'Representante'), repSel,
+        carteiraCompartilhada() ? el('span', { class: 'sub' },
+          'A carteira está compartilhada: TODOS os vendedores enxergam este cliente. ' +
+          'Isto aqui é só quem responde pelo cadastro.') : null),
       el('label', { class: 'campo' }, el('span', { class: 'sub' }, 'Status'), statusSel),
       el('label', { class: 'campo' }, el('span', { class: 'sub' }, 'Classe (A/B/C)'), classeSel),
       el('label', { class: 'campo' }, el('span', { class: 'sub' }, 'Cliente prioritário'), prioSel,
@@ -3036,7 +3119,18 @@
     const condTxt = el('textarea', { class: 'input', rows: '3' },
       (DB.config('condicoes_pagamento', []) || []).join('\n'));
     const obsTxt = el('textarea', { class: 'input', rows: '5' }, DB.config('pdf_observacoes', ''));
+    // carteira compartilhada: a equipe inteira enxerga os mesmos clientes
+    const compart = carteiraCompartilhada();
+    const carteiraSel = el('select', { class: 'input' },
+      el('option', { value: '1', selected: compart ? '' : null },
+        'SIM — todos os vendedores veem todos os clientes'),
+      el('option', { value: '', selected: compart ? null : '' },
+        'NÃO — cada vendedor vê só a carteira dele'));
     const mm = modal(el('div', { class: 'col gap8' },
+      el('label', { class: 'campo' },
+        el('span', { class: 'sub' }, 'Carteira compartilhada entre os vendedores'), carteiraSel,
+        el('span', { class: 'sub' }, 'A rota do dia continua sendo de cada vendedor, e o pedido, ' +
+          'a visita e a comissão continuam no nome de quem atendeu.')),
       CHAVES.map(([k, rotulo, tipo]) => {
         inputs[k] = el('input', { class: 'input', type: tipo, step: 'any', value: String(DB.config(k, '') ?? '') });
         return el('label', { class: 'campo' }, el('span', { class: 'sub' }, rotulo), inputs[k]);
@@ -3051,6 +3145,7 @@
           }
           DB.upsertConfig('condicoes_pagamento', condTxt.value.split('\n').map(x => x.trim()).filter(Boolean));
           DB.upsertConfig('pdf_observacoes', obsTxt.value.trim());
+          DB.upsertConfig('carteira_compartilhada', carteiraSel.value === '1');
           mm.fechar(); toast('Configurações salvas.');
         }
       }, 'Salvar configurações')), { titulo: 'Configurações', full: true });
@@ -3105,7 +3200,7 @@
   // ================= BOOT =================
   window.NSApp = {
     sessao, nav, recalcularCicloCliente, marcarFaturado, avisarPendentesNewStar, editarCliente,
-    linkMaps, ligarBuscaCep, completarCatalogo,
+    linkMaps, ligarBuscaCep, completarCatalogo, dataDoDia,
     // Pedido digitado para quem não estava na rota: o cliente entra na rota de
     // HOJE já atendido, e o atendimento conta na meta de visitação.
     aoConcluirPedido(pedido) {
@@ -3113,8 +3208,10 @@
         const c = DB.byId('clientes', pedido.cliente_id);
         const diaHoje = C.DIAS_SEMANA[(new Date().getDay() === 0) ? 7 : new Date().getDay()];
         const ehDiaUtil = DIAS_ROTA.indexOf(diaHoje) >= 0;
-        if (c && ehDiaUtil && c.rota_dia !== diaHoje) {
-          porNaRota(c, diaHoje, c.representante_id);
+        // entra na rota de QUEM VENDEU, não na do dono do cadastro
+        const repPed = pedido.representante_id || repDaRota() || (c && c.representante_id);
+        if (c && ehDiaUtil && rotaDiaDe(c, repPed) !== diaHoje) {
+          porNaRota(c, diaHoje, repPed);
           toast(nomeExib(c) + ' entrou na rota de ' + diaHoje + ' como atendido.');
         }
         // A prioridade serve para NÃO esquecer o cliente. Tirado o pedido, ela
