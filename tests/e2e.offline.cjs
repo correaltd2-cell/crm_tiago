@@ -2399,7 +2399,42 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
     (await page12.textContent('.ns-overlay')).includes('1.260,00'));
   await page12.evaluate(() => document.querySelectorAll('.ns-overlay').forEach(o => o.remove()));
 
-  // 7) desligando a carteira compartilhada, cada um volta a ver só a sua
+  // 7) metas: o Gustavo vê a parte dele E a do Denilson, no mesmo cartão
+  await page12.evaluate((rep2) => {
+    const mes = new Date().toISOString().slice(0, 7);
+    window.NSDB.upsertConfig('meta_mes_' + mes, 200000);
+    const c = window.NSDB.all('clientes')[0];
+    const ped = (num, rep, valor) => window.NSDB.insert('pedidos', {
+      numero: num, cliente_id: c.id, representante_id: rep, data_pedido: mes + '-02',
+      tabela: 'simples', status: 'concluido', total_valor: valor,
+      total_unid_colocadas: 100, total_unid_dev_display: 0,
+      total_unid_dev_quebrada: 0, total_unid_vendidas: 100
+    });
+    ped(901, window.NSDB.all('representantes').find(r => r.nome === 'Denilson').id, 60000);
+    ped(902, rep2, 20000);
+  }, REP2);
+  await page12.click('#tabs button[data-v=dash]');
+  await page12.waitForTimeout(500);
+  const metas = await page12.evaluate(() => {
+    const bloco = document.querySelector('.painel-equipe');
+    if (!bloco) return null;
+    const linhas = [...bloco.querySelectorAll('.equipe-linha')].map(l => ({
+      txt: l.textContent.replace(/\s+/g, ' ').trim(), eu: l.classList.contains('eu')
+    }));
+    return { total: bloco.querySelector('.painel-meta-topo strong').textContent,
+      linhas, rodape: bloco.textContent.replace(/\s+/g, ' ') };
+  });
+  check('o painel mostra o placar da equipe', !!metas);
+  check('com a venda de cada vendedor', metas.linhas.length === 2 &&
+    metas.linhas.some(l => l.txt.includes('Denilson') && l.txt.includes('60.000,00')) &&
+    metas.linhas.some(l => l.txt.includes('Gustavo') && l.txt.includes('20.000,00')));
+  check('a linha de quem está logado vem marcada como "você"',
+    metas.linhas.some(l => l.eu && l.txt.includes('você') && l.txt.includes('Gustavo')));
+  check('e o total dos dois junto com o quanto falta para a meta',
+    metas.total.includes('80.000,00') && metas.rodape.includes('40% da meta') &&
+    metas.rodape.includes('120.000,00'));
+
+  // 8) desligando a carteira compartilhada, cada um volta a ver só a sua
   const soMinha = await page12.evaluate(() => {
     window.NSDB.upsertConfig('carteira_compartilhada', false);
     window.NSApp.nav('clientes');

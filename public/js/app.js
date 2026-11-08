@@ -1937,6 +1937,9 @@
           linha('Falta vender hoje', C.fmtMoney(md.faltaHoje), md.batidaHoje ? 'ok' : 'destaque')),
         md.batidaMes ? el('div', { class: 'meta-selo ok mt8' }, 'Meta do mês batida!')
           : (md.batidaHoje ? el('div', { class: 'meta-selo ok mt8' }, 'Meta de hoje batida.') : null)));
+      // logo abaixo da própria meta: como os dois estão indo juntos
+      const eq = blocoEquipe(mes, metaMes);
+      if (eq) view.appendChild(eq);
     } else {
       view.appendChild(el('p', { class: 'sub mt8' },
         'Nenhuma meta cadastrada para ' + rotuloMes(mes) + ' — cadastre em Mais → Relatórios.'));
@@ -2063,6 +2066,61 @@
     // a meta do ano é a do mês × 12 quando ninguém cadastrou uma diferente
     if (base === 'meta_ano') return metaDoPeriodo('meta_mes', String(periodo).slice(0, 4) + '-01') * 12;
     return 0;
+  }
+
+  // ---------- placar da equipe ----------
+  // Os dois trabalham juntos e a meta do mês é da equipe, então cada vendedor vê
+  // a parte dele E a do colega. Não é ranking para cobrar ninguém: é para os
+  // dois saberem quanto falta para fechar o mês JUNTOS.
+  function placarEquipe(mes) {
+    const vendedores = DB.all('representantes')
+      .filter(r => r.papel === 'vendedor' && r.ativo !== false);
+    const porRep = {};
+    for (const p of DB.all('pedidos')) {
+      if (p.status !== 'concluido') continue;
+      if ((p.data_pedido || '').slice(0, 7) !== mes) continue;
+      const r = (porRep[p.representante_id] = porRep[p.representante_id] || { vendido: 0, pedidos: 0 });
+      r.vendido = C.round2(r.vendido + Number(p.total_valor || 0));
+      r.pedidos++;
+    }
+    const linhas = vendedores.map(r => ({
+      id: r.id, nome: r.nome,
+      vendido: (porRep[r.id] || {}).vendido || 0,
+      pedidos: (porRep[r.id] || {}).pedidos || 0
+    })).sort((a2, b2) => b2.vendido - a2.vendido);
+    return { linhas, total: C.round2(linhas.reduce((t, l) => t + l.vendido, 0)) };
+  }
+  // o bloco visual; devolve null quando só existe um vendedor (não há equipe)
+  function blocoEquipe(mes, metaMes) {
+    const s = sessao();
+    const euId = s && s.rep ? s.rep.id : null;
+    const pl = placarEquipe(mes);
+    if (pl.linhas.length < 2) return null;
+    const pct = (v) => metaMes > 0 ? Math.round(v / metaMes * 100) : 0;
+    const barra = (v) => Math.max(0, Math.min(100, pct(v)));
+    const falta = C.round2(Math.max(0, metaMes - pl.total));
+    return el('div', { class: 'painel-equipe mt12' },
+      el('div', { class: 'painel-meta-topo' },
+        el('span', null, 'A equipe no mês'),
+        el('strong', null, C.fmtMoney(pl.total))),
+      el('div', { class: 'meta-corpo mt8' },
+        pl.linhas.map(l => el('div', { class: 'equipe-linha' + (l.id === euId ? ' eu' : '') },
+          el('div', { class: 'row space' },
+            el('span', null, l.nome + (l.id === euId ? ' · você' : '')),
+            el('strong', null, C.fmtMoney(l.vendido))),
+          el('div', { class: 'progresso-barra fina mt4' },
+            el('div', { class: 'progresso-fill', style: 'width:' + barra(l.vendido) + '%' })),
+          el('span', { class: 'equipe-sub' }, l.pedidos + (l.pedidos === 1 ? ' pedido' : ' pedidos') +
+            (metaMes > 0 ? ' · ' + pct(l.vendido) + '% da meta' : '')))),
+        el('div', { class: 'meta-sep' }),
+        el('div', { class: 'row space meta-linha' },
+          el('span', null, pl.linhas.length === 2 ? 'Os dois juntos' : 'A equipe junta'),
+          el('strong', { class: metaMes > 0 && pl.total >= metaMes ? 'ok' : 'destaque' },
+            metaMes > 0 ? pct(pl.total) + '% da meta' : C.fmtMoney(pl.total))),
+        metaMes > 0 ? el('div', { class: 'row space meta-linha' },
+          el('span', null, falta > 0 ? 'Falta para a equipe' : 'Passou da meta em'),
+          el('strong', { class: falta > 0 ? null : 'ok' },
+            C.fmtMoney(falta > 0 ? falta : C.round2(pl.total - metaMes)))) : null));
   }
 
   // ---------- Excel (.xlsx) sem biblioteca ----------
@@ -2446,6 +2504,9 @@
       } else {
         wrap.appendChild(el('p', { class: 'sub mt4' }, 'Nenhuma meta cadastrada para o mês.'));
       }
+      // o mesmo mês visto pela EQUIPE: a parte de cada vendedor e o total
+      const eqRel = blocoEquipe(mes, metaMes);
+      if (eqRel) wrap.appendChild(eqRel);
       // meta do ano
       wrap.appendChild(el('h3', { class: 'mt16' }, 'Meta do ano — ' + ano));
       if (metaAno > 0) {

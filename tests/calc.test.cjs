@@ -491,6 +491,18 @@ eq('mas não editado por quem não vendeu',
 eq('nem excluído', /podeMexer \? el\('button', \{\s*class: 'btn-link mt12'/.test(pedJs), true);
 eq('e o app explica por quê', /mexe na comissão dele/.test(pedJs), true);
 
+eq('o painel mostra o placar da equipe',
+  /function placarEquipe\(mes\)/.test(appEq) && /function blocoEquipe/.test(appEq), true);
+eq('o placar só conta pedido concluído do mês',
+  /if \(p\.status !== 'concluido'\) continue;/.test(appEq), true);
+eq('com um vendedor só, não existe placar de equipe',
+  /if \(pl\.linhas\.length < 2\) return null;/.test(appEq), true);
+eq('a linha do próprio vendedor fica destacada', /l\.id === euId \? ' eu' : ''/.test(appEq), true);
+eq('e aparece também na tela de metas dos relatórios',
+  /const eq = blocoEquipe\(mes, metaMes\);/.test(appEq) &&
+  /const eqRel = blocoEquipe\(mes, metaMes\);/.test(appEq), true);
+eq('o placar da equipe tem estilo próprio', /\.painel-equipe\{/.test(idxHtml), true);
+
 console.log('\nGIFT COLLECTION (produto em display):');
 const GIFT = '(GIFT) GIFT COLLECTION';
 const seedJs = lerPub('public/js/seed.js');
