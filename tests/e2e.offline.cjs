@@ -2268,6 +2268,20 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
     cnpj_cpf: '99.888.777/0001-66', cidade: 'Passo Fundo', uf: 'RS',
     status: 'ativo', classe: 'B', lat: -28.25, lng: -52.41
   });
+  // um pedido ANTIGO, vendido pelo Denilson: é o histórico da farmácia, e o
+  // Gustavo precisa enxergar para saber o que já foi deixado lá
+  seedEquipe.ns_c_pedidos = [{
+    id: 'ped-denilson-1', numero: 41, cliente_id: CLI_ID, representante_id: REP_ID,
+    data_pedido: '2026-09-10', tabela: 'simples', condicao_pagamento: '30 dias',
+    status: 'concluido', total_valor: 1260, total_unid_colocadas: 100,
+    total_unid_dev_display: 0, total_unid_dev_quebrada: 0, total_unid_vendidas: 100,
+    faturado_ns: false
+  }];
+  seedEquipe.ns_c_visitas = [{
+    id: 'vis-denilson-1', cliente_id: CLI_ID, representante_id: REP_ID,
+    data_visita: '2026-09-10', realizada: true, fez_pedido: true,
+    valor_pedido: 1260, pedido_id: 'ped-denilson-1'
+  }];
 
   const page12 = await browser.newPage({ viewport: { width: 390, height: 844 } });
   page12.on('pageerror', (e) => erros.push('pageerror(p12): ' + e.message));
@@ -2346,7 +2360,46 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   check('o Gustavo saindo da rota não apaga a rota do Denilson',
     aposSair.denilson === 'Segunda' && !aposSair.gustavo);
 
-  // 6) desligando a carteira compartilhada, cada um volta a ver só a sua
+  // 6) o histórico é da equipe: o Gustavo vê o pedido que o Denilson vendeu
+  await page12.evaluate(() => document.querySelectorAll('.ns-overlay').forEach(o => o.remove()));
+  await page12.click('#tabs button[data-v=pedidos]');
+  await page12.waitForTimeout(400);
+  const txtPed = await page12.textContent('#view');
+  check('o Gustavo vê na aba Pedidos o pedido que o Denilson vendeu',
+    txtPed.includes('Nº 41') && txtPed.includes('1.260,00'));
+  check('e o cartão diz que quem vendeu foi o Denilson',
+    txtPed.includes('vendido por Denilson'));
+
+  // abrindo o pedido do outro: dá para ver e imprimir, não para editar/excluir
+  await page12.locator('#view .card-pedido .grow').first().click();
+  await page12.waitForSelector('.ns-overlay');
+  const acoesPed = await page12.evaluate(() => {
+    const m = [...document.querySelectorAll('.ns-overlay')].pop();
+    const txt = m.textContent;
+    const btn = (t) => [...m.querySelectorAll('button')].some(b => b.textContent.includes(t));
+    return { pdf: btn('Visualizar PDF'), cupom: btn('Imprimir cupom'),
+      faturado: btn('faturado'), editar: btn('Editar pedido'),
+      excluir: btn('Excluir pedido'), aviso: txt.includes('mexe na comissão dele') };
+  });
+  check('pedido do outro vendedor: dá para ver o PDF e imprimir o cupom',
+    acoesPed.pdf && acoesPed.cupom);
+  check('e dá para marcar como faturado no New Star', acoesPed.faturado);
+  check('mas não aparece botão de editar nem de excluir',
+    !acoesPed.editar && !acoesPed.excluir);
+  check('e o app explica o porquê', acoesPed.aviso);
+  await page12.evaluate(() => document.querySelectorAll('.ns-overlay').forEach(o => o.remove()));
+
+  // na ficha do cliente o histórico aparece inteiro
+  await page12.click('#tabs button[data-v=clientes]');
+  await page12.waitForTimeout(350);
+  await page12.locator('#view .item-lista:has-text("FARMACIA TESTE") .grow').first().click();
+  await page12.waitForSelector('.ns-overlay');
+  await page12.waitForTimeout(300);
+  check('a ficha do cliente mostra o pedido do Denilson no histórico',
+    (await page12.textContent('.ns-overlay')).includes('1.260,00'));
+  await page12.evaluate(() => document.querySelectorAll('.ns-overlay').forEach(o => o.remove()));
+
+  // 7) desligando a carteira compartilhada, cada um volta a ver só a sua
   const soMinha = await page12.evaluate(() => {
     window.NSDB.upsertConfig('carteira_compartilhada', false);
     window.NSApp.nav('clientes');

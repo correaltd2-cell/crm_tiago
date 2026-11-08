@@ -823,6 +823,13 @@
     const p = DB.byId('pedidos', pedidoId);
     if (!p) return;
     const cli = DB.byId('clientes', p.cliente_id) || {};
+    // Na carteira compartilhada todo mundo VÊ o pedido de todo mundo (é o
+    // histórico da farmácia), mas MEXER só pode quem vendeu — ou o gestor.
+    // Editar o pedido do outro mudaria a comissão dele.
+    const ses = sessao() || {};
+    const meu = !p.representante_id || !ses.rep || p.representante_id === ses.rep.id;
+    const podeMexer = meu || ses.papel === 'gestor';
+    const vendedorDele = (DB.byId('representantes', p.representante_id) || {}).nome || 'outro vendedor';
     const itens = DB.all('pedido_itens').filter(i => i.pedido_id === pedidoId);
     const nomeArq = 'pedido-' + (p.numero || String(p.id).slice(0, 8)) + '.pdf';
     // ÚLTIMO passo do processo: coletar a assinatura. O botão muda de cara
@@ -883,10 +890,13 @@
         const foi = await window.NSUI.compartilharArquivo(file, 'Cupom New Star');
         if (!foi) abrirBlob(blob, nomeCupom);
       } }, rot('impressora', 'Imprimir cupom 58mm')),
-      p.status === 'concluido' ? el('button', { class: 'btn big btn-sec', onclick: () => {
+      (p.status === 'concluido' && podeMexer) ? el('button', { class: 'btn big btn-sec', onclick: () => {
         mAbrir.fechar();
         novo(null, p);
       } }, rot('lapis', 'Editar pedido (itens, prazo, devoluções)')) : null,
+      (p.status === 'concluido' && !podeMexer) ? el('p', { class: 'sub aviso-outro' },
+        'Pedido de ' + vendedorDele + '. Dá para ver, imprimir e marcar como faturado; ' +
+        'editar ou excluir só ' + vendedorDele + ' ou o gestor, porque mexe na comissão dele.') : null,
       // controle do faturamento no New Star (sistema de fora)
       el('button', {
         class: 'btn big btn-sec' + (p.faturado_ns ? ' laranja' : ''), onclick: () => {
@@ -942,7 +952,7 @@
         el('img', { src: p.assinatura, alt: 'Assinatura do cliente' }),
         el('div', { class: 'sub c' }, 'Assinatura vinculada ao pedido')) : null,
       acoes,
-      el('button', {
+      podeMexer ? el('button', {
         class: 'btn-link mt12', style: 'color:#ef7076', onclick: async () => {
           if (!(await confirmar('Excluir o pedido nº ' + (p.numero || '—') + ' de ' + (cli.nome || '—') +
             '? Isso remove os itens, desfaz o vínculo com a visita e a comissão.'))) return;
@@ -958,7 +968,7 @@
           toast('Pedido excluído.');
           if (window.NSApp.aoConcluirPedido) window.NSApp.aoConcluirPedido();
         }
-      }, rot('lixeira', 'Excluir pedido'))
+      }, rot('lixeira', 'Excluir pedido')) : null
     ), { titulo: 'Pedido ' + (p.numero ? 'nº ' + p.numero : '') });
   }
 

@@ -476,6 +476,21 @@ eq('o pedido continua sendo gravado no nome de quem está logado',
   /representante_id: rep\.id,/.test(lerPub('public/js/pedido.js')), true);
 eq('e a visita também', /cliente_id: ped\.cliente_id, representante_id: rep\.id, data_visita/.test(lerPub('public/js/pedido.js')), true);
 
+eq('o histórico de pedidos é da equipe toda',
+  /const doHistorico = \(repId\) =>[\s\S]{0,120}carteiraCompartilhada\(\)/.test(appEq), true);
+eq('a aba Pedidos usa esse histórico', (appEq.match(/\.filter\(doHistorico\(repId\)\)/g) || []).length >= 3, true);
+eq('o cartão diz quem vendeu quando o pedido é de outro',
+  /'vendido por ' \+ nomeDoRep\(p\.representante_id\)/.test(appEq), true);
+eq('o dinheiro continua separado: comissão e meta por vendedor',
+  /const doRep = \(r\) => !repId \|\| r\.representante_id === repId;/.test(appEq), true);
+const pedJs = lerPub('public/js/pedido.js');
+eq('pedido de outro vendedor pode ser visto e impresso',
+  /const podeMexer = meu \|\| ses\.papel === 'gestor';/.test(pedJs), true);
+eq('mas não editado por quem não vendeu',
+  /\(p\.status === 'concluido' && podeMexer\) \? el\('button'/.test(pedJs), true);
+eq('nem excluído', /podeMexer \? el\('button', \{\s*class: 'btn-link mt12'/.test(pedJs), true);
+eq('e o app explica por quê', /mexe na comissão dele/.test(pedJs), true);
+
 console.log('\nGIFT COLLECTION (produto em display):');
 const GIFT = '(GIFT) GIFT COLLECTION';
 const seedJs = lerPub('public/js/seed.js');

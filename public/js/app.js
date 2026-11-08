@@ -197,7 +197,7 @@
     const repId = repEfetivoId();
     const limite = new Date(Date.now() - DIAS_ALERTA_FATURAMENTO * 86400000).toISOString().slice(0, 10);
     return DB.all('pedidos')
-      .filter(p => !repId || p.representante_id === repId)
+      .filter(doHistorico(repId))
       .filter(p => p.status === 'concluido' && !p.faturado_ns)
       .filter(p => (p.data_pedido || '') >= limite)
       .sort((a, b) => (a.data_pedido || '').localeCompare(b.data_pedido || ''));
@@ -333,6 +333,17 @@
   // Desligando em Admin → Configurações, cada vendedor volta a ver só os
   // clientes que estão no nome dele, como era antes.
   const carteiraCompartilhada = () => DB.config('carteira_compartilhada', true) !== false;
+  // Com a carteira compartilhada o HISTÓRICO é da equipe: todo mundo enxerga os
+  // pedidos e as visitas de todo mundo, porque é o histórico DA FARMÁCIA, e o
+  // vendedor precisa saber o que já foi deixado lá. O DINHEIRO continua de cada
+  // um: comissão, meta, painel, despesas e financeiro nunca se misturam.
+  const doHistorico = (repId) => (r) =>
+    !repId || carteiraCompartilhada() || r.representante_id === repId;
+  // nome de quem vendeu/atendeu, para o histórico da equipe não virar bagunça
+  const nomeDoRep = (repId) => {
+    const r = repId ? DB.byId('representantes', repId) : null;
+    return r ? r.nome : '';
+  };
   function clientesDoRep(repId) {
     return DB.all('clientes').filter(c => c.status !== 'inativo' &&
       (!repId || carteiraCompartilhada() || c.representante_id === repId));
@@ -1747,13 +1758,14 @@
   }
   function vPedidos(view) {
     const repId = repEfetivoId();
+    const s0 = sessao();
     const busca = el('input', { class: 'input big', placeholder: 'Buscar por cliente, CNPJ, nº ou data…', oninput: render });
     const lista = el('div', { class: 'col gap8 mt12' });
     const resumo = el('div', { class: 'sub mt8' });
 
     // meses que existem nos pedidos viram opções do filtro
     const meses = Array.from(new Set(DB.all('pedidos')
-      .filter(p => !repId || p.representante_id === repId)
+      .filter(doHistorico(repId))
       .map(p => (p.data_pedido || '').slice(0, 7)).filter(Boolean))).sort().reverse();
     const defMes = FILTROS_PEDIDOS.find(d => d.k === 'mes');
     defMes.opcoes = [['todos', 'Todos']].concat(meses.slice(0, 12).map(m => [m, rotuloMes(m)]));
@@ -1772,7 +1784,7 @@
       const f = fPedidos;
       lista.innerHTML = '';
       const base = DB.all('pedidos')
-        .filter(p => !repId || p.representante_id === repId)
+        .filter(doHistorico(repId))
         .filter(p => p.status !== 'cancelado');
       const peds = base
         .filter(p => {
@@ -1820,7 +1832,11 @@
             el('span', { class: 'sub mt4' }, dataBR(p.data_pedido) + ' · ' +
               (p.tabela === 'lucro' ? 'Lucro Presumido' : 'Simples') +
               ' · ' + p.total_unid_vendidas + ' un' +
-              (p.assinante_nome ? ' · recebido por ' + p.assinante_nome : ''))),
+              (p.assinante_nome ? ' · recebido por ' + p.assinante_nome : '')),
+            // na carteira compartilhada o histórico é da equipe: diz quem vendeu
+            (carteiraCompartilhada() && p.representante_id !== (s0 && s0.rep.id))
+              ? el('span', { class: 'badge outro-vendedor mt4' },
+                ico('usuario', 'ic-sm'), 'vendido por ' + nomeDoRep(p.representante_id)) : null),
           el('div', { class: 'row gap8 mt8' },
             el('button', {
               class: 'btn-mini grow' + (p.faturado_ns ? ' laranja' : ''),
@@ -2215,7 +2231,7 @@
     const repId = repEfetivoId();
     const f = fPedidos;
     let peds = DB.all('pedidos')
-      .filter(p => !repId || p.representante_id === repId)
+      .filter(doHistorico(repId))
       .filter(p => p.status !== 'cancelado');
     if (usarFiltros) peds = peds.filter(p => {
       if (f.faturado === 'sim' && !p.faturado_ns) return false;
@@ -2497,7 +2513,7 @@
 
       // por rede (mês)
       wrap.appendChild(el('h3', { class: 'mt16' }, 'Por rede — ' + rotuloMes(mes)));
-      const clientesAtivos = DB.all('clientes').filter(doRep).filter(c => c.status !== 'inativo');
+      const clientesAtivos = clientesDoRep(repId);
       const porRede = {};
       for (const c of clientesAtivos)
         (porRede[C.redeDoCliente(c)] = porRede[C.redeDoCliente(c)] || { clientes: 0, pedidos: 0, valor: 0 }).clientes++;
