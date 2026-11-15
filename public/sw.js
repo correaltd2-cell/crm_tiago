@@ -1,5 +1,5 @@
 /* NEW STAR — service worker: app shell cache-first (offline 100%) */
-const VERSAO = 'promptstar-v77';
+const VERSAO = 'promptstar-v78';
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './icon.svg',
   './icon-192.png', './icon-512.png', './icon-maskable.png',
