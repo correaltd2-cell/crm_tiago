@@ -1839,8 +1839,12 @@
         lista.appendChild(el('div', { class: 'item-lista card-pedido' + (temObs ? ' com-obs' : '') },
           el('div', { class: 'selos-pedido' },
             // bolinha laranja com a nota fiscal: pedido já faturado no New Star
-            p.faturado_ns ? el('span', { class: 'selo-nf', title: 'Faturado no New Star' },
-              ico('notaFiscal')) : null,
+            // o selo também sai na cor de quem faturou: bate o olho e já sabe
+            p.faturado_ns ? el('span', {
+              class: 'selo-nf', title: 'Faturado no New Star',
+              style: '--cor-rep:' + corDoRep(p.representante_id) +
+                ';--cor-rep-texto:' + corTextoRep(p.representante_id)
+            }, ico('notaFiscal')) : null,
             temObs ? el('span', { class: 'selo-obs', title: 'Este pedido tem observação' }, '⚠️') : null),
           el('div', { class: 'grow', onclick: () => window.NSPedido.abrir(p.id) },
             el('div', { class: 'row space w100' },
@@ -1865,8 +1869,7 @@
               const cor = corDoRep(p.representante_id);
               const btn = el('button', {
                 class: 'btn-mini grow btn-faturar' + (p.faturado_ns ? ' feito' : '') + (meu ? '' : ' travado'),
-                style: p.faturado_ns || meu
-                  ? '--cor-rep:' + cor + ';--cor-rep-texto:' + corTextoRep(p.representante_id) : null,
+                style: '--cor-rep:' + cor + ';--cor-rep-texto:' + corTextoRep(p.representante_id),
                 title: meu ? 'Marcar como faturado no New Star' : motivoNaoFatura(p),
                 onclick: () => {
                   if (!meu) return toast(motivoNaoFatura(p), 'erro');
@@ -3687,7 +3690,7 @@
         inp('comissao_pct', '% comissão reposição — Tabela Simples', 'number', '0.1'),
         inp('comissao_pct_lucro', '% comissão reposição — Lucro Presumido', 'number', '0.1'),
         el('label', { class: 'campo' },
-          el('span', { class: 'sub' }, 'Cor do vendedor (botão de faturado e painel)'), corSel,
+          el('span', { class: 'sub' }, 'Cor do vendedor — é a cor do botão "Faturado no New Star"'), corSel,
           el('span', { class: 'sub' }, 'É por esta cor que se enxerga de quem é cada pedido.')),
         inp('custo_km', 'Custo por km (R$)', 'number', '0.01'),
         inp('cidade_base', 'Cidade base'),

@@ -960,7 +960,7 @@
       // controle do faturamento no New Star (sistema de fora).
       // Só o vendedor que tirou o pedido fatura — quem barra é o NSApp.
       podeNS ? el('button', {
-        class: 'btn big btn-sec btn-faturar-grande' + (p.faturado_ns ? ' feito' : ''),
+        class: 'btn big btn-faturar-grande' + (p.faturado_ns ? ' feito' : ''),
         style: '--cor-rep:' + window.NSApp.corDoRep(p.representante_id) +
           ';--cor-rep-texto:' + window.NSApp.corTextoRep(p.representante_id),
         onclick: async () => {
