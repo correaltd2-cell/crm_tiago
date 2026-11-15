@@ -424,49 +424,174 @@
       semDia: eleg.length - atribuicoes.length };
   }
 
-  // ---------- Metas (mês → dia útil, % batida e projeção de ritmo) ----------
-  function diasUteisDoMes(mesISO) {
-    const [a, m] = mesISO.split('-').map(Number);
-    let n = 0;
-    const d = new Date(a, m - 1, 1);
-    while (d.getMonth() === m - 1) {
-      const dw = d.getDay();
-      if (dw >= 1 && dw <= 5) n++;
-      d.setDate(d.getDate() + 1);
+  // ---------- Feriados ----------
+  // Dia útil = segunda a sexta QUE NÃO SEJA FERIADO. Feriado em dia útil não
+  // pode entrar na conta da meta: ninguém vende naquele dia.
+  //
+  // Aqui entram só os feriados NACIONAIS. Carnaval, Corpus Christi e a quarta
+  // de cinzas são PONTO FACULTATIVO, não feriado nacional — quem quiser tratar
+  // como folga cadastra em Admin → Feriados, junto com os estaduais e os
+  // municipais. Assim o calendário se mantém sem mexer no código.
+  //
+  // A data da Paixão de Cristo muda todo ano (é a sexta antes da Páscoa), então
+  // ela é CALCULADA — o app continua certo em 2027, 2028 e nos anos seguintes.
+  function domingoDePascoa(ano) {
+    const a = ano % 19, b = Math.floor(ano / 100), c = ano % 100;
+    const d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25);
+    const g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30;
+    const i = Math.floor(c / 4), k = c % 4;
+    const l = (32 + 2 * e + 2 * i - h - k) % 7;
+    const m = Math.floor((a + 11 * h + 22 * l) / 451);
+    const mes = Math.floor((h + l - 7 * m + 114) / 31);
+    const dia = ((h + l - 7 * m + 114) % 31) + 1;
+    return new Date(Date.UTC(ano, mes - 1, dia));
+  }
+  function feriadosNacionais(ano) {
+    ano = Number(ano);
+    const dois = (n) => String(n).padStart(2, '0');
+    const isoDe = (d) => d.getUTCFullYear() + '-' + dois(d.getUTCMonth() + 1) + '-' + dois(d.getUTCDate());
+    const pascoa = domingoDePascoa(ano);
+    const sextaSanta = new Date(pascoa.getTime() - 2 * 86400000);
+    return [
+      ano + '-01-01',        // Confraternização Universal
+      isoDe(sextaSanta),     // Paixão de Cristo (sexta-feira santa)
+      ano + '-04-21',        // Tiradentes
+      ano + '-05-01',        // Dia do Trabalho
+      ano + '-09-07',        // Independência
+      ano + '-10-12',        // Nossa Senhora Aparecida
+      ano + '-11-02',        // Finados
+      ano + '-11-15',        // Proclamação da República
+      ano + '-11-20',        // Zumbi e Consciência Negra
+      ano + '-12-25'         // Natal
+    ];
+  }
+  // aceita Set, lista de datas ISO ou lista de objetos {data: 'aaaa-mm-dd'}
+  function setFeriados(extras) {
+    if (extras instanceof Set) return extras;
+    const s = new Set();
+    for (const f of (extras || [])) {
+      const iso = typeof f === 'string' ? f : (f && (f.data || f.data_feriado));
+      if (iso) s.add(String(iso).slice(0, 10));
     }
+    return s;
+  }
+  // todos os feriados que valem num ano: os nacionais + os cadastrados no app
+  function feriadosDoAno(ano, extras) {
+    const s = setFeriados(extras);
+    for (const f of feriadosNacionais(ano)) s.add(f);
+    return s;
+  }
+  const dois = (n) => String(n).padStart(2, '0');
+  const isoDia = (a, m, d) => a + '-' + dois(m) + '-' + dois(d);
+  function ehDiaUtil(a, m, d, fer) {
+    const dw = new Date(a, m - 1, d).getDay();
+    if (dw < 1 || dw > 5) return false;
+    return !(fer && fer.has(isoDia(a, m, d)));
+  }
+
+  // ---------- Metas (mês → dia útil, % batida e projeção de ritmo) ----------
+  // `feriados` é opcional em todas: sem ele a conta é só segunda a sexta,
+  // exatamente como era antes.
+  function diasUteisDoMes(mesISO, feriados) {
+    const [a, m] = mesISO.split('-').map(Number);
+    const fer = feriadosDoAno(a, feriados);
+    const ultimo = new Date(a, m, 0).getDate();
+    let n = 0;
+    for (let i = 1; i <= ultimo; i++) if (ehDiaUtil(a, m, i, fer)) n++;
     return n;
   }
   // dias úteis do mês decorridos até o dia (inclusive)
-  function diasUteisAte(diaISO) {
+  function diasUteisAte(diaISO, feriados) {
     const [a, m, dd] = diaISO.split('-').map(Number);
+    const fer = feriadosDoAno(a, feriados);
     let n = 0;
-    for (let i = 1; i <= dd; i++) {
-      const dw = new Date(a, m - 1, i).getDay();
-      if (dw >= 1 && dw <= 5) n++;
-    }
+    for (let i = 1; i <= dd; i++) if (ehDiaUtil(a, m, i, fer)) n++;
     return n;
   }
   // dias úteis que ainda restam no mês CONTANDO o dia de hoje
-  // (se hoje é sábado/domingo, sobram só os dias úteis daqui pra frente)
-  function diasUteisRestantes(diaISO) {
+  // (se hoje é sábado, domingo ou feriado, sobram só os úteis daqui pra frente)
+  function diasUteisRestantes(diaISO, feriados) {
     const [a, m, dd] = diaISO.split('-').map(Number);
+    const fer = feriadosDoAno(a, feriados);
     const ultimo = new Date(a, m, 0).getDate();
     let n = 0;
-    for (let i = dd; i <= ultimo; i++) {
-      const dw = new Date(a, m - 1, i).getDay();
-      if (dw >= 1 && dw <= 5) n++;
-    }
+    for (let i = dd; i <= ultimo; i++) if (ehDiaUtil(a, m, i, fer)) n++;
     return n;
+  }
+  // próximo dia ÚTIL depois de uma data (pula fim de semana e feriado)
+  function proximoDiaUtil(diaISO, feriados) {
+    const d = new Date(diaISO + 'T12:00:00');
+    for (let i = 0; i < 400; i++) {
+      d.setDate(d.getDate() + 1);
+      const fer = feriadosDoAno(d.getFullYear(), feriados);
+      if (ehDiaUtil(d.getFullYear(), d.getMonth() + 1, d.getDate(), fer))
+        return isoDia(d.getFullYear(), d.getMonth() + 1, d.getDate());
+    }
+    return diaISO;
+  }
+
+  // ---------- Meta do dia CONGELADA ----------
+  // O alvo do dia é calculado com o que estava vendido ATÉ O DIA ANTERIOR, e
+  // nunca com as vendas de hoje. É isso que faz a meta NÃO MUDAR durante o dia:
+  // vender mais não derruba o alvo, vender menos não o levanta. O vendedor
+  // começa o dia sabendo o número e ele continua o mesmo até a virada.
+  //
+  // Na virada o cálculo se refaz sozinho: o que sobrou (ou faltou) do dia
+  // anterior já está dentro do "vendido até ontem", então o excedente baixa a
+  // necessidade dos próximos dias e a falta sobe — sempre só no PRÓXIMO dia útil.
+  //
+  //   metaDia = (metaMes − vendidoAteOntem) ÷ dias úteis restantes (contando hoje)
+  //
+  // Meta do mês já batida → alvo R$ 0,00. Nunca devolve número negativo.
+  function metaDoDia({ metaMes, vendidoAteOntem, hoje, feriados, metaDiaManual }) {
+    metaMes = Number(metaMes) || 0;
+    vendidoAteOntem = Math.max(0, Number(vendidoAteOntem) || 0);
+    const uteisRestantes = diasUteisRestantes(hoje, feriados);
+    const faltaMes = round2(Math.max(0, metaMes - vendidoAteOntem));
+    const manual = Number(metaDiaManual) > 0;
+    const metaDia = manual ? round2(Number(metaDiaManual))
+      : (faltaMes <= 0 ? 0
+        : (uteisRestantes > 0 ? round2(faltaMes / uteisRestantes) : faltaMes));
+    return { metaDia, uteisRestantes, faltaMes, manual, mesBatidoAntesDeHoje: faltaMes <= 0 };
+  }
+
+  // ---------- Painel da meta da EQUIPE ----------
+  // A meta é UMA SÓ e as vendas dos dois vendedores somam nela. Se o Gustavo
+  // vende 5.000 e o Denilson 3.000, a equipe vendeu 8.000 e é esse número que
+  // abate a meta do mês E a meta do dia. Não existem duas metas diárias.
+  //   metaDiaFixada: o alvo já congelado para a data (quando houver)
+  function metaEquipe({ metaMes, vendidoMes, vendidoHoje, vendidoAteOntem,
+    hoje, feriados, metaDiaFixada, metaDiaManual }) {
+    metaMes = Number(metaMes) || 0;
+    vendidoMes = round2(Number(vendidoMes) || 0);
+    vendidoHoje = round2(Number(vendidoHoje) || 0);
+    const base = (vendidoAteOntem == null) ? round2(vendidoMes - vendidoHoje) : vendidoAteOntem;
+    const d = metaDoDia({ metaMes, vendidoAteOntem: base, hoje, feriados, metaDiaManual });
+    const metaDia = (metaDiaFixada != null && metaDiaFixada !== '')
+      ? round2(Math.max(0, Number(metaDiaFixada))) : d.metaDia;
+    const faltaMes = round2(Math.max(0, metaMes - vendidoMes));
+    const faltaHoje = round2(Math.max(0, metaDia - vendidoHoje));
+    return {
+      metaMes, vendidoMes, faltaMes,
+      pctMes: metaMes > 0 ? round2(vendidoMes / metaMes * 100) : 0,
+      metaDia, vendidoHoje, faltaHoje,
+      excedenteHoje: round2(Math.max(0, vendidoHoje - metaDia)),
+      pctDia: metaDia > 0 ? round2(vendidoHoje / metaDia * 100) : (vendidoHoje > 0 ? 100 : 0),
+      uteisRestantes: d.uteisRestantes,
+      batidaMes: metaMes > 0 && vendidoMes >= metaMes,
+      batidaHoje: metaDia > 0 ? vendidoHoje >= metaDia : true,
+      vendidoAteOntem: base
+    };
   }
 
   // Meta do dia DINÂMICA: o que falta para a meta do mês dividido pelos dias
   // úteis que ainda restam (contando hoje). Vendeu bem hoje? amanhã a meta cai.
   // Ficou devendo? a meta dos dias seguintes sobe sozinha.
-  function metaDinamica({ metaMes, vendidoMes, vendidoHoje, hoje, metaDiaManual }) {
+  function metaDinamica({ metaMes, vendidoMes, vendidoHoje, hoje, metaDiaManual, feriados }) {
     metaMes = Number(metaMes) || 0;
     vendidoMes = Number(vendidoMes) || 0;
     vendidoHoje = Number(vendidoHoje) || 0;
-    const uteisRestantes = diasUteisRestantes(hoje);
+    const uteisRestantes = diasUteisRestantes(hoje, feriados);
     const faltaMes = round2(Math.max(0, metaMes - vendidoMes));
     // meta de hoje: manual (se o gestor fixou) ou o que falta ÷ dias úteis restantes
     const metaDia = (Number(metaDiaManual) > 0) ? round2(Number(metaDiaManual))
@@ -479,10 +604,10 @@
       batidaHoje: metaDia > 0 && vendidoHoje >= metaDia };
   }
 
-  function calcMeta({ metaMes, hoje, vendidoMes, metaDiaManual }) {
-    const uteisTotal = diasUteisDoMes(hoje.slice(0, 7));
-    const uteisDecorridos = Math.max(1, diasUteisAte(hoje));
-    const uteisRestantes = diasUteisRestantes(hoje);
+  function calcMeta({ metaMes, hoje, vendidoMes, metaDiaManual, feriados }) {
+    const uteisTotal = diasUteisDoMes(hoje.slice(0, 7), feriados);
+    const uteisDecorridos = Math.max(1, diasUteisAte(hoje, feriados));
+    const uteisRestantes = diasUteisRestantes(hoje, feriados);
     // a meta do dia é dinâmica: o que falta ÷ dias úteis que sobraram
     const faltaMes = round2(Math.max(0, (metaMes || 0) - vendidoMes));
     const metaDia = (metaDiaManual > 0) ? metaDiaManual
@@ -641,6 +766,8 @@
     haversineKm, matrizHaversine, nearestNeighbor, comprimentoRota, doisOpt,
     otimizarRota, detourInsercao, decidirPernoite, sugestaoFrequencia, classePorCiclo,
     diasUteisDoMes, diasUteisAte, diasUteisRestantes, calcMeta, metaDinamica, redeDoCliente,
+    feriadosNacionais, feriadosDoAno, ehDiaUtil, proximoDiaUtil, domingoDePascoa,
+    metaDoDia, metaEquipe,
     REGIOES, regiaoDoCliente, planejarPorRegioes,
     parseCSV, toCSV, CICLOS
   };

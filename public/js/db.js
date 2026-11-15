@@ -283,6 +283,11 @@
   }
 
   let syncing = false;
+  // puxada pedida enquanto outra sincronização rodava: sem isto, UMA escritura
+  // na fila bem na hora da abertura fazia o app PULAR a baixada de dados daquela
+  // abertura (o queue() dispara um envio, e o sync() da abertura caía fora por
+  // já estar rodando). Agora o pedido fica guardado e roda logo em seguida.
+  let pullPendente = false, pullCompletaPendente = false;
   // o erro da última puxada também fica em MEMÓRIA: quando o aparelho está sem
   // espaço, nem o aviso conseguia ser gravado no localStorage e o app ficava
   // mudo justamente na hora em que mais precisava avisar
@@ -309,7 +314,14 @@
     Date.now() - Number(lsGet('ns_ultimo_pull_completo', 0)) > PULL_COMPLETO_MS;
 
   async function trySync(forcarPull, completa) {
-    if (syncing || !navigator.onLine || !configured()) { notify(); return; }
+    if (syncing) {
+      if (forcarPull) {
+        pullPendente = true;
+        pullCompletaPendente = pullCompletaPendente || completa === true;
+      }
+      notify(); return;
+    }
+    if (!navigator.onLine || !configured()) { notify(); return; }
     const vaiPuxar = (forcarPull && (completa || PODE_PUXAR()));
     if (!outbox.length && !vaiPuxar) { notify(); return; }
     syncing = true; notify();
@@ -356,6 +368,11 @@
       }
     }
     syncing = false; notify();
+    if (pullPendente) {
+      pullPendente = false;
+      const c = pullCompletaPendente; pullCompletaPendente = false;
+      return trySync(true, c);
+    }
   }
 
   // traz só os documentos alterados depois de `desdeISO`

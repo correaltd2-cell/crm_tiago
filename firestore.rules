@@ -2,6 +2,26 @@ rules_version = '2';
 // Padrão inicial: aberto (equivalente às policies abertas do desenho original —
 // o filtro por representante é feito no app). Para endurecer depois, integre
 // Firebase Auth e restrinja por request.auth.
+//
+// FATURAMENTO NO NEW STAR (quem pode marcar o pedido como faturado):
+// a regra "cada vendedor só fatura o pedido que ele tirou" é aplicada no app,
+// numa porta única (NSApp.podeFaturar / marcarFaturado em public/js/app.js).
+// Para valer TAMBÉM aqui no servidor é preciso antes ligar o Firebase Auth:
+// hoje o app fala com o Firestore por chave de API, sem usuário autenticado,
+// então o banco não tem como saber QUEM está escrevendo. Com o Auth ligado,
+// troque a regra de `pedidos` por algo assim:
+//
+//   match /pedidos/{id} {
+//     allow read: if request.auth != null;
+//     allow create: if request.auth != null;
+//     allow update: if request.auth != null && (
+//       // só mexe em faturado_ns quem tirou o pedido, ou o gestor
+//       !request.resource.data.diff(resource.data).affectedKeys()
+//          .hasAny(['faturado_ns', 'faturado_ns_em', 'faturado_ns_por'])
+//       || resource.data.representante_id == request.auth.uid
+//       || get(/databases/$(database)/documents/representantes/$(request.auth.uid)).data.papel == 'gestor'
+//     );
+//   }
 service cloud.firestore {
   match /databases/{database}/documents {
     match /{document=**} {

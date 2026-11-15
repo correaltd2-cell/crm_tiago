@@ -206,37 +206,19 @@
     if (!sessao()) return;
     const peds = pedidosSemFaturar();
     if (!peds.length) return;
+    // Aviso curto e no meio da tela: só diz QUE existe pendência e leva para a
+    // aba Pedidos. O nome, o número e o valor ficam lá — aqui não cabem e só
+    // faziam o aviso virar uma tela inteira.
     const um = peds.length === 1;
-    const corpo = el('div', null,
-      el('p', { class: 'aviso-forte' },
-        um ? 'Existe 1 pedido que ainda NÃO foi faturado no New Star.'
-          : 'Existem ' + peds.length + ' pedidos que ainda NÃO foram faturados no New Star.'),
-      el('p', { class: 'sub mt8' }, 'Pedidos dos últimos ' + DIAS_ALERTA_FATURAMENTO +
-        ' dias. Marque cada um como faturado assim que lançar no New Star.'),
-      el('div', { class: 'col gap8 mt12' },
-        peds.slice(0, 12).map(p => {
-          const cli = DB.byId('clientes', p.cliente_id) || {};
-          const linha = el('div', { class: 'item-lista' },
-            el('div', { class: 'row space w100' },
-              el('strong', null, 'Nº ' + (p.numero || '—') + ' · ' + nomeExib(cli)),
-              el('strong', null, C.fmtMoney(Number(p.total_valor)))),
-            el('span', { class: 'sub' }, dataBR(p.data_pedido)),
-            el('button', {
-              class: 'btn-mini w100 mt8', onclick: (e) => {
-                marcarFaturado(p.id);
-                e.currentTarget.disabled = true;
-                e.currentTarget.replaceChildren(ico('check'), el('span', null, 'Faturado'));
-                linha.classList.add('resolvido');
-              }
-            }, rot('notaFiscal', 'Marcar como faturado')));
-          return linha;
-        })),
-      peds.length > 12 ? el('p', { class: 'sub mt8' }, 'e mais ' + (peds.length - 12) + ' pedido(s).') : null,
+    const corpo = el('div', { class: 'pend-corpo' },
+      el('div', { class: 'pend-selo' }, ico('notaFiscal')),
+      el('p', { class: 'pend-titulo' }, 'Existem pedidos pendentes para serem faturados no Newstar!'),
+      el('p', { class: 'pend-sub' }, um ? '1 pedido esperando' : peds.length + ' pedidos esperando'),
       el('button', {
-        class: 'btn w100 mt12', onclick: () => { m.fechar(); nav('pedidos'); }
-      }, rot('recibo', 'Ver todos na aba Pedidos')),
-      el('button', { class: 'btn btn-sec w100 mt8', onclick: () => m.fechar() }, 'Fechar'));
-    const m = modal(corpo, { titulo: '⚠️ PEDIDO PENDENTE', centro: true, classe: 'modal-pendente' });
+        class: 'btn big w100 mt12 btn-pendente', onclick: () => { m.fechar(); nav('pedidos'); }
+      }, rot('recibo', 'Acessar pedidos')),
+      el('button', { class: 'btn-link w100 mt8', onclick: () => m.fechar() }, 'Agora não'));
+    const m = modal(corpo, { titulo: null, centro: true, classe: 'modal-pendente' });
     try { window.NSUI.vibrar([30, 60, 30]); } catch (e) {}
   }
 
@@ -1745,16 +1727,55 @@
   // ================= VIEW: PEDIDOS =================
   // marca/desmarca que o pedido já foi digitado no New Star (o sistema de
   // faturamento de fora). Só um controle do vendedor — não mexe em valor nenhum.
+  // ── quem pode faturar no New Star ──
+  // REGRA: cada vendedor fatura SÓ os pedidos que ele mesmo tirou. O gestor
+  // continua podendo tudo. Esta é a porta única por onde o faturamento passa —
+  // a tela esconde o botão, mas quem barra de verdade é esta função, então nem
+  // chamando por fora dá para faturar o pedido do colega.
+  function podeFaturar(p) {
+    const s = sessao();
+    if (!s || !p) return false;
+    if (s.papel === 'gestor') return true;
+    return !p.representante_id || p.representante_id === s.eu.id;
+  }
+  function motivoNaoFatura(p) {
+    const dono = nomeDoRep(p && p.representante_id) || 'outro vendedor';
+    return 'Este pedido é do ' + dono + '. Cada vendedor fatura só os pedidos dele.';
+  }
+  // marca/desmarca. Sem confirmar: use confirmarFaturamento para o fluxo de tela.
   function marcarFaturado(pedidoId, aoMudar) {
     const p = DB.byId('pedidos', pedidoId);
-    if (!p) return;
+    if (!p) return false;
+    if (!podeFaturar(p)) { toast(motivoNaoFatura(p), 'erro'); return false; }
     const novo = !p.faturado_ns;
     DB.update('pedidos', pedidoId, {
       faturado_ns: novo,
-      faturado_ns_em: novo ? new Date().toISOString() : null
+      faturado_ns_em: novo ? new Date().toISOString() : null,
+      faturado_ns_por: novo ? sessao().eu.id : null
     });
     toast(novo ? 'Pedido marcado como FATURADO no New Star.' : 'Marca de faturado removida.');
     if (aoMudar) aoMudar();
+    return true;
+  }
+  // pergunta antes — faturar por engano dá trabalho para desfazer no New Star
+  async function confirmarFaturamento(pedidoId, aoMudar) {
+    const p = DB.byId('pedidos', pedidoId);
+    if (!p) return false;
+    if (!podeFaturar(p)) { toast(motivoNaoFatura(p), 'erro'); return false; }
+    if (p.faturado_ns) {
+      const ok = await confirmar('Tirar a marca de faturado deste pedido?',
+        { titulo: 'Desfazer faturamento', ok: 'Tirar a marca', perigo: true });
+      if (!ok) return false;
+      return marcarFaturado(pedidoId, aoMudar);
+    }
+    const cli = DB.byId('clientes', p.cliente_id) || {};
+    const ok = await confirmar(
+      'Tem certeza de que deseja marcar este pedido como faturado no Newstar?\n\n' +
+      'Pedido nº ' + (p.numero || '—') + ' · ' + (cli.nome || '—') + '\n' +
+      C.fmtMoney(Number(p.total_valor || 0)),
+      { titulo: 'Faturar no New Star', ok: 'Confirmar faturamento', cancelar: 'Cancelar' });
+    if (!ok) return false;
+    return marcarFaturado(pedidoId, aoMudar);
   }
   function vPedidos(view) {
     const repId = repEfetivoId();
@@ -1838,10 +1859,22 @@
               ? el('span', { class: 'badge outro-vendedor mt4' },
                 ico('usuario', 'ic-sm'), 'vendido por ' + nomeDoRep(p.representante_id)) : null),
           el('div', { class: 'row gap8 mt8' },
-            el('button', {
-              class: 'btn-mini grow' + (p.faturado_ns ? ' laranja' : ''),
-              onclick: () => marcarFaturado(p.id, render)
-            }, rot('notaFiscal', p.faturado_ns ? 'Faturado' : 'Marcar faturado')),
+            (() => {
+              // a cor é a do DONO do pedido: bate o olho e já sabe de quem é
+              const meu = podeFaturar(p);
+              const cor = corDoRep(p.representante_id);
+              const btn = el('button', {
+                class: 'btn-mini grow btn-faturar' + (p.faturado_ns ? ' feito' : '') + (meu ? '' : ' travado'),
+                style: p.faturado_ns || meu
+                  ? '--cor-rep:' + cor + ';--cor-rep-texto:' + corTextoRep(p.representante_id) : null,
+                title: meu ? 'Marcar como faturado no New Star' : motivoNaoFatura(p),
+                onclick: () => {
+                  if (!meu) return toast(motivoNaoFatura(p), 'erro');
+                  confirmarFaturamento(p.id, render);
+                }
+              }, rot('notaFiscal', p.faturado_ns ? 'Faturado' : (meu ? 'Marcar faturado' : 'Só ' + (nomeDoRep(p.representante_id) || 'o dono') + ' fatura')));
+              return btn;
+            })(),
             temObs ? el('button', {
               class: 'btn-mini obs', onclick: () => window.NSPedido.verObservacao(p)
             }, el('span', { class: 'obs-emoji' }, '⚠️'), el('span', null, 'Observação')) : null)));
@@ -1908,37 +1941,40 @@
 
     view.appendChild(el('h2', null, 'Dashboard · ' + mes.split('-').reverse().join('/')));
 
-    // ── METAS EM PRIMEIRO LUGAR: é o que o vendedor precisa ver ao abrir o app ──
-    // Só pedidos DESTE mês entram no mês; só os de HOJE entram no dia.
-    const pedsConcl = DB.all('pedidos').filter(doRep).filter(p => p.status === 'concluido');
-    const pedidosMes = pedsConcl.filter(p => noMes(p.data_pedido));
-    const vendidoMes = pedidosMes.reduce((t, p) => t + Number(p.total_valor || 0), 0);
-    const vendidoHoje = pedsConcl.filter(p => p.data_pedido === hojeISO())
-      .reduce((t, p) => t + Number(p.total_valor || 0), 0);
-    const metaMes = metaDoPeriodo('meta_mes', mes);
-    const md = C.metaDinamica({ metaMes, vendidoMes, vendidoHoje, hoje: hojeISO(),
-      metaDiaManual: metaDoPeriodo('meta_dia', mes) });
+    // ── A META DA EQUIPE EM PRIMEIRO LUGAR ──
+    // A meta é UMA SÓ, da equipe: as vendas dos dois vendedores somam nela, no
+    // mês e no dia. Logo abaixo vem o desempenho de cada um, separado.
+    const { placar, meta: mq } = metaDoDiaEquipe(mes, hojeISO());
+    const metaMes = mq.metaMes;
     if (metaMes > 0) {
       const linha = (rotulo, valor, cls) => el('div', { class: 'row space meta-linha' },
         el('span', null, rotulo), el('strong', { class: cls || null }, valor));
+      const feriadoHoje = feriadosDe(hojeISO()).has(hojeISO());
       view.appendChild(el('div', { class: 'painel-meta mt8' },
         el('div', { class: 'painel-meta-topo' },
-          el('span', null, 'Meta do mês'),
+          el('span', null, 'Meta do mês · equipe'),
           el('strong', null, C.fmtMoney(metaMes))),
         el('div', { class: 'progresso-barra mt8' },
-          el('div', { class: 'progresso-fill', style: 'width:' + Math.min(100, md.pctMes) + '%' })),
+          el('div', { class: 'progresso-fill', style: 'width:' + Math.min(100, mq.pctMes) + '%' })),
         el('div', { class: 'meta-corpo mt8' },
-          linha('Vendido no mês', C.fmtMoney(vendidoMes), 'ok'),
-          linha('Falta vender', C.fmtMoney(md.faltaMes), md.batidaMes ? 'ok' : 'destaque'),
-          linha('Dias úteis restantes', String(md.uteisRestantes)),
+          linha('Vendido pela equipe', C.fmtMoney(mq.vendidoMes), 'ok'),
+          linha('Falta vender', C.fmtMoney(mq.faltaMes), mq.batidaMes ? 'ok' : 'destaque'),
+          linha('Atingimento', C.fmtPct(mq.pctMes), mq.batidaMes ? 'ok' : null),
+          linha('Dias úteis restantes', String(mq.uteisRestantes)),
           el('div', { class: 'meta-sep' }),
-          linha('Meta de hoje', C.fmtMoney(md.metaDia), 'destaque'),
-          linha('Vendido hoje', C.fmtMoney(vendidoHoje), 'ok'),
-          linha('Falta vender hoje', C.fmtMoney(md.faltaHoje), md.batidaHoje ? 'ok' : 'destaque')),
-        md.batidaMes ? el('div', { class: 'meta-selo ok mt8' }, 'Meta do mês batida!')
-          : (md.batidaHoje ? el('div', { class: 'meta-selo ok mt8' }, 'Meta de hoje batida.') : null)));
-      // logo abaixo da própria meta: como os dois estão indo juntos
-      const eq = blocoEquipe(mes, metaMes);
+          linha('Meta de hoje · equipe', C.fmtMoney(mq.metaDia), 'destaque'),
+          linha('Vendido hoje pela equipe', C.fmtMoney(mq.vendidoHoje), 'ok'),
+          mq.excedenteHoje > 0
+            ? linha('Passou da meta de hoje em', C.fmtMoney(mq.excedenteHoje), 'ok')
+            : linha('Falta para a meta de hoje', C.fmtMoney(mq.faltaHoje), 'destaque')),
+        el('div', { class: 'meta-selo ' + (mq.batidaMes || mq.batidaHoje ? 'ok' : 'falta') + ' mt8' },
+          mq.batidaMes ? 'META DO MÊS BATIDA!'
+            : (mq.batidaHoje ? 'Meta de hoje batida' : 'Meta de hoje ainda não batida')),
+        el('p', { class: 'meta-rodape mt8' }, feriadoHoje
+          ? 'Hoje é feriado (' + (nomeFeriado(hojeISO()) || 'dia parado') + ') e não conta como dia útil.'
+          : 'A meta de hoje fica travada até a virada do dia. O que sobrar ou faltar entra na conta do próximo dia útil.')));
+      // desempenho de cada vendedor, logo abaixo da meta da equipe
+      const eq = blocoEquipe(mes, metaMes, placar);
       if (eq) view.appendChild(eq);
     } else {
       view.appendChild(el('p', { class: 'sub mt8' },
@@ -1964,10 +2000,14 @@
         el('div', { class: 'row space meta-linha' },
           el('span', null, 'Clamed caindo neste mês'), el('strong', null, C.fmtMoney(clamedCaiEsteMes))))));
 
+    // estes números são do VENDEDOR logado — a meta acima é que é da equipe
+    const meusPedidosMes = DB.all('pedidos').filter(doRep)
+      .filter(p => p.status === 'concluido' && noMes(p.data_pedido));
+    const meuVendidoMes = meusPedidosMes.reduce((t, p) => t + Number(p.total_valor || 0), 0);
     view.appendChild(el('div', { class: 'kpis mt16' },
       kpi('Faturamento (vendido)', C.fmtMoney(faturamento)),
-      kpi('Ticket médio (' + pedidosMes.length + ' pedidos)',
-        C.fmtMoney(C.ticketMedio(vendidoMes, pedidosMes.length))),
+      kpi('Ticket médio (' + meusPedidosMes.length + ' pedidos)',
+        C.fmtMoney(C.ticketMedio(meuVendidoMes, meusPedidosMes.length))),
       kpi('Comissão gerada no mês', C.fmtMoney(comissaoGerada)),
       kpi('A receber no próximo mês', C.fmtMoney(aReceber), 'destaque'),
       kpi('Despesas', C.fmtMoney(totDesp)),
@@ -2024,7 +2064,7 @@
       ico('setaDir', 'ic-sm'));
     view.appendChild(item('grafico', 'Relatórios', 'Venda do dia, metas e redes', telaRelatorios));
     view.appendChild(item('documento', 'Exportar em PDF e Excel', 'Clientes e pedidos, com ou sem filtros', telaExportar));
-    view.appendChild(item('dinheiro', 'Financeiro', 'Comissões a receber e despesas', telaFinanceiro));
+    view.appendChild(item('dinheiro', 'Financeiro', 'Caixa da empresa: receitas, despesas e comissões', telaFinanceiro));
     view.appendChild(item('pin', 'Geocodificar clientes', 'Localizar endereços no mapa', telaGeocode));
     view.appendChild(item('paleta', 'Aparência', 'Cores do app', telaAparencia));
     view.appendChild(item('pessoas', 'Clientes', 'Cadastrar, editar, excluir, importar/exportar', telaAdminClientes));
@@ -2032,6 +2072,8 @@
       view.appendChild(el('h3', { class: 'mt16' }, 'Administração'));
       view.appendChild(item('joia', 'Produtos e preços', 'Catálogo e tabelas', telaAdminProdutos));
       view.appendChild(item('usuario', 'Vendedores', 'Equipe e comissões', telaAdminVendedores));
+      view.appendChild(item('calendario', 'Feriados e dias parados', 'Dias que não contam na meta', telaFeriados));
+      view.appendChild(item('etiqueta', 'Categorias do financeiro', 'Organizar os gastos por tipo', telaCategoriasFin));
       view.appendChild(item('ajustes', 'Configurações', 'Chaves, ciclo e textos', telaAdminConfig));
     }
     view.appendChild(el('button', { class: 'btn-link mt16', onclick: sair }, 'Sair (' + s.eu.email + ')'));
@@ -2068,55 +2110,173 @@
     return 0;
   }
 
+  // ---------- cor de cada vendedor ----------
+  // A mesma cor identifica o vendedor no painel da equipe e no botão de faturado
+  // no New Star: bate o olho e já sabe de quem é o pedido. Fica no cadastro
+  // (Admin → Vendedores), então entra vendedor novo e escolhe a dele.
+  const CORES_REP = [
+    ['laranja', 'Laranja', '#FF8A2B', '#9A4A00'],
+    ['roxo', 'Roxo brilhante', '#8B2BFF', '#FFFFFF'],
+    ['verde', 'Verde', '#15A05B', '#FFFFFF'],
+    ['azul', 'Azul', '#2E8BE6', '#FFFFFF'],
+    ['rosa', 'Rosa', '#E0218A', '#FFFFFF'],
+    ['vermelho', 'Vermelho', '#E03131', '#FFFFFF']
+  ];
+  // os dois vendedores de hoje já nascem com a cor combinada
+  const COR_PADRAO_REP = { gustavo: 'laranja', denilson: 'roxo' };
+  function chaveCorRep(rep) {
+    if (rep && rep.cor && CORES_REP.some(c => c[0] === rep.cor)) return rep.cor;
+    const n = String((rep && rep.nome) || '').trim().toLowerCase().split(/\s+/)[0];
+    return COR_PADRAO_REP[n] || 'azul';
+  }
+  function corRep(repId) {
+    const rep = (repId && typeof repId === 'object') ? repId : DB.byId('representantes', repId);
+    const c = CORES_REP.find(x => x[0] === chaveCorRep(rep));
+    return c || CORES_REP[3];
+  }
+  const corDoRep = (repId) => corRep(repId)[2];
+  const corTextoRep = (repId) => corRep(repId)[3];
+
+  // ---------- feriados ----------
+  // Nacionais (calculados por ano, inclusive a Paixão de Cristo que muda de data)
+  // mais os que a empresa cadastrar em Admin → Feriados: estaduais, municipais,
+  // pontos facultativos que ela decidir folgar e dias parados por qualquer motivo.
+  function feriadosExtra() {
+    const v = DB.config('feriados_extra', []);
+    return Array.isArray(v) ? v : [];
+  }
+  function feriadosDe(anoOuISO) {
+    const ano = Number(String(anoOuISO).slice(0, 4));
+    return C.feriadosDoAno(ano, feriadosExtra());
+  }
+  // nome do feriado, para a tela mostrar o motivo do dia parado
+  function nomeFeriado(iso) {
+    const extra = feriadosExtra().find(f => (typeof f === 'string' ? f : f.data) === iso);
+    if (extra && extra.nome) return extra.nome;
+    const NACIONAIS = {
+      '01-01': 'Confraternização Universal', '04-21': 'Tiradentes', '05-01': 'Dia do Trabalho',
+      '09-07': 'Independência', '10-12': 'Nossa Senhora Aparecida', '11-02': 'Finados',
+      '11-15': 'Proclamação da República', '11-20': 'Consciência Negra', '12-25': 'Natal'
+    };
+    if (NACIONAIS[iso.slice(5)]) return NACIONAIS[iso.slice(5)];
+    if (C.feriadosNacionais(iso.slice(0, 4)).indexOf(iso) >= 0) return 'Paixão de Cristo';
+    return extra ? 'Feriado cadastrado' : '';
+  }
+
   // ---------- placar da equipe ----------
   // Os dois trabalham juntos e a meta do mês é da equipe, então cada vendedor vê
   // a parte dele E a do colega. Não é ranking para cobrar ninguém: é para os
   // dois saberem quanto falta para fechar o mês JUNTOS.
-  function placarEquipe(mes) {
+  function placarEquipe(mes, dia) {
+    dia = dia || hojeISO();
     const vendedores = DB.all('representantes')
       .filter(r => r.papel === 'vendedor' && r.ativo !== false);
     const porRep = {};
+    const zero = () => ({ vendido: 0, pedidos: 0, vendidoDia: 0, pedidosDia: 0, vendidoAteOntem: 0 });
     for (const p of DB.all('pedidos')) {
       if (p.status !== 'concluido') continue;
       if ((p.data_pedido || '').slice(0, 7) !== mes) continue;
-      const r = (porRep[p.representante_id] = porRep[p.representante_id] || { vendido: 0, pedidos: 0 });
-      r.vendido = C.round2(r.vendido + Number(p.total_valor || 0));
+      const r = (porRep[p.representante_id] = porRep[p.representante_id] || zero());
+      const v = Number(p.total_valor || 0);
+      r.vendido = C.round2(r.vendido + v);
       r.pedidos++;
+      if (p.data_pedido === dia) { r.vendidoDia = C.round2(r.vendidoDia + v); r.pedidosDia++; }
+      // base da meta do dia: tudo que foi vendido ANTES de hoje
+      if ((p.data_pedido || '') < dia) r.vendidoAteOntem = C.round2(r.vendidoAteOntem + v);
     }
-    const linhas = vendedores.map(r => ({
-      id: r.id, nome: r.nome,
-      vendido: (porRep[r.id] || {}).vendido || 0,
-      pedidos: (porRep[r.id] || {}).pedidos || 0
-    })).sort((a2, b2) => b2.vendido - a2.vendido);
-    return { linhas, total: C.round2(linhas.reduce((t, l) => t + l.vendido, 0)) };
+    const linhas = vendedores.map(r => Object.assign({ id: r.id, nome: r.nome }, zero(), porRep[r.id] || {}))
+      .sort((a2, b2) => b2.vendido - a2.vendido);
+    const soma = (campo) => C.round2(linhas.reduce((t, l) => t + l[campo], 0));
+    const contar = (campo) => linhas.reduce((t, l) => t + l[campo], 0);
+    return {
+      linhas, total: soma('vendido'), totalDia: soma('vendidoDia'),
+      totalAteOntem: soma('vendidoAteOntem'),
+      pedidos: contar('pedidos'), pedidosDia: contar('pedidosDia')
+    };
   }
-  // o bloco visual; devolve null quando só existe um vendedor (não há equipe)
-  function blocoEquipe(mes, metaMes) {
+
+  // ---------- meta do dia congelada ----------
+  // O alvo do dia é gravado no dia em que é calculado. Depois disso ele não se
+  // mexe mais: nem vendendo, nem editando um pedido antigo. Se a meta do MÊS
+  // for alterada pelo gestor, aí sim o alvo do dia é refeito — senão ele ficaria
+  // olhando para um número que não existe mais.
+  function metaDiaCongelada(dia, metaMes, vendidoAteOntem) {
+    const chave = 'meta_dia_fixa_' + dia;
+    const salvo = DB.config(chave, null);
+    if (salvo && Number(salvo.meta_mes) === Number(metaMes) && salvo.valor != null)
+      return Number(salvo.valor);
+    const r = C.metaDoDia({
+      metaMes, vendidoAteOntem, hoje: dia, feriados: feriadosDe(dia),
+      metaDiaManual: metaDoPeriodo('meta_dia', dia.slice(0, 7))
+    });
+    DB.upsertConfig(chave, {
+      valor: r.metaDia, meta_mes: Number(metaMes) || 0,
+      base: C.round2(vendidoAteOntem), dias_uteis: r.uteisRestantes,
+      congelada_em: new Date().toISOString()
+    });
+    return r.metaDia;
+  }
+  // tudo que a meta do dia precisa, já com a equipe somada e o alvo congelado
+  function metaDoDiaEquipe(mes, dia) {
+    const pl = placarEquipe(mes, dia);
+    const metaMes = metaDoPeriodo('meta_mes', mes);
+    const ehHojeNesteMes = dia === hojeISO() && mes === mesISO();
+    const fixada = (metaMes > 0 && ehHojeNesteMes)
+      ? metaDiaCongelada(dia, metaMes, pl.totalAteOntem) : null;
+    const m = C.metaEquipe({
+      metaMes, vendidoMes: pl.total, vendidoHoje: pl.totalDia,
+      vendidoAteOntem: pl.totalAteOntem, hoje: dia, feriados: feriadosDe(dia),
+      metaDiaFixada: fixada, metaDiaManual: metaDoPeriodo('meta_dia', mes)
+    });
+    return { placar: pl, meta: m };
+  }
+  // ---------- desempenho de cada vendedor ----------
+  // A meta é da equipe, mas o resultado de cada um aparece separado: mês, dia,
+  // quantidade de pedidos e quanto ele representa da meta total.
+  // Devolve null quando só existe um vendedor (aí não há equipe para comparar).
+  function blocoEquipe(mes, metaMes, placar) {
     const s = sessao();
     const euId = s && s.rep ? s.rep.id : null;
-    const pl = placarEquipe(mes);
+    const pl = placar || placarEquipe(mes, hojeISO());
     if (pl.linhas.length < 2) return null;
-    const pct = (v) => metaMes > 0 ? Math.round(v / metaMes * 100) : 0;
+    const pct = (v) => metaMes > 0 ? C.round2(v / metaMes * 100) : 0;
     const barra = (v) => Math.max(0, Math.min(100, pct(v)));
     const falta = C.round2(Math.max(0, metaMes - pl.total));
+    const mini = (rot2, val) => el('div', { class: 'vend-mini' },
+      el('span', { class: 'vend-mini-rot' }, rot2), el('strong', null, val));
     return el('div', { class: 'painel-equipe mt12' },
       el('div', { class: 'painel-meta-topo' },
-        el('span', null, 'A equipe no mês'),
+        el('span', null, 'Desempenho por vendedor'),
         el('strong', null, C.fmtMoney(pl.total))),
       el('div', { class: 'meta-corpo mt8' },
         pl.linhas.map(l => el('div', { class: 'equipe-linha' + (l.id === euId ? ' eu' : '') },
           el('div', { class: 'row space' },
-            el('span', null, l.nome + (l.id === euId ? ' · você' : '')),
+            el('span', { class: 'vend-nome' },
+              el('span', { class: 'vend-bolinha', style: 'background:' + corDoRep(l.id) }),
+              l.nome + (l.id === euId ? ' · você' : '')),
             el('strong', null, C.fmtMoney(l.vendido))),
           el('div', { class: 'progresso-barra fina mt4' },
-            el('div', { class: 'progresso-fill', style: 'width:' + barra(l.vendido) + '%' })),
-          el('span', { class: 'equipe-sub' }, l.pedidos + (l.pedidos === 1 ? ' pedido' : ' pedidos') +
-            (metaMes > 0 ? ' · ' + pct(l.vendido) + '% da meta' : '')))),
+            el('div', {
+              class: 'progresso-fill',
+              style: 'width:' + barra(l.vendido) + '%;background:' + corDoRep(l.id)
+            })),
+          el('div', { class: 'vend-grade mt4' },
+            mini('no mês', C.fmtMoney(l.vendido)),
+            mini('no dia', C.fmtMoney(l.vendidoDia)),
+            mini('pedidos no mês', String(l.pedidos)),
+            mini('pedidos no dia', String(l.pedidosDia))),
+          el('span', { class: 'equipe-sub' }, metaMes > 0
+            ? 'Representa ' + C.fmtPct(pct(l.vendido)) + ' da meta da equipe'
+            : l.pedidos + (l.pedidos === 1 ? ' pedido' : ' pedidos')))),
         el('div', { class: 'meta-sep' }),
         el('div', { class: 'row space meta-linha' },
           el('span', null, pl.linhas.length === 2 ? 'Os dois juntos' : 'A equipe junta'),
           el('strong', { class: metaMes > 0 && pl.total >= metaMes ? 'ok' : 'destaque' },
-            metaMes > 0 ? pct(pl.total) + '% da meta' : C.fmtMoney(pl.total))),
+            metaMes > 0 ? C.fmtPct(pct(pl.total)) + ' da meta' : C.fmtMoney(pl.total))),
+        el('div', { class: 'row space meta-linha' },
+          el('span', null, 'Vendido hoje pela equipe'),
+          el('strong', null, C.fmtMoney(pl.totalDia) +
+            (pl.pedidosDia ? ' · ' + pl.pedidosDia + (pl.pedidosDia === 1 ? ' pedido' : ' pedidos') : ''))),
         metaMes > 0 ? el('div', { class: 'row space meta-linha' },
           el('span', null, falta > 0 ? 'Falta para a equipe' : 'Passou da meta em'),
           el('strong', { class: falta > 0 ? null : 'ok' },
@@ -2437,7 +2597,12 @@
       const metaMes = metaDoPeriodo('meta_mes', mes);
       const metaDiaManual = metaDoPeriodo('meta_dia', mes);
       const metaNovos = metaDoPeriodo('meta_novos', mes);
-      const mt = C.calcMeta({ metaMes, hoje: ref, vendidoMes: vendMes, metaDiaManual });
+      // A meta é da EQUIPE: o progresso do mês conta a venda dos dois vendedores,
+      // não só a de quem está olhando a tela.
+      const plRel = placarEquipe(mes, ref);
+      const vendMesEquipe = plRel.total;
+      const mt = C.calcMeta({ metaMes, hoje: ref, vendidoMes: vendMesEquipe,
+        metaDiaManual, feriados: feriadosExtra() });
       // novos clientes do mês = clientes com venda a 15% (primeira compra)
       const novosMes = new Set(DB.all('visitas').filter(doRep)
         .filter(v => (v.data_visita || '').slice(0, 7) === mes &&
@@ -2488,7 +2653,7 @@
       if (metaMes > 0) {
         wrap.appendChild(el('div', { class: 'progresso mt4' },
           el('div', { class: 'progresso-info' },
-            `${C.fmtMoney(vendMes)} de ${C.fmtMoney(metaMes)} · ${C.fmtPct(mt.pct)} da meta`),
+            `${C.fmtMoney(vendMesEquipe)} de ${C.fmtMoney(metaMes)} · ${C.fmtPct(mt.pct)} da meta (equipe)`),
           el('div', { class: 'progresso-barra' }, el('div', { class: 'progresso-fill', style: 'width:' + Math.min(100, mt.pct) + '%' }))));
         if (ehMesAtual) {
           wrap.appendChild(el('div', { class: 'sub mt4' },
@@ -2499,13 +2664,13 @@
           wrap.appendChild(el('div', { class: (mt.pct >= 100 ? 'sugestao' : 'aviso') + ' mt8' },
             mt.pct >= 100
               ? `Mês fechado batendo a meta (${C.fmtPct(mt.pct)}).`
-              : `Mês fechado em ${C.fmtPct(mt.pct)} da meta — faltaram ${C.fmtMoney(C.round2(metaMes - vendMes))}.`));
+              : `Mês fechado em ${C.fmtPct(mt.pct)} da meta — faltaram ${C.fmtMoney(C.round2(metaMes - vendMesEquipe))}.`));
         }
       } else {
         wrap.appendChild(el('p', { class: 'sub mt4' }, 'Nenhuma meta cadastrada para o mês.'));
       }
       // o mesmo mês visto pela EQUIPE: a parte de cada vendedor e o total
-      const eqRel = blocoEquipe(mes, metaMes);
+      const eqRel = blocoEquipe(mes, metaMes, plRel);
       if (eqRel) wrap.appendChild(eqRel);
       // meta do ano
       wrap.appendChild(el('h3', { class: 'mt16' }, 'Meta do ano — ' + ano));
@@ -2622,39 +2787,111 @@
       'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'][Number(m)] + ' ' + a;
   }
 
-  const CATS_FIN = {
-    combustivel: 'Combustível', pedagio: 'Pedágio', hospedagem: 'Hospedagem',
-    alimentacao: 'Alimentação', manutencao: 'Manutenção',
-    cartao_credito: 'Cartão de crédito', outro: 'Outro'
+  // ================= FINANCEIRO DA EMPRESA =================
+  // CAIXA ÚNICO: mesmo com dois vendedores, tudo que entra e sai é da MESMA
+  // empresa. O vendedor que lançou fica gravado para conferência e auditoria,
+  // mas o saldo NUNCA é dividido por vendedor.
+  //
+  // Os lançamentos ficam todos na tabela `despesas`, que já existia — o campo
+  // `natureza` separa receita de despesa. Lançamento antigo não tem esse campo
+  // e continua valendo como despesa, com o `tipo` antigo virando categoria.
+  // Nada precisou ser migrado e nenhum dado foi tocado.
+  const CATS_PADRAO = [
+    ['alimentacao', 'Alimentação', 'despesa'],
+    ['combustivel', 'Combustível', 'despesa'],
+    ['transporte', 'Transporte', 'despesa'],
+    ['pedagio', 'Pedágio', 'despesa'],
+    ['manutencao', 'Manutenção', 'despesa'],
+    ['hospedagem', 'Hospedagem', 'despesa'],
+    ['materiais', 'Materiais', 'despesa'],
+    ['escritorio', 'Escritório', 'despesa'],
+    ['impostos', 'Impostos', 'despesa'],
+    ['comissoes', 'Comissões pagas', 'despesa'],
+    ['cartao_credito', 'Cartão de crédito', 'despesa'],
+    ['outro', 'Outros', 'despesa'],
+    ['venda', 'Venda de mercadoria', 'receita'],
+    ['comissao_recebida', 'Comissão recebida', 'receita'],
+    ['bonificacao', 'Bonificação', 'receita'],
+    ['outra_receita', 'Outras receitas', 'receita']
+  ];
+  const FORMAS_PAG = [
+    ['dinheiro', 'Dinheiro'], ['pix', 'PIX'], ['debito', 'Cartão de débito'],
+    ['credito', 'Cartão de crédito'], ['boleto', 'Boleto'],
+    ['transferencia', 'Transferência'], ['outra', 'Outra']
+  ];
+  // categorias = as de fábrica + as que a empresa cadastrar (Admin → Categorias)
+  function categoriasFin(natureza) {
+    const extras = DB.config('categorias_fin', []);
+    const mapa = new Map(CATS_PADRAO.map(c => [c[0], { chave: c[0], nome: c[1], natureza: c[2] }]));
+    (Array.isArray(extras) ? extras : []).forEach(c => {
+      if (!c || !c.chave) return;
+      mapa.set(c.chave, { chave: c.chave, nome: c.nome || c.chave, natureza: c.natureza || 'despesa' });
+    });
+    const lista = Array.from(mapa.values());
+    return natureza ? lista.filter(c => c.natureza === natureza) : lista;
+  }
+  const nomeCategoria = (chave) => {
+    const c = categoriasFin().find(x => x.chave === chave);
+    return c ? c.nome : (chave || 'Outros');
   };
+  const nomeForma = (k) => (FORMAS_PAG.find(f => f[0] === k) || [null, '—'])[1];
+  // lançamento normalizado — é aqui que o formato antigo e o novo se encontram
+  function lancFin(r) {
+    return {
+      id: r.id,
+      natureza: r.natureza === 'receita' ? 'receita' : 'despesa',
+      data: r.data_despesa || '',
+      valor: C.round2(Number(r.valor || 0)),
+      categoria: r.categoria || r.tipo || 'outro',
+      descricao: r.descricao || '',
+      forma: r.forma_pagamento || '',
+      situacao: r.situacao || '',
+      origem: r.origem || '',
+      observacoes: r.observacoes || '',
+      km_rodado: r.km_rodado,
+      representante_id: r.representante_id,
+      bruto: r
+    };
+  }
+  const lancamentosFin = () => DB.all('despesas').map(lancFin);
 
   function telaFinanceiro() {
     const s = sessao();
-    const repId = s.consolidado ? null : s.rep.id;
-    const doRep = (r) => !repId || r.representante_id === repId;
     const wrap = el('div');
-    const m = modal(wrap, { titulo: 'Financeiro', full: true });
-    render();
+    const m = modal(wrap, { titulo: 'Financeiro da empresa', full: true });
+    let aba = 'resumo';
+    const filtro = { natureza: 'todos', categoria: 'todos', rep: 'todos' };
 
-    function comissoesDoMes(mes) {
-      return DB.all('visitas').filter(doRep)
-        .filter(v => (v.comissao_recebimento_em || '').slice(0, 7) === mes && Number(v.comissao_valor) !== 0)
+    // ── dados do período ──
+    const noMes = (iso, mes) => (iso || '').slice(0, 7) === mes;
+    // comissões CALCULADAS das vendas (não dependem de lançamento manual)
+    function comissoesDoMes(mes, repId) {
+      return DB.all('visitas')
+        .filter(v => !repId || v.representante_id === repId)
+        .filter(v => noMes(v.comissao_recebimento_em, mes) && Number(v.comissao_valor) !== 0)
         .sort((a, b) => (a.comissao_recebimento_em || '').localeCompare(b.comissao_recebimento_em || ''));
     }
-    function despesasDoMes(mes) {
-      return DB.all('despesas').filter(doRep)
-        .filter(d => (d.data_despesa || '').slice(0, 7) === mes)
-        .sort((a, b) => (b.data_despesa || '').localeCompare(a.data_despesa || ''));
+    function lancamentosDoMes(mes) {
+      return lancamentosFin().filter(l => noMes(l.data, mes))
+        .filter(l => filtro.natureza === 'todos' || l.natureza === filtro.natureza)
+        .filter(l => filtro.categoria === 'todos' || l.categoria === filtro.categoria)
+        .filter(l => filtro.rep === 'todos' || l.representante_id === filtro.rep)
+        .sort((a, b) => (b.data || '').localeCompare(a.data || ''));
     }
+    function totaisDoMes(mes) {
+      const todos = lancamentosFin().filter(l => noMes(l.data, mes));
+      const soma = (f) => C.round2(todos.filter(f).reduce((t, l) => t + l.valor, 0));
+      const receitas = soma(l => l.natureza === 'receita');
+      const despesas = soma(l => l.natureza === 'despesa');
+      const comissoes = C.round2(comissoesDoMes(mes).reduce((t, v) => t + Number(v.comissao_valor || 0), 0));
+      return { receitas, despesas, comissoes, saldo: C.round2(receitas - despesas - comissoes), n: todos.length };
+    }
+    render();
 
     function render() {
       wrap.innerHTML = '';
       const mes = mesISOoffset(mesFinOffset);
-      const coms = comissoesDoMes(mes);
-      const desps = despesasDoMes(mes);
-      const totCom = coms.reduce((t, v) => t + Number(v.comissao_valor || 0), 0);
-      const totDesp = desps.reduce((t, d) => t + Number(d.valor || 0), 0);
-      const saldo = totCom - totDesp;
+      const t = totaisDoMes(mes);
 
       // navegação de mês
       wrap.appendChild(el('div', { class: 'row space' },
@@ -2662,78 +2899,388 @@
         el('h3', null, rotuloMes(mes) + (mesFinOffset === 0 ? ' · atual' : '')),
         el('button', { class: 'btn-mini', onclick: () => { mesFinOffset++; render(); }, 'aria-label': 'Próximo mês' }, ico('setaDir'))));
 
-      wrap.appendChild(el('div', { class: 'kpis mt8' },
-        el('div', { class: 'kpi destaque' },
-          el('span', { class: 'kpi-rot' }, 'Comissões a receber'),
-          el('strong', { class: 'kpi-val' }, C.fmtMoney(totCom))),
-        el('div', { class: 'kpi' },
-          el('span', { class: 'kpi-rot' }, 'Despesas do mês'),
-          el('strong', { class: 'kpi-val' }, C.fmtMoney(totDesp))),
-        el('div', { class: 'kpi ' + (saldo >= 0 ? 'ok' : 'erro'), style: 'grid-column:1/-1' },
-          el('span', { class: 'kpi-rot' }, 'Saldo projetado (comissões − despesas)'),
-          el('strong', { class: 'kpi-val' }, C.fmtMoney(saldo)))));
+      // lançamento rápido, sempre no alto: dois toques e acabou
+      wrap.appendChild(el('div', { class: 'row gap8 mt8' },
+        el('button', { class: 'btn big grow btn-receita', onclick: () => lancar('receita', mes) },
+          rot('mais', 'Receita')),
+        el('button', { class: 'btn big grow btn-despesa', onclick: () => lancar('despesa', mes) },
+          rot('menos', 'Despesa'))));
 
-      // visão dos próximos 6 meses
-      wrap.appendChild(el('h4', { class: 'mt12' }, 'A receber nos próximos meses'));
-      wrap.appendChild(el('div', { class: 'dias-scroll mt4' },
-        Array.from({ length: 7 }, (_, i) => {
-          const mIso = mesISOoffset(i);
-          const tot = comissoesDoMes(mIso).reduce((t, v) => t + Number(v.comissao_valor || 0), 0);
-          return el('button', {
-            class: 'chip' + (mIso === mes ? ' ativo' : ''),
-            onclick: () => { mesFinOffset = i; render(); }
-          }, mIso.split('-').reverse().join('/') + ' · ' + C.fmtMoney(tot));
-        })));
+      // painel do caixa
+      wrap.appendChild(el('div', { class: 'caixa-painel mt12' },
+        el('div', { class: 'painel-meta-topo' },
+          el('span', null, 'Saldo do mês · caixa único'),
+          el('strong', { class: t.saldo >= 0 ? 'ok' : 'erro' }, C.fmtMoney(t.saldo))),
+        el('div', { class: 'caixa-grade mt8' },
+          el('div', { class: 'caixa-cel receita' },
+            el('span', null, 'Receitas'), el('strong', null, C.fmtMoney(t.receitas))),
+          el('div', { class: 'caixa-cel despesa' },
+            el('span', null, 'Despesas'), el('strong', null, C.fmtMoney(t.despesas))),
+          el('div', { class: 'caixa-cel comissao' },
+            el('span', null, 'Comissões'), el('strong', null, C.fmtMoney(t.comissoes)))),
+        el('p', { class: 'meta-rodape mt8' },
+          'Um caixa só para a empresa inteira. As comissões são calculadas das ' +
+          'vendas do mês — não precisa lançar como despesa.')));
 
-      // comissões detalhadas
-      wrap.appendChild(el('h4', { class: 'mt12' }, `Comissões que caem em ${rotuloMes(mes)}`));
-      wrap.appendChild(el('div', { class: 'col gap4 mt4' },
-        coms.length ? coms.map(v => {
-          const cli = DB.byId('clientes', v.cliente_id) || {};
-          const clamed = Number(cli.recebimento_dias) > 0;
-          return el('div', { class: 'hist-linha' },
-            el('span', null, dataBR(v.comissao_recebimento_em) + ' · ' + (cli.nome || '—') +
-              ' · venda ' + dataBR(v.data_visita) + ' (' + C.fmtMoney(Number(v.valor_pedido)) + ' × ' + v.comissao_pct + '%)' +
-              (clamed ? ' · ' + (cli.rede || 'prazo especial') : '')),
-            el('strong', null, C.fmtMoney(Number(v.comissao_valor))));
-        }) : el('p', { class: 'vazio' }, 'Nenhuma comissão prevista para este mês.')));
+      // abas
+      const abas = [['resumo', 'Resumo'], ['lancamentos', 'Lançamentos'],
+        ['comissoes', 'Comissões'], ['relatorio', 'Relatório']];
+      wrap.appendChild(el('div', { class: 'dias-scroll mt12' },
+        abas.map(([k, r]) => el('button', {
+          class: 'chip' + (aba === k ? ' ativo' : ''), onclick: () => { aba = k; render(); }
+        }, r))));
 
-      // despesas
-      wrap.appendChild(el('div', { class: 'row space mt12' },
-        el('h4', null, 'Despesas de ' + rotuloMes(mes)),
-        el('button', { class: 'btn', onclick: () => nova(mes) }, '+ Lançar despesa')));
-      wrap.appendChild(el('div', { class: 'col gap4 mt4' },
-        desps.length ? desps.map(d => el('div', { class: 'hist-linha' },
-          el('span', null, dataBR(d.data_despesa) + ' · ' + (CATS_FIN[d.tipo] || d.tipo) +
-            (d.km_rodado ? ' · ' + d.km_rodado + ' km' : '') + (d.descricao ? ' · ' + d.descricao : '')),
-          el('div', { class: 'row gap8' },
-            el('strong', null, C.fmtMoney(Number(d.valor))),
-            el('button', { class: 'btn-icon', onclick: async () => { if (await confirmar('Excluir lançamento?')) { DB.remove('despesas', d.id); render(); } } }, ico('lixeira')))))
-          : el('p', { class: 'vazio' }, 'Sem despesas lançadas neste mês.')));
+      const corpo = el('div', { class: 'mt12' });
+      wrap.appendChild(corpo);
+      if (aba === 'resumo') resumo(corpo, mes, t);
+      else if (aba === 'lancamentos') listaLanc(corpo, mes);
+      else if (aba === 'comissoes') listaComissoes(corpo, mes);
+      else relatorio(corpo, mes, t);
     }
 
-    function nova(mes) {
+    // ── RESUMO: para onde o dinheiro foi, no mês ──
+    function resumo(box, mes, t) {
+      const porCat = {};
+      lancamentosFin().filter(l => noMes(l.data, mes) && l.natureza === 'despesa')
+        .forEach(l => { porCat[l.categoria] = C.round2((porCat[l.categoria] || 0) + l.valor); });
+      const linhas = Object.entries(porCat).sort((a, b) => b[1] - a[1]);
+      const maior = linhas.length ? linhas[0][1] : 0;
+      box.appendChild(el('h4', null, 'Despesas por categoria'));
+      box.appendChild(el('div', { class: 'col gap4 mt8' },
+        linhas.length ? linhas.map(([cat, v]) => el('div', { class: 'cat-linha' },
+          el('div', { class: 'row space' },
+            el('span', null, nomeCategoria(cat)),
+            el('strong', null, C.fmtMoney(v))),
+          el('div', { class: 'progresso-barra fina mt4' },
+            el('div', {
+              class: 'progresso-fill',
+              style: 'width:' + (maior > 0 ? Math.round(v / maior * 100) : 0) + '%'
+            })),
+          el('span', { class: 'sub' }, t.despesas > 0
+            ? C.fmtPct(C.round2(v / t.despesas * 100)) + ' das despesas' : '')))
+          : el('p', { class: 'vazio' }, 'Nenhuma despesa lançada em ' + rotuloMes(mes) + '.')));
+
+      // evolução dos últimos 6 meses
+      box.appendChild(el('h4', { class: 'mt16' }, 'Evolução — últimos 6 meses'));
+      const serie = Array.from({ length: 6 }, (_, i) => {
+        const mIso = mesISOoffset(mesFinOffset - (5 - i));
+        const tt = totaisDoMes(mIso);
+        return { mes: mIso, receitas: tt.receitas, despesas: C.round2(tt.despesas + tt.comissoes) };
+      });
+      const teto = Math.max(1, ...serie.map(x => Math.max(x.receitas, x.despesas)));
+      box.appendChild(el('div', { class: 'grafico-barras mt8' },
+        serie.map(x => el('div', { class: 'gb-col' },
+          el('div', { class: 'gb-pilha' },
+            el('div', { class: 'gb-barra receita', style: 'height:' + Math.round(x.receitas / teto * 100) + '%', title: 'Receitas ' + C.fmtMoney(x.receitas) }),
+            el('div', { class: 'gb-barra despesa', style: 'height:' + Math.round(x.despesas / teto * 100) + '%', title: 'Saídas ' + C.fmtMoney(x.despesas) })),
+          el('span', { class: 'gb-rot' }, x.mes.slice(5) + '/' + x.mes.slice(2, 4))))));
+      box.appendChild(el('div', { class: 'row gap8 mt4' },
+        el('span', { class: 'legenda receita' }, 'Receitas'),
+        el('span', { class: 'legenda despesa' }, 'Despesas + comissões')));
+    }
+
+    // ── LANÇAMENTOS: lista com filtros, editar e excluir ──
+    function listaLanc(box, mes) {
+      const sel = (chave, rotulo, opcoes) => {
+        const e = el('select', { class: 'input' },
+          el('option', { value: 'todos', selected: filtro[chave] === 'todos' ? '' : null }, rotulo),
+          opcoes.map(([v, r]) => el('option', { value: v, selected: filtro[chave] === v ? '' : null }, r)));
+        e.onchange = () => { filtro[chave] = e.value; render(); };
+        return e;
+      };
+      box.appendChild(el('div', { class: 'fin-filtros' },
+        sel('natureza', 'Tudo', [['receita', 'Só receitas'], ['despesa', 'Só despesas']]),
+        sel('categoria', 'Toda categoria', categoriasFin().map(c => [c.chave, c.nome])),
+        sel('rep', 'Todos os vendedores', DB.all('representantes').map(r => [r.id, r.nome]))));
+
+      const lista = lancamentosDoMes(mes);
+      const tot = C.round2(lista.reduce((t2, l) => t2 + (l.natureza === 'receita' ? l.valor : -l.valor), 0));
+      box.appendChild(el('div', { class: 'total-bar mt8' },
+        el('span', null, lista.length + ' lançamento(s)'),
+        el('strong', { class: tot >= 0 ? 'ok' : 'erro' }, C.fmtMoney(tot))));
+      box.appendChild(el('div', { class: 'col gap4 mt8' },
+        lista.length ? lista.map(l => el('div', { class: 'lanc-linha ' + l.natureza },
+          el('div', { class: 'grow', onclick: () => lancar(l.natureza, mes, l) },
+            el('div', { class: 'row space w100' },
+              el('strong', null, nomeCategoria(l.categoria)),
+              el('strong', { class: l.natureza === 'receita' ? 'ok' : 'erro' },
+                (l.natureza === 'receita' ? '+ ' : '− ') + C.fmtMoney(l.valor))),
+            el('span', { class: 'sub' }, dataBR(l.data) +
+              (l.descricao ? ' · ' + l.descricao : '') +
+              (l.forma ? ' · ' + nomeForma(l.forma) : '') +
+              (l.km_rodado ? ' · ' + l.km_rodado + ' km' : '')),
+            el('span', { class: 'sub' },
+              (l.situacao ? l.situacao.replace(/_/g, ' ') + ' · ' : '') +
+              'lançado por ' + (nomeDoRep(l.representante_id) || '—'))),
+          el('button', {
+            class: 'btn-icon', 'aria-label': 'Excluir lançamento', onclick: async () => {
+              if (!(await confirmar('Excluir este lançamento de ' + C.fmtMoney(l.valor) + '?'))) return;
+              DB.remove('despesas', l.id);
+              toast('Lançamento excluído.'); render();
+            }
+          }, ico('lixeira'))))
+          : el('p', { class: 'vazio' }, 'Nenhum lançamento com esses filtros.')));
+    }
+
+    // ── COMISSÕES: individual por vendedor + total da empresa ──
+    function listaComissoes(box, mes) {
+      const vends = DB.all('representantes').filter(r => r.papel === 'vendedor');
+      const todas = comissoesDoMes(mes);
+      const total = C.round2(todas.reduce((t2, v) => t2 + Number(v.comissao_valor || 0), 0));
+      box.appendChild(el('div', { class: 'total-bar' },
+        el('span', null, 'Total de comissões da empresa em ' + rotuloMes(mes)),
+        el('strong', null, C.fmtMoney(total))));
+      box.appendChild(el('div', { class: 'col gap8 mt8' },
+        vends.map(r => {
+          const minhas = todas.filter(v => v.representante_id === r.id);
+          const tt = C.round2(minhas.reduce((t2, v) => t2 + Number(v.comissao_valor || 0), 0));
+          return el('div', { class: 'cat-linha' },
+            el('div', { class: 'row space' },
+              el('span', { class: 'vend-nome' },
+                el('span', { class: 'vend-bolinha', style: 'background:' + corDoRep(r.id) }), r.nome),
+              el('strong', null, C.fmtMoney(tt))),
+            el('span', { class: 'sub' }, minhas.length + ' venda(s) com comissão caindo neste mês'));
+        })));
+      box.appendChild(el('h4', { class: 'mt16' }, 'Detalhe'));
+      box.appendChild(el('div', { class: 'col gap4 mt4' },
+        todas.length ? todas.map(v => {
+          const cli = DB.byId('clientes', v.cliente_id) || {};
+          return el('div', { class: 'hist-linha' },
+            el('span', null, dataBR(v.comissao_recebimento_em) + ' · ' + (cli.nome || '—') +
+              ' · ' + (nomeDoRep(v.representante_id) || '—') +
+              ' · venda ' + dataBR(v.data_visita) +
+              ' (' + C.fmtMoney(Number(v.valor_pedido)) + ' × ' + v.comissao_pct + '%)'),
+            el('strong', null, C.fmtMoney(Number(v.comissao_valor))));
+        }) : el('p', { class: 'vazio' }, 'Nenhuma comissão prevista para este mês.')));
+      box.appendChild(el('p', { class: 'sub mt8' },
+        'As porcentagens de cada vendedor ficam em Admin → Vendedores. ' +
+        'O prazo de recebimento vem do cadastro do cliente (Clamed = 45 dias).'));
+    }
+
+    // ── RELATÓRIO: período livre, por categoria, com exportação ──
+    function relatorio(box, mes) {
+      const per = DB.config('fin_periodo', null) || {};
+      const de = el('input', { class: 'input', type: 'date', value: per.de || (mes + '-01') });
+      const ate = el('input', { class: 'input', type: 'date', value: per.ate || ultimoDiaISO(mes) });
+      const saida = el('div', { class: 'mt12' });
+      const pintar = () => {
+        const d1 = de.value, d2 = ate.value;
+        saida.innerHTML = '';
+        if (!d1 || !d2 || d1 > d2) {
+          saida.appendChild(el('p', { class: 'vazio' }, 'Escolha um período válido.'));
+          return;
+        }
+        const dentro = (iso) => iso >= d1 && iso <= d2;
+        const lancs = lancamentosFin().filter(l => dentro(l.data))
+          .filter(l => filtro.rep === 'todos' || l.representante_id === filtro.rep)
+          .filter(l => filtro.categoria === 'todos' || l.categoria === filtro.categoria)
+          .filter(l => filtro.natureza === 'todos' || l.natureza === filtro.natureza);
+        const coms = DB.all('visitas')
+          .filter(v => dentro((v.comissao_recebimento_em || '').slice(0, 10)) && Number(v.comissao_valor) !== 0)
+          .filter(v => filtro.rep === 'todos' || v.representante_id === filtro.rep);
+        const receitas = C.round2(lancs.filter(l => l.natureza === 'receita').reduce((t2, l) => t2 + l.valor, 0));
+        const despesas = C.round2(lancs.filter(l => l.natureza === 'despesa').reduce((t2, l) => t2 + l.valor, 0));
+        const comissoes = C.round2(coms.reduce((t2, v) => t2 + Number(v.comissao_valor || 0), 0));
+        const saldo = C.round2(receitas - despesas - comissoes);
+        const porCat = {};
+        lancs.forEach(l => {
+          const k = l.natureza + '|' + l.categoria;
+          porCat[k] = C.round2((porCat[k] || 0) + l.valor);
+        });
+        const linhasCat = Object.entries(porCat)
+          .map(([k, v]) => ({ natureza: k.split('|')[0], cat: k.split('|')[1], valor: v }))
+          .sort((a, b) => b.valor - a.valor);
+
+        saida.appendChild(el('div', { class: 'kpis' },
+          el('div', { class: 'kpi ok' }, el('span', { class: 'kpi-rot' }, 'Receitas'),
+            el('strong', { class: 'kpi-val' }, C.fmtMoney(receitas))),
+          el('div', { class: 'kpi erro' }, el('span', { class: 'kpi-rot' }, 'Despesas'),
+            el('strong', { class: 'kpi-val' }, C.fmtMoney(despesas))),
+          el('div', { class: 'kpi' }, el('span', { class: 'kpi-rot' }, 'Comissões'),
+            el('strong', { class: 'kpi-val' }, C.fmtMoney(comissoes))),
+          el('div', { class: 'kpi ' + (saldo >= 0 ? 'ok' : 'erro') },
+            el('span', { class: 'kpi-rot' }, 'Saldo do período'),
+            el('strong', { class: 'kpi-val' }, C.fmtMoney(saldo)))));
+
+        saida.appendChild(el('h4', { class: 'mt16' }, 'Por categoria'));
+        saida.appendChild(el('div', { class: 'col gap4 mt4' },
+          linhasCat.length ? linhasCat.map(l => el('div', { class: 'hist-linha' },
+            el('span', null, (l.natureza === 'receita' ? '↑ ' : '↓ ') + nomeCategoria(l.cat)),
+            el('strong', { class: l.natureza === 'receita' ? 'ok' : null }, C.fmtMoney(l.valor))))
+            : el('p', { class: 'vazio' }, 'Nada lançado no período.')));
+        if (comissoes > 0)
+          saida.appendChild(el('div', { class: 'hist-linha' },
+            el('span', null, '↓ Comissões calculadas das vendas'),
+            el('strong', null, C.fmtMoney(comissoes))));
+
+        // exportação
+        const colunas = [{ t: 'Data', peso: 1 }, { t: 'Tipo', peso: 1 }, { t: 'Categoria', peso: 1.4 },
+          { t: 'Descrição', peso: 2 }, { t: 'Forma', peso: 1 }, { t: 'Situação', peso: 1 },
+          { t: 'Lançado por', peso: 1.2 }, { t: 'Valor', peso: 1 }];
+        const linhasExp = lancs.sort((a, b) => (a.data || '').localeCompare(b.data || ''))
+          .map(l => [dataBR(l.data), l.natureza === 'receita' ? 'Receita' : 'Despesa',
+            nomeCategoria(l.categoria), l.descricao || '', nomeForma(l.forma),
+            (l.situacao || '').replace(/_/g, ' '), nomeDoRep(l.representante_id) || '',
+            C.fmtMoney(l.valor)])
+          .concat(coms.map(v => [dataBR(v.comissao_recebimento_em), 'Comissão', 'Comissão da venda',
+            (DB.byId('clientes', v.cliente_id) || {}).nome || '', '', 'calculada',
+            nomeDoRep(v.representante_id) || '', C.fmtMoney(Number(v.comissao_valor))]));
+        const subtitulo = 'De ' + dataBR(d1) + ' a ' + dataBR(d2) +
+          ' · receitas ' + C.fmtMoney(receitas) + ' · despesas ' + C.fmtMoney(despesas) +
+          ' · comissões ' + C.fmtMoney(comissoes) + ' · saldo ' + C.fmtMoney(saldo);
+        saida.appendChild(el('div', { class: 'row gap8 mt16' },
+          el('button', {
+            class: 'btn grow', onclick: () => {
+              const blob = window.NSPDF.gerarRelatorio({
+                titulo: 'NEW STAR — Financeiro', subtitulo, colunas, linhas: linhasExp
+              });
+              window.NSUI.baixar(blob, 'financeiro-' + d1 + '-a-' + d2 + '.pdf');
+              toast(linhasExp.length + ' linha(s) em PDF.');
+            }
+          }, rot('documento', 'Exportar PDF')),
+          el('button', {
+            class: 'btn btn-sec grow', onclick: () => {
+              const blob = gerarXLSX([colunas.map(c => c.t)].concat(linhasExp), 'Financeiro');
+              window.NSUI.baixar(blob, 'financeiro-' + d1 + '-a-' + d2 + '.xlsx');
+              toast(linhasExp.length + ' linha(s) em Excel.');
+            }
+          }, rot('planilha', 'Exportar Excel'))));
+      };
+      box.appendChild(el('div', { class: 'fin-filtros' },
+        el('label', { class: 'campo' }, el('span', { class: 'sub' }, 'De'), de),
+        el('label', { class: 'campo' }, el('span', { class: 'sub' }, 'Até'), ate)));
+      box.appendChild(el('button', {
+        class: 'btn w100 mt8', onclick: () => {
+          DB.upsertConfig('fin_periodo', { de: de.value, ate: ate.value });
+          pintar();
+        }
+      }, rot('lupa', 'Gerar relatório')));
+      box.appendChild(saida);
+      pintar();
+    }
+
+    // ── LANÇAR: modal compacto, tudo na mesma tela, sem rolagem ──
+    function lancar(natureza, mes, edit) {
+      const ehReceita = natureza === 'receita';
       const hojeMes = mesISOoffset(0);
-      const dataPadrao = mes === hojeMes ? hojeISO() : mes + '-01';
-      const cat = el('select', { class: 'input big' }, Object.entries(CATS_FIN).map(([v, r2]) => el('option', { value: v }, r2)));
-      const val = el('input', { class: 'input big', type: 'number', step: '0.01', inputmode: 'decimal', placeholder: 'Valor (R$)' });
-      const km = el('input', { class: 'input big', type: 'number', step: '1', inputmode: 'numeric', placeholder: 'Km rodado (opcional)' });
-      const dt = el('input', { class: 'input big', type: 'date', value: dataPadrao });
-      const obs = el('input', { class: 'input big', placeholder: 'Descrição (ex.: fatura do cartão, parcela…)' });
-      const mm = modal(el('div', { class: 'col gap8' },
-        el('p', { class: 'sub' }, 'Pode lançar em qualquer mês — inclusive futuros (contas a pagar).'),
-        cat, val, km, dt, obs,
+      const dataPadrao = edit ? edit.data : (mes === hojeMes ? hojeISO() : mes + '-01');
+      const campo = (rotulo, elemento) => el('label', { class: 'campo' },
+        el('span', { class: 'sub' }, rotulo), elemento);
+      const val = el('input', {
+        class: 'input big', type: 'number', step: '0.01', inputmode: 'decimal',
+        placeholder: '0,00', value: edit ? edit.valor : ''
+      });
+      const dt = el('input', { class: 'input', type: 'date', value: dataPadrao });
+      const cat = el('select', { class: 'input' }, categoriasFin(natureza)
+        .map(c => el('option', { value: c.chave, selected: edit && edit.categoria === c.chave ? '' : null }, c.nome)));
+      const desc = el('input', { class: 'input', placeholder: ehReceita ? 'Descrição da receita' : 'Descrição da despesa', value: edit ? edit.descricao : '' });
+      const forma = el('select', { class: 'input' },
+        el('option', { value: '' }, 'Forma de pagamento'),
+        FORMAS_PAG.map(([v, r]) => el('option', { value: v, selected: edit && edit.forma === v ? '' : null }, r)));
+      const origem = el('input', { class: 'input', placeholder: 'Origem (quem pagou)', value: edit ? edit.origem : '' });
+      const sit = el('select', { class: 'input' }, (ehReceita
+        ? [['recebido', 'Recebido'], ['a_receber', 'A receber']]
+        : [['pago', 'Pago'], ['a_pagar', 'A pagar']])
+        .map(([v, r]) => el('option', { value: v, selected: edit && edit.situacao === v ? '' : null }, r)));
+      const km = el('input', {
+        class: 'input', type: 'number', step: '1', inputmode: 'numeric',
+        placeholder: 'Km (opcional)', value: edit && edit.km_rodado ? edit.km_rodado : ''
+      });
+      const obs = el('input', { class: 'input', placeholder: 'Observações (opcional)', value: edit ? edit.observacoes : '' });
+
+      const mm = modal(el('div', { class: 'col gap8 form-fin' },
+        el('div', { class: 'fin-topo ' + natureza },
+          el('span', null, ehReceita ? 'ENTRADA NO CAIXA' : 'SAÍDA DO CAIXA'), val),
+        el('div', { class: 'fin-grade' },
+          campo('Data', dt), campo('Categoria', cat)),
+        campo(ehReceita ? 'Descrição' : 'Descrição', desc),
+        el('div', { class: 'fin-grade' },
+          campo(ehReceita ? 'Origem' : 'Forma de pagamento', ehReceita ? origem : forma),
+          campo('Situação', sit)),
+        ehReceita ? null : el('div', { class: 'fin-grade' }, campo('Km rodado', km), campo('Observações', obs)),
+        ehReceita ? campo('Observações', obs) : null,
+        el('div', { class: 'row gap8 mt8' },
+          el('button', { class: 'btn btn-sec grow', onclick: () => mm.fechar() }, 'Cancelar'),
+          el('button', {
+            class: 'btn grow ' + (ehReceita ? 'btn-receita' : 'btn-despesa'), onclick: () => {
+              const v = Number(String(val.value).replace(',', '.'));
+              if (!(v > 0)) return toast('Informe o valor.', 'erro');
+              if (!dt.value) return toast('Informe a data.', 'erro');
+              const body = {
+                representante_id: (edit && edit.representante_id) || s.rep.id,
+                data_despesa: dt.value, natureza,
+                categoria: cat.value, tipo: cat.value,
+                valor: C.round2(v),
+                descricao: desc.value.trim() || null,
+                forma_pagamento: ehReceita ? null : (forma.value || null),
+                origem: ehReceita ? (origem.value.trim() || null) : null,
+                situacao: sit.value,
+                observacoes: obs.value.trim() || null,
+                km_rodado: (!ehReceita && km.value) ? Number(km.value) : null
+              };
+              if (edit) DB.update('despesas', edit.id, body);
+              else DB.insert('despesas', body);
+              mm.fechar();
+              toast((ehReceita ? 'Receita' : 'Despesa') + ' de ' + C.fmtMoney(C.round2(v)) + ' ' +
+                (edit ? 'atualizada.' : 'lançada.'), ehReceita ? 'ok' : undefined);
+              render();
+            }
+          }, rot('salvar', edit ? 'Salvar' : 'Lançar')))),
+      { titulo: (edit ? 'Editar ' : 'Nova ') + (ehReceita ? 'receita' : 'despesa'), centro: true });
+      setTimeout(() => { try { val.focus(); } catch (e) {} }, 60);
+    }
+  }
+
+  // ---------- Admin: categorias do financeiro ----------
+  function telaCategoriasFin() {
+    const wrap = el('div');
+    const m = modal(wrap, { titulo: 'Categorias do financeiro', full: true });
+    render();
+    function salvar(lista) { DB.upsertConfig('categorias_fin', lista); }
+    function render() {
+      wrap.innerHTML = '';
+      const extras = DB.config('categorias_fin', []);
+      const extrasArr = Array.isArray(extras) ? extras : [];
+      wrap.appendChild(el('p', { class: 'sub' },
+        'As categorias organizam o relatório de gastos. As de fábrica não somem; ' +
+        'as que você criar aqui entram na lista de lançamento.'));
+      for (const nat of ['despesa', 'receita']) {
+        wrap.appendChild(el('div', { class: 'row space mt16' },
+          el('h4', null, nat === 'despesa' ? 'Despesas' : 'Receitas'),
+          el('button', { class: 'btn', onclick: () => nova(nat) }, '+ Categoria')));
+        wrap.appendChild(el('div', { class: 'col gap4 mt4' },
+          categoriasFin(nat).map(c => {
+            const minha = extrasArr.some(x => x.chave === c.chave);
+            return el('div', { class: 'hist-linha' },
+              el('span', null, c.nome),
+              minha ? el('button', {
+                class: 'btn-icon', 'aria-label': 'Excluir', onclick: async () => {
+                  const usada = DB.all('despesas').some(d => (d.categoria || d.tipo) === c.chave);
+                  if (usada) return toast('Categoria já usada em lançamentos — renomeie em vez de excluir.', 'erro');
+                  if (!(await confirmar('Excluir a categoria "' + c.nome + '"?'))) return;
+                  salvar(extrasArr.filter(x => x.chave !== c.chave));
+                  render();
+                }
+              }, ico('lixeira')) : el('span', { class: 'badge' }, 'de fábrica'));
+          })));
+      }
+    }
+    function nova(natureza) {
+      const nm = el('input', { class: 'input big', placeholder: 'Nome da categoria' });
+      const mm = modal(el('div', { class: 'col gap8' }, nm,
         el('button', {
           class: 'btn big w100', onclick: () => {
-            if (!Number(val.value)) return toast('Informe o valor.', 'erro');
-            if (!dt.value) return toast('Informe a data.', 'erro');
-            DB.insert('despesas', {
-              representante_id: repId || s.rep.id, data_despesa: dt.value, tipo: cat.value,
-              valor: Number(val.value), km_rodado: km.value ? Number(km.value) : null, descricao: obs.value || null
-            });
-            mm.fechar(); render();
+            const nome = nm.value.trim();
+            if (!nome) return toast('Informe o nome.', 'erro');
+            const chave = 'c_' + nome.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+              .replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+            const extras = DB.config('categorias_fin', []);
+            const lista = (Array.isArray(extras) ? extras : []).filter(x => x.chave !== chave);
+            lista.push({ chave, nome, natureza });
+            salvar(lista);
+            mm.fechar(); toast('Categoria criada.'); render();
           }
-        }, 'Salvar')), { titulo: 'Nova despesa' });
+        }, rot('salvar', 'Salvar categoria'))), { titulo: 'Nova categoria de ' + natureza });
     }
   }
 
@@ -3131,10 +3678,17 @@
         el('option', { value: 'vendedor', selected: r.papel !== 'gestor' ? '' : null }, 'Vendedor'),
         el('option', { value: 'gestor', selected: r.papel === 'gestor' ? '' : null }, 'Gestor'));
       const ativo = el('input', { type: 'checkbox', checked: r.ativo !== false ? '' : null });
+      const corAtual = chaveCorRep(r);
+      const corSel = el('select', { class: 'input' }, CORES_REP.map(([v, nome]) =>
+        el('option', { value: v, selected: corAtual === v ? '' : null }, nome)));
       const mm = modal(el('div', { class: 'col gap8' },
         inp('nome', 'Nome *'), inp('email', 'E-mail (login) *', 'email'), inp('contato', 'Contato (sai no talão)'),
         inp('comissao_pct_novo', '% comissão cliente novo', 'number', '0.1'),
-        inp('comissao_pct', '% comissão reposição', 'number', '0.1'),
+        inp('comissao_pct', '% comissão reposição — Tabela Simples', 'number', '0.1'),
+        inp('comissao_pct_lucro', '% comissão reposição — Lucro Presumido', 'number', '0.1'),
+        el('label', { class: 'campo' },
+          el('span', { class: 'sub' }, 'Cor do vendedor (botão de faturado e painel)'), corSel,
+          el('span', { class: 'sub' }, 'É por esta cor que se enxerga de quem é cada pedido.')),
         inp('custo_km', 'Custo por km (R$)', 'number', '0.01'),
         inp('cidade_base', 'Cidade base'),
         inp('lat_base', 'Base — latitude', 'number', 'any'), inp('lng_base', 'Base — longitude', 'number', 'any'),
@@ -3156,6 +3710,8 @@
                 nome: f.nome.value.trim(), email: f.email.value.trim().toLowerCase(),
                 contato: f.contato.value.trim() || null,
                 comissao_pct_novo: Number(f.comissao_pct_novo.value) || 15,
+                comissao_pct_lucro: f.comissao_pct_lucro.value === '' ? null : Number(f.comissao_pct_lucro.value),
+                cor: corSel.value,
                 comissao_pct: Number(f.comissao_pct.value) || 10,
                 custo_km: Number(f.custo_km.value) || 0.8,
                 cidade_base: f.cidade_base.value.trim() || null,
@@ -3168,6 +3724,90 @@
               mm.fechar(); render();
             }
           }, 'Salvar'))), { titulo: r.id ? 'Editar vendedor' : 'Novo vendedor', full: true });
+    }
+  }
+
+  // ---------- Admin: Feriados ----------
+  // Os feriados NACIONAIS já vêm prontos e se calculam sozinhos todo ano — a
+  // Paixão de Cristo muda de data e o app acompanha. Aqui entram os outros: o
+  // feriado da cidade, o do estado, o ponto facultativo que a empresa decidir
+  // folgar e qualquer dia em que não se trabalha. Dia cadastrado aqui sai da
+  // conta de dias úteis e, com isso, da divisão da meta.
+  function telaFeriados() {
+    const wrap = el('div');
+    const m = modal(wrap, { titulo: 'Feriados e dias parados', full: true });
+    let ano = Number(hojeISO().slice(0, 4));
+    render();
+    function salvar(lista) {
+      DB.upsertConfig('feriados_extra', lista
+        .map(f => ({ data: String(f.data).slice(0, 10), nome: (f.nome || '').trim() || 'Dia parado' }))
+        .filter(f => /^\d{4}-\d{2}-\d{2}$/.test(f.data))
+        .sort((a3, b3) => a3.data.localeCompare(b3.data)));
+    }
+    function render() {
+      wrap.innerHTML = '';
+      const extras = feriadosExtra();
+      const nacionais = C.feriadosNacionais(ano);
+      const doAno = (f) => String(typeof f === 'string' ? f : f.data).slice(0, 4) === String(ano);
+      wrap.appendChild(el('div', { class: 'row space' },
+        el('button', { class: 'btn-mini', onclick: () => { ano--; render(); }, 'aria-label': 'Ano anterior' }, ico('setaEsq')),
+        el('h3', null, String(ano)),
+        el('button', { class: 'btn-mini', onclick: () => { ano++; render(); }, 'aria-label': 'Próximo ano' }, ico('setaDir'))));
+      wrap.appendChild(el('p', { class: 'sub mt8' },
+        'Dia que está nesta tela não conta como dia útil: ele sai da divisão da meta do dia. ' +
+        'Sábado e domingo já saem sozinhos.'));
+
+      // quanto isso muda nos dias úteis de cada mês do ano
+      const uteis = Array.from({ length: 12 }, (_, i) => {
+        const mesIso = ano + '-' + String(i + 1).padStart(2, '0');
+        return { mes: mesIso, n: C.diasUteisDoMes(mesIso, extras) };
+      });
+      wrap.appendChild(el('h4', { class: 'mt12' }, 'Dias úteis por mês'));
+      wrap.appendChild(el('div', { class: 'dias-scroll mt4' },
+        uteis.map(u => el('span', { class: 'chip' }, u.mes.slice(5) + '/' + ano + ' · ' + u.n + 'd'))));
+
+      wrap.appendChild(el('h4', { class: 'mt16' }, 'Feriados nacionais ' + ano));
+      wrap.appendChild(el('p', { class: 'sub' },
+        'Já entram sozinhos, não precisa cadastrar. Carnaval e Corpus Christi são ponto ' +
+        'facultativo, não feriado nacional: se a empresa for parar, cadastre embaixo.'));
+      wrap.appendChild(el('div', { class: 'col gap4 mt4' },
+        nacionais.map(f => el('div', { class: 'hist-linha' },
+          el('span', null, dataBR(f) + ' · ' + (nomeFeriado(f) || 'Feriado nacional')),
+          el('span', { class: 'badge ok' }, 'nacional')))));
+
+      const meus = extras.filter(doAno);
+      wrap.appendChild(el('div', { class: 'row space mt16' },
+        el('h4', null, 'Dias parados cadastrados'),
+        el('button', { class: 'btn', onclick: () => novo() }, '+ Adicionar dia')));
+      wrap.appendChild(el('div', { class: 'col gap4 mt4' },
+        meus.length ? meus.map(f => el('div', { class: 'hist-linha' },
+          el('span', null, dataBR(f.data) + ' · ' + (f.nome || 'Dia parado')),
+          el('button', {
+            class: 'btn-icon', 'aria-label': 'Excluir', onclick: async () => {
+              if (!(await confirmar('Tirar ' + dataBR(f.data) + ' da lista de dias parados?'))) return;
+              salvar(extras.filter(x => (typeof x === 'string' ? x : x.data) !== f.data));
+              toast('Dia removido. A meta já volta a contar com ele.');
+              render();
+            }
+          }, ico('lixeira'))))
+          : el('p', { class: 'vazio' }, 'Nenhum dia parado cadastrado para ' + ano + '.')));
+    }
+    function novo() {
+      const dt = el('input', { class: 'input big', type: 'date', value: hojeISO() });
+      const nm = el('input', { class: 'input big', placeholder: 'Motivo (ex.: feriado da cidade, Carnaval)' });
+      const mm = modal(el('div', { class: 'col gap8' },
+        el('p', { class: 'sub' }, 'Este dia deixa de contar como dia útil na meta.'),
+        el('label', { class: 'campo' }, el('span', { class: 'sub' }, 'Data'), dt),
+        nm,
+        el('button', {
+          class: 'btn big w100', onclick: () => {
+            if (!dt.value) return toast('Informe a data.', 'erro');
+            const lista = feriadosExtra().filter(f => (typeof f === 'string' ? f : f.data) !== dt.value);
+            lista.push({ data: dt.value, nome: nm.value.trim() });
+            salvar(lista);
+            mm.fechar(); toast('Dia parado cadastrado.'); render();
+          }
+        }, rot('salvar', 'Salvar dia parado'))), { titulo: 'Novo dia parado' });
     }
   }
 
@@ -3278,6 +3918,7 @@
   window.NSApp = {
     sessao, nav, recalcularCicloCliente, marcarFaturado, avisarPendentesNewStar, editarCliente,
     linkMaps, ligarBuscaCep, completarCatalogo, dataDoDia,
+    podeFaturar, confirmarFaturamento, corDoRep, corTextoRep, motivoNaoFatura,
     // Pedido digitado para quem não estava na rota: o cliente entra na rota de
     // HOJE já atendido, e o atendimento conta na meta de visitação.
     aoConcluirPedido(pedido) {

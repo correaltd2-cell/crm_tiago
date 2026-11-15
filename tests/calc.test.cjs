@@ -369,10 +369,14 @@ console.log('\nIdentidade visual Prompt Star:');
 const paleta = ['#F9D132', '#DB80FF', '#FFFFFF', '#C1FF72', '#FF5757', '#290F5D'];
 eq('as 6 cores oficiais estão nos tokens',
   paleta.every(c => idxHtml.includes(c) || idxHtml.includes(c.toLowerCase())), true);
-// gradiente some da interface: só sobram os dois carets dos <select>, que são
-// ícones desenhados em CSS, não cor de fundo de componente
+// gradiente só onde foi pedido: os dois carets dos <select> (ícones desenhados
+// em CSS) e o aviso de pedido pendente, que o gestor pediu chamativo
 const gradientes = (idxHtml.match(/linear-gradient|radial-gradient/g) || []).length;
-eq('interface sem gradientes de cor (só os 2 carets dos campos de escolha)', gradientes <= 2, true);
+eq('interface sem gradiente espalhado (carets + aviso de pendência)', gradientes <= 5, true);
+const linhasGrad = idxHtml.split('\n').filter(l => /linear-gradient|radial-gradient/.test(l));
+eq('e todo gradiente está no caret ou no aviso de pendência',
+  linhasGrad.every(l => /background-image:linear-gradient\(45deg/.test(l) ||
+    /modal-pendente|pend-selo|btn-pendente|var\(--laranja\),#e5760a/.test(l)), true);
 eq('tipografia Poppins carregada localmente', idxHtml.includes("@font-face") && idxHtml.includes('poppins-400-latin'), true);
 eq('fonte aplicada no corpo do app', /body\{[^}]*font-family:var\(--fonte\)/.test(idxHtml), true);
 
@@ -446,6 +450,142 @@ eq('e o selo de prioridade usa esse azul',
 eq('tirar o pedido encerra a prioridade do cliente',
   /prioridade: false/.test(lerPub('public/js/app.js')), true);
 
+console.log('\nFeriados e dias úteis:');
+const FER26 = ['2026-01-01','2026-04-03','2026-04-21','2026-05-01','2026-09-07',
+  '2026-10-12','2026-11-02','2026-11-15','2026-11-20','2026-12-25'];
+eq('os 10 feriados nacionais de 2026 batem com a lista oficial',
+  C.feriadosNacionais(2026).join(','), FER26.join(','));
+eq('a Paixão de Cristo é calculada (muda de ano para ano)',
+  C.feriadosNacionais(2027)[1], '2027-03-26');
+eq('20/11 não é dia útil', C.ehDiaUtil(2026, 11, 20, C.feriadosDoAno(2026)), false);
+eq('19/11 é dia útil', C.ehDiaUtil(2026, 11, 19, C.feriadosDoAno(2026)), true);
+eq('novembro/2026 tem 19 dias úteis (21 de semana − 2 feriados)',
+  C.diasUteisDoMes('2026-11'), 19);
+eq('dezembro/2026 tem 22 (o Natal cai numa sexta)', C.diasUteisDoMes('2026-12'), 22);
+eq('dia parado cadastrado pela empresa também sai da conta',
+  C.diasUteisDoMes('2026-11', [{ data: '2026-11-19', nome: 'Feriado da cidade' }]), 18);
+eq('Carnaval NÃO entra sozinho (é ponto facultativo)',
+  C.feriadosNacionais(2026).indexOf('2026-02-17'), -1);
+eq('o próximo dia útil pula feriado e fim de semana',
+  C.proximoDiaUtil('2026-11-19'), '2026-11-23');
+
+console.log('\nMeta do dia congelada e meta da equipe:');
+const fer = C.feriadosNacionais(2026);
+const d1 = C.metaDoDia({ metaMes: 200000, vendidoAteOntem: 100000, hoje: '2026-11-16', feriados: fer });
+eq('meta do dia = o que falta ÷ dias úteis restantes', d1.metaDia, 10000);
+eq('e os dias úteis restantes já descontam o feriado', d1.uteisRestantes, 10);
+// vender durante o dia NÃO muda o alvo: a base é o vendido ATÉ ONTEM
+const d2 = C.metaDoDia({ metaMes: 200000, vendidoAteOntem: 100000, hoje: '2026-11-16', feriados: fer });
+eq('a meta do dia não se mexe com a venda de hoje', d2.metaDia, d1.metaDia);
+eq('meta do mês já batida → meta do dia zero',
+  C.metaDoDia({ metaMes: 200000, vendidoAteOntem: 210000, hoje: '2026-11-16', feriados: fer }).metaDia, 0);
+eq('e nunca devolve valor negativo',
+  C.metaDoDia({ metaMes: 200000, vendidoAteOntem: 210000, hoje: '2026-11-16', feriados: fer }).faltaMes >= 0, true);
+// excedente de um dia alivia os próximos
+const diaRuim = C.metaDoDia({ metaMes: 200000, vendidoAteOntem: 100000, hoje: '2026-11-16', feriados: fer });
+const diaBom = C.metaDoDia({ metaMes: 200000, vendidoAteOntem: 115000, hoje: '2026-11-17', feriados: fer });
+eq('vendeu acima da meta → a necessidade dos próximos dias cai',
+  diaBom.metaDia < diaRuim.metaDia, true);
+const diaFraco = C.metaDoDia({ metaMes: 200000, vendidoAteOntem: 102000, hoje: '2026-11-17', feriados: fer });
+eq('vendeu abaixo → a necessidade dos próximos dias sobe',
+  diaFraco.metaDia > diaRuim.metaDia, true);
+// a meta é da EQUIPE: as vendas dos dois somam na mesma conta
+const eqp = C.metaEquipe({ metaMes: 200000, vendidoMes: 108000, vendidoHoje: 8000,
+  hoje: '2026-11-16', feriados: fer });
+eq('Gustavo 5.000 + Denilson 3.000 = 8.000 na meta do dia', eqp.vendidoHoje, 8000);
+eq('e a mesma meta diária vale para os dois', eqp.metaDia, 10000);
+eq('falta para a meta do dia = alvo − vendido pela equipe', eqp.faltaHoje, 2000);
+eq('passando da meta do dia, mostra o excedente',
+  C.metaEquipe({ metaMes: 200000, vendidoMes: 115000, vendidoHoje: 15000,
+    hoje: '2026-11-16', feriados: fer }).excedenteHoje, 5000);
+eq('o alvo congelado da data manda mais que o cálculo',
+  C.metaEquipe({ metaMes: 200000, vendidoMes: 108000, vendidoHoje: 8000,
+    hoje: '2026-11-16', feriados: fer, metaDiaFixada: 12300 }).metaDia, 12300);
+const appG = lerPub('public/js/app.js');
+eq('o alvo do dia fica gravado na data', /const chave = 'meta_dia_fixa_' \+ dia;/.test(appG), true);
+eq('e não é refeito enquanto a meta do mês for a mesma',
+  /if \(salvo && Number\(salvo\.meta_mes\) === Number\(metaMes\)/.test(appG), true);
+eq('o painel principal mostra a meta da EQUIPE',
+  /'Meta do mês · equipe'/.test(appG) && /'Vendido pela equipe'/.test(appG), true);
+eq('com atingimento, meta do dia e falta do dia',
+  /'Atingimento'/.test(appG) && /'Meta de hoje · equipe'/.test(appG) &&
+  /'Falta para a meta de hoje'/.test(appG), true);
+eq('e o indicador de meta batida', /'META DO MÊS BATIDA!'/.test(appG), true);
+eq('o desempenho individual tem mês, dia e pedidos',
+  /mini\('no mês'/.test(appG) && /mini\('no dia'/.test(appG) &&
+  /mini\('pedidos no mês'/.test(appG) && /mini\('pedidos no dia'/.test(appG), true);
+eq('e a contribuição de cada um para a meta da equipe',
+  /'Representa ' \+ C\.fmtPct\(pct\(l\.vendido\)\) \+ ' da meta da equipe'/.test(appG), true);
+
+console.log('\nFinanceiro da empresa:');
+eq('o caixa é único (não separa por vendedor)',
+  /CAIXA ÚNICO/.test(appG) && !/function telaFinanceiro\(\)[\s\S]{0,400}const doRep/.test(appG), true);
+eq('receita e despesa convivem na mesma tabela, com compatibilidade',
+  /natureza: r\.natureza === 'receita' \? 'receita' : 'despesa'/.test(appG) &&
+  /categoria: r\.categoria \|\| r\.tipo \|\| 'outro'/.test(appG), true);
+eq('as categorias são editáveis sem mexer no código',
+  /function categoriasFin/.test(appG) && /function telaCategoriasFin/.test(appG), true);
+eq('as 10 categorias pedidas estão de fábrica',
+  ['Alimentação','Combustível','Manutenção','Transporte','Hospedagem','Materiais',
+    'Escritório','Impostos','Comissões','Outros'].every(n => appG.includes("'" + n)), true);
+eq('o lançamento tem forma de pagamento, situação e observações',
+  /forma_pagamento:/.test(appG) && /situacao: sit\.value/.test(appG) &&
+  /observacoes: obs\.value\.trim\(\)/.test(appG), true);
+eq('o relatório soma receitas, despesas, comissões e saldo',
+  /const saldo = C\.round2\(receitas - despesas - comissoes\);/.test(appG), true);
+eq('e exporta em PDF e em Excel',
+  /'Exportar PDF'/.test(appG) && /'Exportar Excel'/.test(appG), true);
+eq('as comissões aparecem por vendedor e no total da empresa',
+  /'Total de comissões da empresa em '/.test(appG), true);
+eq('as porcentagens de comissão continuam configuráveis no cadastro',
+  /comissao_pct_lucro', '% comissão reposição — Lucro Presumido'/.test(appG), true);
+
+console.log('\nFaturamento no New Star:');
+eq('cada vendedor fatura só o pedido dele',
+  /function podeFaturar\(p\)[\s\S]{0,260}return !p\.representante_id \|\| p\.representante_id === s\.eu\.id;/.test(appG), true);
+eq('o gestor continua podendo faturar qualquer um',
+  /if \(s\.papel === 'gestor'\) return true;/.test(appG), true);
+eq('o bloqueio está na própria gravação, não só no botão',
+  /function marcarFaturado[\s\S]{0,200}if \(!podeFaturar\(p\)\)/.test(appG), true);
+eq('pergunta antes de faturar',
+  /Tem certeza de que deseja marcar este pedido como faturado no Newstar\?/.test(appG), true);
+eq('com botão de confirmar e de cancelar',
+  /ok: 'Confirmar faturamento', cancelar: 'Cancelar'/.test(appG), true);
+eq('o botão sai na cor do vendedor dono do pedido',
+  /const cor = corDoRep\(p\.representante_id\);/.test(appG), true);
+eq('Gustavo é laranja e Denilson é roxo brilhante',
+  /gustavo: 'laranja', denilson: 'roxo'/.test(appG) &&
+  /\['roxo', 'Roxo brilhante', '#8B2BFF'/.test(appG), true);
+eq('a cor do vendedor é configurável no cadastro', /cor: corSel\.value,/.test(appG), true);
+eq('o aviso de pendência é curto e não lista pedido',
+  /Existem pedidos pendentes para serem faturados no Newstar!/.test(appG) &&
+  /'Acessar pedidos'/.test(appG), true);
+eq('e leva direto para a aba de pedidos',
+  /onclick: \(\) => \{ m\.fechar\(\); nav\('pedidos'\); \}/.test(appG), true);
+eq('o aviso é centralizado e chamativo',
+  /classe: 'modal-pendente'/.test(appG) && /\.pend-selo\{/.test(idxHtml), true);
+
+console.log('\nTipos de placa: P, G e Avulso:');
+const pedT = lerPub('public/js/pedido.js');
+eq('cada tipo tem a sua identidade', /const TIPO_INFO = \{/.test(pedT), true);
+eq('P azul, G vermelho e Avulso verde',
+  /\.tipo-p\{--tipo:#2E5BFF/.test(idxHtml) && /\.tipo-g\{--tipo:#E02020/.test(idxHtml) &&
+  /\.tipo-av\{--tipo:#00A389/.test(idxHtml), true);
+eq('a cor pinta a área inteira do item, não só o botão',
+  /class: 'area-tipo tipo-' \+ TIPO_CLASSE\[item\.tamanho\]/.test(pedT) &&
+  /\.area-tipo \.stepper\{border-left:4px solid var\(--tipo\)\}/.test(idxHtml), true);
+eq('e o botão de incluir também', /btn grow btn-incluir tipo-/.test(pedT), true);
+eq('trocar o tipo redesenha a área na hora',
+  /onclick: \(\) => \{ item\.tamanho = t; formQtde\(\); \}/.test(pedT), true);
+eq('pergunta antes de incluir o item',
+  /'Confirmar inclusão ' \+ inf\.doArtigo \+ ' ' \+ inf\.nomeCurto \+ '\?/.test(pedT), true);
+eq('a janela de confirmação usa a cor do tipo',
+  /classe: 'modal-tipo tipo-' \+ TIPO_CLASSE\[item\.tamanho\]/.test(pedT), true);
+eq('e o aviso depois de incluir também',
+  /'tipo-' \+ TIPO_CLASSE\[item\.tamanho\]\);/.test(pedT) &&
+  /adicionada/.test(pedT) && /#ns-toast\.tipo-p/.test(idxHtml), true);
+eq('cancelar não inclui o item', /if \(!ok\) return;\s*\n\s*if \(isNovo\) ped\.itens\.push/.test(pedT), true);
+
 console.log('\nCarteira compartilhada entre os vendedores:');
 const appEq = lerPub('public/js/app.js');
 eq('a carteira compartilhada vem ligada por padrão',
@@ -492,15 +632,15 @@ eq('nem excluído', /podeMexer \? el\('button', \{\s*class: 'btn-link mt12'/.tes
 eq('e o app explica por quê', /mexe na comissão dele/.test(pedJs), true);
 
 eq('o painel mostra o placar da equipe',
-  /function placarEquipe\(mes\)/.test(appEq) && /function blocoEquipe/.test(appEq), true);
+  /function placarEquipe\(mes, dia\)/.test(appEq) && /function blocoEquipe/.test(appEq), true);
 eq('o placar só conta pedido concluído do mês',
   /if \(p\.status !== 'concluido'\) continue;/.test(appEq), true);
 eq('com um vendedor só, não existe placar de equipe',
   /if \(pl\.linhas\.length < 2\) return null;/.test(appEq), true);
 eq('a linha do próprio vendedor fica destacada', /l\.id === euId \? ' eu' : ''/.test(appEq), true);
 eq('e aparece também na tela de metas dos relatórios',
-  /const eq = blocoEquipe\(mes, metaMes\);/.test(appEq) &&
-  /const eqRel = blocoEquipe\(mes, metaMes\);/.test(appEq), true);
+  /const eq = blocoEquipe\(mes, metaMes, placar\);/.test(appEq) &&
+  /const eqRel = blocoEquipe\(mes, metaMes, plRel\);/.test(appEq), true);
 eq('o placar da equipe tem estilo próprio', /\.painel-equipe\{/.test(idxHtml), true);
 
 console.log('\nGIFT COLLECTION (produto em display):');

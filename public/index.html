@@ -241,6 +241,46 @@ select.input,select.input.big{appearance:none;-webkit-appearance:none;
 .btn-tam.ativo{border-color:var(--az3);color:#fff;background:var(--grad-azul);
   box-shadow:0 0 0 3px rgba(var(--glow-rgb),.2),0 8px 20px -10px rgba(var(--glow-rgb),.6)}
 
+/* ═══ IDENTIDADE DE CADA TIPO: placa P, placa G e avulso ═══
+   Três cores que não se confundem. Lançar G achando que é P custa caro, então
+   a cor não fica só no botão: pinta a faixa do item, os campos, o botão de
+   incluir, a janela de confirmação e o aviso que aparece depois. */
+.tipo-p{--tipo:#2E5BFF;--tipo-escuro:#15307f;--tipo-tint:#e8edff;--tipo-texto:#fff}
+.tipo-g{--tipo:#E02020;--tipo-escuro:#8c0f0f;--tipo-tint:#ffeaea;--tipo-texto:#fff}
+.tipo-av{--tipo:#00A389;--tipo-escuro:#00584a;--tipo-tint:#e2fbf5;--tipo-texto:#fff}
+.btn-tam{display:flex;flex-direction:column;align-items:center;gap:3px}
+.btn-tam-sigla{font-size:1.18rem;font-weight:900;line-height:1}
+.btn-tam-rot{font-size:.72rem;font-weight:700;opacity:.85;line-height:1.1}
+.btn-tam.tipo-p,.btn-tam.tipo-g,.btn-tam.tipo-av{border-color:var(--tipo);color:var(--tipo-escuro)}
+.btn-tam.tipo-p .btn-tam-sigla,.btn-tam.tipo-g .btn-tam-sigla,.btn-tam.tipo-av .btn-tam-sigla{color:var(--tipo)}
+.btn-tam.ativo.tipo-p,.btn-tam.ativo.tipo-g,.btn-tam.ativo.tipo-av{
+  background:var(--tipo);border-color:var(--tipo);color:var(--tipo-texto);
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--tipo) 28%,transparent),0 10px 22px -10px var(--tipo)}
+.btn-tam.ativo.tipo-p .btn-tam-sigla,.btn-tam.ativo.tipo-g .btn-tam-sigla,
+.btn-tam.ativo.tipo-av .btn-tam-sigla{color:var(--tipo-texto)}
+.area-tipo{border-radius:var(--r-lg);padding:2px;transition:.25s}
+.area-tipo .faixa-tipo{display:flex;align-items:center;gap:8px;background:var(--tipo);
+  color:var(--tipo-texto);border-radius:12px;padding:8px 11px;margin-bottom:10px;
+  font-size:.76rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+.faixa-tipo-sigla{background:rgba(255,255,255,.22);border-radius:7px;padding:2px 8px;
+  font-size:.92rem;font-weight:900;letter-spacing:0}
+.faixa-tipo-un{margin-left:auto;font-size:.68rem;opacity:.9;text-transform:none;letter-spacing:0}
+.area-tipo .stepper{border-left:4px solid var(--tipo)}
+.area-tipo .calc-live{border-left:4px solid var(--tipo)}
+.area-tipo .btn-step{border-color:var(--tipo)}
+.btn.btn-incluir{background:var(--tipo,var(--roxo));color:var(--tipo-texto,#fff);border-color:transparent}
+.modal-tipo .ns-modal-head{background:var(--tipo);color:var(--tipo-texto);
+  border-bottom:none;border-radius:22px 22px 0 0}
+.modal-tipo .ns-modal-head strong,.modal-tipo .ns-modal-head .btn-icon{color:var(--tipo-texto)}
+.modal-tipo{border:2px solid var(--tipo)}
+.conf-item{background:var(--tipo-tint);border-radius:12px;padding:10px 12px;margin-bottom:12px;
+  display:flex;flex-direction:column;gap:5px;font-size:.88rem;color:var(--tipo-escuro)}
+.conf-item strong{font-weight:800;font-variant-numeric:tabular-nums}
+.conf-item .destaque{border-top:1px solid color-mix(in srgb,var(--tipo) 35%,transparent);
+  padding-top:6px;margin-top:2px;font-size:1rem}
+#ns-toast.tipo-p,#ns-toast.tipo-g,#ns-toast.tipo-av{background:var(--tipo);
+  color:var(--tipo-texto);border-color:color-mix(in srgb,#fff 35%,transparent);font-weight:800}
+
 /* ── listas e cartões de vidro ── */
 .lista{margin-top:10px;display:flex;flex-direction:column;gap:8px;max-height:60vh;overflow-y:auto;padding:2px}
 .item-lista{background:var(--vidro);backdrop-filter:blur(10px);border:1px solid var(--borda);
@@ -477,6 +517,29 @@ body.destravando{opacity:.999}
 .modal-pendente .ns-modal-head .btn-icon{color:#fff}
 .modal-pendente .aviso-forte{background:var(--laranja-tint);
   border:1.5px solid #e5760a;border-left:5px solid #e5760a;color:#8a3b06;font-size:1.06rem}
+/* aviso de pendência: compacto, no meio da tela, impossível de não ver */
+.modal-pendente{max-width:340px;background:linear-gradient(160deg,#fff7ed,#ffe6c7)}
+.pend-corpo{text-align:center;padding:4px 2px}
+.pend-selo{width:62px;height:62px;margin:0 auto 12px;border-radius:50%;display:flex;
+  align-items:center;justify-content:center;color:#fff;
+  background:linear-gradient(145deg,var(--laranja),#e5760a);
+  box-shadow:0 10px 22px -8px rgba(200,105,10,.85);animation:pend-pulso 1.8s ease-in-out infinite}
+.pend-selo svg{width:30px;height:30px}
+@keyframes pend-pulso{0%,100%{transform:scale(1)}50%{transform:scale(1.07)}}
+.pend-titulo{font-size:1.04rem;font-weight:900;color:#8a3b06;line-height:1.3;margin:0}
+.pend-sub{font-size:.84rem;font-weight:700;color:#b3651a;margin:6px 0 0}
+.btn.btn-pendente{background:linear-gradient(145deg,var(--laranja),#e5760a);color:#fff}
+.modal-pendente .btn-link{color:#8a3b06}
+@media (prefers-reduced-motion:reduce){.pend-selo{animation:none}}
+/* botão de faturar: a cor é a do vendedor dono do pedido */
+.btn-mini.btn-faturar{border-color:var(--cor-rep,var(--borda))}
+.btn-mini.btn-faturar.feito{background:var(--cor-rep,var(--laranja));
+  color:var(--cor-rep-texto,#fff);border-color:transparent;font-weight:800}
+.btn-mini.btn-faturar.feito svg{color:var(--cor-rep-texto,#fff)}
+.btn-mini.btn-faturar.travado{opacity:.55;font-size:.72rem}
+.btn.btn-faturar-grande{border:2px solid var(--cor-rep,var(--borda))}
+.btn.btn-faturar-grande.feito{background:var(--cor-rep,var(--laranja));
+  color:var(--cor-rep-texto,#fff);border-color:transparent}
 .card-export{background:var(--vidro);border:1px solid var(--borda);border-left:4px solid var(--az2);
   border-radius:var(--r-md);padding:13px 15px;box-shadow:var(--sombra-1)}
 .sub-aviso{display:flex;align-items:center;gap:6px;font-size:.8rem;font-weight:700;color:#b3212b}
@@ -595,6 +658,68 @@ body.destravando{opacity:.999}
 .meta-linha>strong.destaque{color:var(--ouro-claro);font-size:1.06rem}
 .meta-linha>strong.ok{color:#8ef0bb}
 .meta-sep{height:1px;background:rgba(255,255,255,.2);margin:3px 0}
+/* ═══ FINANCEIRO: caixa único, lançamento rápido e relatório ═══ */
+.btn.btn-receita{background:var(--verde);color:#143d1f;border-color:transparent;box-shadow:var(--sombra-1)}
+.btn.btn-despesa{background:var(--laranja);color:#fff;border-color:transparent;box-shadow:var(--sombra-1)}
+.caixa-painel{background:var(--roxo);color:#fff;border-radius:var(--r-lg);
+  padding:15px 17px;box-shadow:var(--sombra-2);position:relative;overflow:hidden}
+.caixa-painel::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--grad-ouro)}
+.caixa-painel .painel-meta-topo strong{color:#fff}
+.caixa-painel .painel-meta-topo strong.ok{color:#8ef0bb}
+.caixa-painel .painel-meta-topo strong.erro{color:#ff9d9d}
+.caixa-grade{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.caixa-cel{background:rgba(255,255,255,.08);border-radius:10px;padding:8px 9px;
+  border-left:3px solid rgba(255,255,255,.3)}
+.caixa-cel.receita{border-left-color:var(--verde)}
+.caixa-cel.despesa{border-left-color:var(--laranja)}
+.caixa-cel.comissao{border-left-color:var(--az1)}
+.caixa-cel>span{display:block;font-size:.66rem;font-weight:700;letter-spacing:.06em;
+  text-transform:uppercase;color:#9fabd4}
+.caixa-cel>strong{display:block;font-size:.95rem;font-weight:800;color:#fff;
+  font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fin-filtros{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.fin-filtros>select,.fin-filtros>.campo:first-child:last-child{grid-column:1/-1}
+.fin-grade{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.fin-grade>.campo{min-width:0}
+.form-fin .campo .sub{font-size:.72rem}
+.fin-topo{display:flex;align-items:center;gap:10px;border-radius:12px;padding:10px 12px}
+.fin-topo>span{font-size:.68rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+  line-height:1.2;max-width:38%}
+.fin-topo>input{flex:1;font-size:1.3rem;font-weight:900;text-align:right}
+.fin-topo.receita{background:var(--verde-tint,#eafbe7);color:#15602f}
+.fin-topo.despesa{background:var(--laranja-tint);color:var(--laranja-escuro)}
+.lanc-linha{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--borda);
+  border-left:4px solid var(--borda);border-radius:var(--r-md);padding:9px 11px}
+.lanc-linha.receita{border-left-color:var(--verde)}
+.lanc-linha.despesa{border-left-color:var(--laranja)}
+.lanc-linha .grow{cursor:pointer;min-width:0}
+.lanc-linha strong.ok{color:#15803d}
+.lanc-linha strong.erro{color:#c2410c}
+.cat-linha{background:#fff;border:1px solid var(--borda);border-radius:var(--r-md);padding:9px 11px}
+.grafico-barras{display:flex;align-items:flex-end;gap:8px;height:120px;padding:4px 2px}
+.gb-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;height:100%}
+.gb-pilha{flex:1;width:100%;display:flex;align-items:flex-end;justify-content:center;gap:3px}
+.gb-barra{width:44%;border-radius:4px 4px 0 0;min-height:2px}
+.gb-barra.receita{background:var(--verde)}
+.gb-barra.despesa{background:var(--laranja)}
+.gb-rot{font-size:.66rem;font-weight:700;color:var(--az3)}
+.legenda{font-size:.72rem;font-weight:700;color:var(--az3);display:inline-flex;align-items:center;gap:5px}
+.legenda::before{content:'';width:10px;height:10px;border-radius:3px}
+.legenda.receita::before{background:var(--verde)}
+.legenda.despesa::before{background:var(--laranja)}
+/* desempenho por vendedor: números do mês e do dia lado a lado */
+.vend-grade{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:6px}
+.vend-mini{background:rgba(255,255,255,.07);border-radius:8px;padding:5px 8px;min-width:0}
+.vend-mini-rot{display:block;font-size:.66rem;font-weight:700;letter-spacing:.06em;
+  text-transform:uppercase;color:#9fabd4}
+.vend-mini>strong{font-size:.92rem;font-weight:800;color:#fff;font-variant-numeric:tabular-nums;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+.vend-nome{display:inline-flex;align-items:center;gap:7px}
+.vend-bolinha{width:11px;height:11px;border-radius:50%;flex:0 0 auto;
+  box-shadow:0 0 0 2px rgba(255,255,255,.25)}
+.meta-selo.falta{background:rgba(249,209,50,.16);color:var(--ouro-claro);
+  border:1px solid rgba(249,209,50,.45)}
+.meta-rodape{font-size:.74rem;line-height:1.4;color:#9fabd4;font-weight:600;margin:0}
 /* placar da equipe: cada vendedor e o total do mês, no mesmo cartão escuro */
 .painel-equipe{background:var(--roxo);color:#fff;border-radius:var(--r-lg);
   padding:15px 17px;box-shadow:var(--sombra-2);position:relative;overflow:hidden}
@@ -749,6 +874,10 @@ body.destravando{opacity:.999}
    Amarelo e verde-limão são cores CLARAS: texto sobre elas é sempre o roxo
    institucional, nunca branco, senão some. */
 .btn{background:var(--roxo);color:#fff;box-shadow:var(--sombra-1)}
+/* lançamento rápido do financeiro: entrada verde, saída laranja */
+.btn.btn-receita{background:var(--verde);color:#143d1f}
+.btn.btn-despesa{background:var(--laranja);color:#fff}
+
 .btn:disabled{background:var(--bg2);color:var(--sub2);box-shadow:none}
 .btn-sec{background:var(--branco);color:var(--roxo);border:1.5px solid var(--borda2);box-shadow:none}
 /* laranja = faturado no New Star; é cor escura o bastante para texto branco */

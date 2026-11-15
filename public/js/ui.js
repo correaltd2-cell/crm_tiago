@@ -43,6 +43,9 @@
     check: '<path d="m4.8 12.4 4.9 4.9L19.2 6.8"/>',
     checkCirculo: '<circle cx="12" cy="12" r="9"/><path d="m8.1 12.3 2.7 2.7 5.4-5.5"/>',
     mais: '<path d="M12 5.2v13.6M5.2 12h13.6"/>',
+    menos: '<path d="M5.2 12h13.6"/>',
+    planilha: '<rect x="3.2" y="4" width="17.6" height="16" rx="2.4"/><path d="M3.2 9.4h17.6M9 9.4V20M15 9.4V20M3.2 14.7h17.6"/>',
+    lupa: '<circle cx="10.8" cy="10.8" r="6.6"/><path d="m15.6 15.6 4.4 4.4"/>',
     setaEsq: '<path d="M19 12H5.4"/><path d="m11 6-6 6 6 6"/>',
     setaDir: '<path d="M5 12h13.6"/><path d="m13 6 6 6-6 6"/>',
     retorno: '<path d="M9 6.5 3.8 12 9 17.5"/><path d="M3.8 12h11.4a5 5 0 0 1 5 5v2.5"/>',
@@ -246,19 +249,31 @@
     return { fechar, body, box };
   }
 
+  // Confirmação. Além do texto aceita:
+  //   ok / cancelar  → o que escrever nos botões
+  //   perigo         → botão vermelho (ação destrutiva)
+  //   centro         → janela no meio da tela
+  //   classe         → classe no modal (usada para dar a COR do que se confirma)
+  //   okClasse       → classe no botão de confirmar
+  //   detalhe        → elemento extra acima dos botões
   function confirmar(msg, opts) {
     opts = opts || {};
     vibrar(25);
     return new Promise((resolve) => {
       const c = el('div', null,
         el('p', { class: 'mb12 pre' }, msg),
+        opts.detalhe || null,
         el('div', { class: 'row gap8' },
-          el('button', { class: 'btn btn-sec grow', onclick: () => { m.fechar(); resolve(false); } }, 'Cancelar'),
+          el('button', { class: 'btn btn-sec grow', onclick: () => { m.fechar(); resolve(false); } },
+            opts.cancelar || 'Cancelar'),
           el('button', {
-            class: 'btn grow' + (opts.perigo ? ' btn-perigo' : ''),
+            class: 'btn grow' + (opts.perigo ? ' btn-perigo' : '') + (opts.okClasse ? ' ' + opts.okClasse : ''),
             onclick: () => { vibrar(30); m.fechar(); resolve(true); }
           }, opts.ok || 'Confirmar')));
-      const m = modal(c, { titulo: opts.titulo || 'Confirmação' });
+      const m = modal(c, {
+        titulo: opts.titulo || 'Confirmação',
+        centro: opts.centro !== false, classe: opts.classe || null
+      });
     });
   }
 

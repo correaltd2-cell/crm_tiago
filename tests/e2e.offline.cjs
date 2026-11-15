@@ -79,6 +79,23 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   let ok = 0, fail = 0;
   const check = (nome, cond) => { if (cond) { ok++; console.log('  ✓', nome); } else { fail++; console.error('  ✗', nome); } };
 
+  // Incluir item no pedido agora PEDE CONFIRMAÇÃO (modal na cor do tipo de
+  // placa). Este atalho responde "confirmar" para os testes que só querem o
+  // item dentro do pedido; a confirmação em si é testada no bloco próprio.
+  // Faturar no New Star agora pede confirmação (e só o dono do pedido fatura).
+  const confirmarFatura = async (pagina, desmarcar) => {
+    const btn = pagina.locator('.ns-overlay').last().locator(desmarcar
+      ? 'button:has-text("Tirar a marca")' : 'button:has-text("Confirmar faturamento")');
+    await btn.first().click();
+    await pagina.waitForTimeout(220);
+  };
+  const confirmarItem = async (pagina) => {
+    const btn = pagina.locator('.ns-overlay').last()
+      .locator('button:has-text("Confirmar inclusão"), button:has-text("Confirmar alteração")');
+    await btn.first().click();
+    await pagina.waitForTimeout(180);
+  };
+
   await page.goto('http://localhost:8899/');
   await page.waitForSelector('.login-box input[type=email]');
   check('tela de login aparece', true);
@@ -163,18 +180,20 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   check('cálculo: 48 − 5 − 2 = 41 vendidas', live.includes('41'));
   check('valor 41 × 14,50 = 594,50', live.replace(/ /g, ' ').includes('594,50'));
   await modalItem.locator('button:has-text("Adicionar")').click();
+  await confirmarItem(page);
 
   // venda avulsa: unidades sem placa inteira (3 un × 14,50 = 43,50)
   await page.click('text=+ Adicionar produto');
   const modalAv = page.locator('.ns-overlay').last().locator('.ns-modal');
   await modalAv.waitFor();
   await modalAv.locator('.item-lista:has-text("BRAG")').click();
-  await modalAv.locator('button:has-text("Avulso")').click();
+  await modalAv.locator('.btn-tam.tipo-av').click();
   await modalAv.locator('.stepper').first().locator('button', { hasText: '+' }).click();
   await modalAv.locator('.stepper').first().locator('button', { hasText: '+' }).click();
   const liveAv = (await modalAv.locator('.calc-live').textContent()).replace(/ /g, ' ');
   check('avulso: 3 unidades × 14,50 = 43,50', liveAv.includes('43,50'));
   await modalAv.locator('button:has-text("Adicionar")').click();
+  await confirmarItem(page);
   await page.waitForTimeout(150);
   check('item avulso entra no pedido como unidades', (await page.locator('.card-item').count()) === 2 &&
     (await page.locator('.card-item').nth(1).textContent()).includes('Avulso · 3 un'));
@@ -426,7 +445,10 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   check('pedido novo começa SEM a bolinha de faturado',
     (await page.locator('#view .card-pedido .selo-nf').count()) === 0);
   await page.locator('#view .card-pedido button:has-text("Marcar faturado")').first().click();
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(250);
+  check('faturar pede confirmação antes',
+    (await page.textContent('.ns-overlay')).includes('faturado no Newstar'));
+  await confirmarFatura(page);
   check('bolinha laranja com a nota fiscal aparece no card do pedido',
     (await page.locator('#view .card-pedido .selo-nf').count()) === 1);
   check('e o botão passa a dizer que já está faturado',
@@ -435,11 +457,13 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
     await page.evaluate(() => window.NSDB.all('pedidos').some(p => p.faturado_ns === true &&
       typeof p.faturado_ns_em === 'string')));
   await page.locator('#view .card-pedido button:has-text("Faturado")').first().click();
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(250);
+  await confirmarFatura(page, true);
   check('dá para desmarcar se marcou errado',
     (await page.locator('#view .card-pedido .selo-nf').count()) === 0);
   await page.locator('#view .card-pedido button:has-text("Marcar faturado")').first().click();
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(250);
+  await confirmarFatura(page);
 
   // 2º pedido do mesmo cliente = reposição 10% (testar via lógica local)
   const com2 = await page.evaluate(() => {
@@ -516,18 +540,30 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   const painel = (await page.textContent('#view')).replace(/\u00a0/g, ' ');
   check('painel abre já com a meta do mês (sem entrar em Mais)',
     painel.includes('Meta do mês') && painel.includes('200.000,00'));
-  check('painel mostra vendido, falta vender e dias úteis restantes',
-    painel.includes('Vendido no mês') && painel.includes('Falta vender') && painel.includes('Dias úteis restantes'));
-  check('painel mostra meta de hoje, vendido hoje e falta hoje',
-    painel.includes('Meta de hoje') && painel.includes('Vendido hoje') && painel.includes('Falta vender hoje'));
+  check('painel mostra vendido pela equipe, falta vender e dias úteis restantes',
+    painel.includes('Vendido pela equipe') && painel.includes('Falta vender') &&
+    painel.includes('Dias úteis restantes'));
+  check('painel mostra a meta do dia da equipe e o vendido no dia',
+    painel.includes('Meta de hoje · equipe') && painel.includes('Vendido hoje pela equipe') &&
+    /Falta para a meta de hoje|Passou da meta de hoje/.test(painel));
+  // a meta do dia sai do que estava vendido ATÉ ONTEM e não conta feriado
   const metaConfere = await page.evaluate(() => {
     const hoje = new Date().toISOString().slice(0, 10);
-    const rest = window.NSCalc.diasUteisRestantes(hoje);
-    const md = window.NSCalc.metaDinamica({ metaMes: 200000, vendidoMes: 594.5, vendidoHoje: 594.5, hoje });
-    return { rest, metaDia: md.metaDia, esperado: Math.round((200000 - 594.5) / rest * 100) / 100 };
+    const fer = window.NSCalc.feriadosDoAno(hoje.slice(0, 4));
+    const rest = window.NSCalc.diasUteisRestantes(hoje, fer);
+    const md = window.NSCalc.metaDoDia({ metaMes: 200000, vendidoAteOntem: 0, hoje, feriados: fer });
+    return { rest, metaDia: md.metaDia, esperado: Math.round(200000 / rest * 100) / 100 };
   });
-  check('meta do dia = (meta − vendido no mês) ÷ dias úteis restantes',
+  check('meta do dia = (meta − vendido até ontem) ÷ dias úteis restantes',
     metaConfere.metaDia === metaConfere.esperado);
+  check('e o vendido de HOJE não entra nessa divisão',
+    await page.evaluate(() => {
+      const hoje = new Date().toISOString().slice(0, 10);
+      const fer = window.NSCalc.feriadosDoAno(hoje.slice(0, 4));
+      const a1 = window.NSCalc.metaDoDia({ metaMes: 200000, vendidoAteOntem: 0, hoje, feriados: fer }).metaDia;
+      const e1 = window.NSCalc.metaEquipe({ metaMes: 200000, vendidoMes: 30000, vendidoHoje: 30000, hoje, feriados: fer });
+      return e1.metaDia === a1;
+    }));
 
   // ── prospecção ──
   await page.click('#tabs button[data-v=clientes]');
@@ -605,6 +641,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   await mDesc.waitFor();
   await mDesc.locator('.item-lista:has-text("BRAG")').click();
   await mDesc.locator('button:has-text("Adicionar")').click();
+  await confirmarItem(page);
   await page.waitForTimeout(200);
   await page.click('button:has-text("Conferir")');
   await page.waitForTimeout(300);
@@ -1097,6 +1134,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   check('0 placas + 4 recolhidas: item negativo \u221258,00', liveRet.includes('-R$ 58,00'));
   check('aviso de cr\u00e9dito aparece no c\u00e1lculo', liveRet.includes('Recolhendo 4 un'));
   await modalRet.locator('button:has-text("Adicionar")').click();
+  await confirmarItem(page);
   await page.waitForTimeout(150);
   await page.click('button:has-text("Conferir")');
   const confRet = (await page.textContent('.ns-modal')).replace(/\u00a0/g, ' ');
@@ -1152,6 +1190,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   const itemEd = page.locator('.ns-overlay').last();
   await itemEd.locator('.stepper').nth(1).locator('button', { hasText: '+' }).click(); // dev 4 \u2192 5
   await itemEd.locator('button:has-text("Salvar")').click();
+  await confirmarItem(page);
   await page.waitForTimeout(150);
   await page.click('button:has-text("Conferir")');
   await page.fill('.ns-modal input[placeholder*="Prazo"]', '45 dias');
@@ -1321,16 +1360,15 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   });
   if (process.env.DBG) console.log('POPUP', pendentes.slice(0, 400));
   check('ao abrir o app, avisa que existe pedido sem faturar no New Star',
-    /PEDIDO PENDENTE/.test(pendentes) && /n[ãÃ]o (foi|foram) faturad/i.test(pendentes));
-  check('o aviso deixa marcar o pedido como faturado ali mesmo',
-    /Marcar como faturado/.test(pendentes));
-  await page.locator('.ns-overlay').last().locator('button:has-text("Marcar como faturado")').first().click();
-  await page.waitForTimeout(300);
-  check('marcar pelo aviso grava no pedido',
-    await page.evaluate(() => window.NSDB.all('pedidos').some(p => p.faturado_ns === true)));
-  await page.locator('.ns-overlay').last().locator('button:has-text("Fechar")').click();
-  await page.waitForTimeout(250);
-  check('o aviso pode ser fechado', (await page.locator('.ns-overlay').count()) === 0);
+    /pendentes para serem faturados no Newstar/i.test(pendentes));
+  check('o aviso é curto: não lista nome, número nem valor do pedido',
+    !/FARMACIA/i.test(pendentes) && !/N[ºo] \d/.test(pendentes) && !/R\$/.test(pendentes));
+  check('e tem botão para ir direto aos pedidos', /Acessar pedidos/.test(pendentes));
+  await page.locator('.ns-overlay').last().locator('button:has-text("Acessar pedidos")').click();
+  await page.waitForTimeout(350);
+  check('o botão leva para a aba Pedidos',
+    (await page.evaluate(() => localStorage.getItem('ns_view'))) === 'pedidos' &&
+    (await page.locator('.ns-overlay').count()) === 0);
   const semPendentes = await page.evaluate(() => {
     window.NSDB.all('pedidos').forEach(p =>
       window.NSDB.update('pedidos', p.id, { faturado_ns: true }));
@@ -2092,7 +2130,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
     return { tams, steps, conf: conf.getAttribute('aria-label'), preco: m.querySelector('.sub').textContent };
   });
   check('as três opções do GIFT aparecem: P 27, G 45 e avulso',
-    gift.tams[0] === 'P (27 un)' && gift.tams[1] === 'G (45 un)' && gift.tams[2] === 'Avulso (un)');
+    gift.tams[0] === 'P27 un' && gift.tams[1] === 'G45 un' && gift.tams[2] === 'AVpor unidade');
   check('o pedido fala em DISPLAY, não em placa', gift.steps[0] === 'Displays deixados (0 = só recolher)');
   check('e o botão de conferência também', gift.conf === 'Conferir o display');
   check('preço da tabela simples no pedido é 54,90', gift.preco.includes('54,90'));
@@ -2116,6 +2154,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   check('e o valor fecha em 27 × 54,90 = R$ 1.482,30',
     (await page10.textContent('.calc-live')).includes('1.482,30'));
   await page10.locator('.ns-overlay').last().locator('button:has-text("Adicionar")').click();
+  await confirmarItem(page10);
   await page10.waitForTimeout(300);
   check('no talão o item sai escrito como Display P',
     (await page10.locator('.card-item').last().textContent()).includes('Display P ×1 = 27 un'));
@@ -2383,7 +2422,21 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   });
   check('pedido do outro vendedor: dá para ver o PDF e imprimir o cupom',
     acoesPed.pdf && acoesPed.cupom);
-  check('e dá para marcar como faturado no New Star', acoesPed.faturado);
+  // REGRA NOVA: faturar no New Star é só de quem tirou o pedido
+  check('mas NÃO dá para faturar no New Star o pedido do outro', !acoesPed.faturado);
+  check('e a própria gravação barra, não só o botão',
+    await page12.evaluate(() => {
+      const p = window.NSDB.all('pedidos').find(x => x.numero === 41);
+      const antes = !!p.faturado_ns;
+      const deu = window.NSApp.marcarFaturado(p.id);
+      const dp = window.NSDB.byId('pedidos', p.id);
+      return deu === false && !!dp.faturado_ns === antes;
+    }));
+  check('o app diz de quem é o pedido',
+    await page12.evaluate(() => {
+      const p = window.NSDB.all('pedidos').find(x => x.numero === 41);
+      return window.NSApp.motivoNaoFatura(p).includes('Denilson');
+    }));
   check('mas não aparece botão de editar nem de excluir',
     !acoesPed.editar && !acoesPed.excluir);
   check('e o app explica o porquê', acoesPed.aviso);
@@ -2433,6 +2486,89 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/sv
   check('e o total dos dois junto com o quanto falta para a meta',
     metas.total.includes('80.000,00') && metas.rodape.includes('40% da meta') &&
     metas.rodape.includes('120.000,00'));
+
+  // ══ a meta é UMA SÓ, da equipe, e a do dia não se mexe durante o dia ══
+  const metaEq = await page12.evaluate(() => {
+    const p = document.querySelector('.painel-meta');
+    return p ? p.textContent.replace(/\s+/g, ' ') : null;
+  });
+  check('o painel principal é da EQUIPE, não do vendedor sozinho',
+    metaEq.includes('Meta do mês · equipe') && metaEq.includes('Vendido pela equipe') &&
+    metaEq.includes('R$ 80.000,00'));
+  check('com atingimento, meta do dia e indicador',
+    metaEq.includes('Atingimento') && metaEq.includes('40%') &&
+    metaEq.includes('Meta de hoje · equipe') && /Meta d[eo] (hoje|mês)/.test(metaEq));
+
+  // o alvo do dia ficou gravado na data e não muda quando a equipe vende
+  const congelada = await page12.evaluate(() => {
+    const hoje = window.NSApp.dataDoDia ? null : null;
+    const d = new Date();
+    const iso = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    const antes = window.NSDB.config('meta_dia_fixa_' + iso, null);
+    // vende MUITO hoje: a meta do dia não pode se mexer
+    const c = window.NSDB.all('clientes')[0];
+    window.NSDB.insert('pedidos', {
+      numero: 903, cliente_id: c.id, representante_id: window.NSDB.all('representantes')[0].id,
+      data_pedido: iso, tabela: 'simples', status: 'concluido', total_valor: 50000,
+      total_unid_colocadas: 10, total_unid_dev_display: 0, total_unid_dev_quebrada: 0,
+      total_unid_vendidas: 10
+    });
+    window.NSApp.nav('dash');
+    const depois = window.NSDB.config('meta_dia_fixa_' + iso, null);
+    const txt = (document.querySelector('.painel-meta') || {}).textContent || '';
+    return { antes, depois, iso, txt: txt.replace(/\s+/g, ' ') };
+  });
+  check('a meta do dia fica gravada na data', !!(congelada.antes && congelada.antes.valor != null));
+  check('e NÃO muda depois de a equipe vender no mesmo dia',
+    congelada.depois && congelada.antes &&
+    Number(congelada.depois.valor) === Number(congelada.antes.valor));
+  check('a venda do dia aparece somada para a equipe',
+    congelada.txt.includes('R$ 50.000,00'));
+  check('e o app mostra que passou da meta de hoje',
+    congelada.txt.includes('Passou da meta de hoje em'));
+
+  // feriado não conta como dia útil
+  const comFeriado = await page12.evaluate(() => {
+    const ano = new Date().getFullYear();
+    const antes = window.NSCalc.diasUteisDoMes(ano + '-11');
+    window.NSDB.upsertConfig('feriados_extra', [{ data: ano + '-11-19', nome: 'Feriado da cidade' }]);
+    const depois = window.NSCalc.diasUteisDoMes(ano + '-11',
+      window.NSDB.config('feriados_extra', []));
+    window.NSDB.upsertConfig('feriados_extra', []);
+    return { antes, depois };
+  });
+  check('dia parado cadastrado tira um dia útil do mês',
+    comFeriado.depois === comFeriado.antes - 1);
+
+  // ══ financeiro: caixa único dos dois vendedores ══
+  await page12.evaluate((rep2) => {
+    const mes = new Date().toISOString().slice(0, 7);
+    const d1 = window.NSDB.all('representantes').find(r => r.nome === 'Denilson').id;
+    window.NSDB.insert('despesas', { representante_id: d1, data_despesa: mes + '-03',
+      natureza: 'despesa', categoria: 'combustivel', tipo: 'combustivel', valor: 400, situacao: 'pago' });
+    window.NSDB.insert('despesas', { representante_id: rep2, data_despesa: mes + '-04',
+      natureza: 'despesa', categoria: 'alimentacao', tipo: 'alimentacao', valor: 100, situacao: 'pago' });
+    window.NSDB.insert('despesas', { representante_id: rep2, data_despesa: mes + '-05',
+      natureza: 'receita', categoria: 'venda', valor: 1500, situacao: 'recebido' });
+    window.NSApp.nav('mais');
+  }, REP2);
+  await page12.waitForTimeout(300);
+  await page12.click('#view .item-menu:has-text("Financeiro")');
+  await page12.waitForSelector('.caixa-painel');
+  await page12.waitForTimeout(300);
+  const caixa = await page12.textContent('.caixa-painel');
+  check('o financeiro soma as despesas dos DOIS vendedores no mesmo caixa',
+    caixa.replace(/\s+/g, ' ').includes('R$ 500,00'));
+  check('e as receitas entram no mesmo caixa',
+    caixa.replace(/\s+/g, ' ').includes('R$ 1.500,00'));
+  check('o saldo é um só, da empresa', caixa.includes('caixa único'));
+  await page12.click('.chip:has-text("Lançamentos")');
+  await page12.waitForTimeout(250);
+  check('os lançamentos mostram quem lançou',
+    (await page12.locator('.ns-overlay').last().textContent()).includes('lançado por'));
+  await page12.evaluate(() => document.querySelectorAll('.ns-overlay').forEach(o => o.remove()));
+  await page12.click('#tabs button[data-v=dash]');
+  await page12.waitForTimeout(200);
 
   // 8) desligando a carteira compartilhada, cada um volta a ver só a sua
   const soMinha = await page12.evaluate(() => {

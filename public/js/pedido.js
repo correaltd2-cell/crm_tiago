@@ -14,6 +14,27 @@
 
   function sessao() { return window.NSApp.sessao(); }
 
+  // ---------- identidade visual de cada tipo de item ----------
+  // Placa P, Placa G e Avulso têm cores COMPLETAMENTE diferentes. Já aconteceu
+  // de lançar placa pequena no lugar da grande e o prejuízo vir depois, então
+  // aqui a cor pinta o botão, a faixa do item, os campos e até a janela de
+  // confirmação — dá para ver o tipo sem ler nada.
+  const TIPO_CLASSE = { P: 'p', G: 'g', AV: 'av' };
+  const TIPO_INFO = {
+    P: {
+      sigla: 'P', nomeCurto: 'Placa P', doArtigo: 'da', o: 'a', adicionado: 'adicionada',
+      nome: (prod) => (window.NSCalc.rotuloSuporte(prod) + ' PEQUENA').toUpperCase()
+    },
+    G: {
+      sigla: 'G', nomeCurto: 'Placa G', doArtigo: 'da', o: 'a', adicionado: 'adicionada',
+      nome: (prod) => (window.NSCalc.rotuloSuporte(prod) + ' GRANDE').toUpperCase()
+    },
+    AV: {
+      sigla: 'AV', nomeCurto: 'Avulso', doArtigo: 'do', o: 'o', adicionado: 'adicionado',
+      nome: () => 'AVULSO — UNIDADES SOLTAS'
+    }
+  };
+
   // triângulo de alerta = cliente com pendência aberta ou observação interna anotada
   function temAlertaCliente(clienteId) {
     return DB.all('pendencias').some(p => p.cliente_id === clienteId && !p.resolvida_em) ||
@@ -247,15 +268,19 @@
                 val,
                 el('button', { class: 'btn-step', 'aria-label': 'Aumentar ' + label, onclick: () => passo(1) }, '+')));
           };
-          const tamBtn = (t, rot, indisponivel) => el('button', {
-            class: 'btn-tam' + (item.tamanho === t ? ' ativo' : ''),
+          // Cada tipo tem a SUA cor, e ela pinta a área inteira do item — não só
+          // o botãozinho. Trocar o tipo muda tudo na hora: é assim que o vendedor
+          // vê, de longe, que está lançando a placa G e não a P.
+          const tamBtn = (t, rot2, indisponivel) => el('button', {
+            class: 'btn-tam tipo-' + TIPO_CLASSE[t] + (item.tamanho === t ? ' ativo' : ''),
             disabled: indisponivel ? '' : null,
             onclick: () => { item.tamanho = t; formQtde(); }
-          }, rot);
+          }, el('span', { class: 'btn-tam-sigla' }, TIPO_INFO[t].sigla),
+            el('span', { class: 'btn-tam-rot' }, rot2));
           const tamBtns = [
-            tamBtn('P', `P (${p.unid_placa_p ?? '—'} un)`, p.unid_placa_p == null),
-            tamBtn('G', `G (${p.unid_placa_g ?? '—'} un)`, p.unid_placa_g == null),
-            tamBtn('AV', 'Avulso (un)', false)
+            tamBtn('P', (p.unid_placa_p ?? '—') + ' un', p.unid_placa_p == null),
+            tamBtn('G', (p.unid_placa_g ?? '—') + ' un', p.unid_placa_g == null),
+            tamBtn('AV', 'por unidade', false)
           ];
 
           // o resumo é montado UMA vez; cada toque no + / − troca só os números.
@@ -331,7 +356,12 @@
             })
           }, ico('placa'));
 
-          box.appendChild(el('div', null,
+          box.appendChild(el('div', { class: 'area-tipo tipo-' + TIPO_CLASSE[item.tamanho] },
+            el('div', { class: 'faixa-tipo' },
+              el('span', { class: 'faixa-tipo-sigla' }, TIPO_INFO[item.tamanho].sigla),
+              el('span', null, TIPO_INFO[item.tamanho].nome(p)),
+              el('span', { class: 'faixa-tipo-un' }, item.tamanho === 'AV'
+                ? 'unidades soltas' : uppDe() + ' un por ' + C.rotuloSuporte(p).toLowerCase())),
             el('div', { class: 'row space gap8' },
               el('strong', { class: 'grow' }, (p.codigo ? p.codigo + ' · ' : '') + nomeProd(p)),
               el('div', { class: 'row gap4' }, btnCalc, btnPlaca)),
@@ -345,7 +375,7 @@
             el('div', { class: 'row gap8 mt12' },
               el('button', { class: 'btn btn-sec grow', onclick: selecionarProduto }, rot('setaEsq', 'Produto')),
               el('button', {
-                class: 'btn grow', onclick: () => {
+                class: 'btn grow btn-incluir tipo-' + TIPO_CLASSE[item.tamanho], onclick: async () => {
                   const upp = uppDe();
                   const r = C.calcItem({
                     placas: item.placas, unidPorPlaca: upp,
@@ -357,12 +387,40 @@
                     dev_display: item.dev_display, dev_quebrada: item.dev_quebrada,
                     unid_vendidas: r.vendidas, preco_unit: preco, valor_total: r.valor
                   };
+                  // Confirmação com a COR do tipo: antes de entrar no pedido, o
+                  // vendedor confere na própria janela se é P, G ou avulso.
+                  const inf = TIPO_INFO[item.tamanho];
+                  const resumoItem = el('div', { class: 'conf-item tipo-' + TIPO_CLASSE[item.tamanho] },
+                    el('div', { class: 'row space' },
+                      el('span', null, 'Colocadas'), el('strong', null, r.colocadas + ' un')),
+                    el('div', { class: 'row space' },
+                      el('span', null, 'Devolvida / quebrada'),
+                      el('strong', null, item.dev_display + ' / ' + item.dev_quebrada)),
+                    el('div', { class: 'row space' },
+                      el('span', null, 'Vendidas'), el('strong', null, r.vendidas + ' un')),
+                    el('div', { class: 'row space destaque' },
+                      el('span', null, 'Total'), el('strong', null, C.fmtMoney(r.valor))));
+                  const ok = await confirmar(
+                    'Confirmar inclusão ' + inf.doArtigo + ' ' + inf.nomeCurto + '?\n' + nomeProd(p),
+                    {
+                      titulo: isNovo ? 'Adicionar ao pedido' : 'Salvar alteração',
+                      ok: isNovo ? 'Confirmar inclusão' : 'Confirmar alteração',
+                      cancelar: 'Cancelar', centro: true,
+                      classe: 'modal-tipo tipo-' + TIPO_CLASSE[item.tamanho],
+                      okClasse: 'btn-incluir tipo-' + TIPO_CLASSE[item.tamanho],
+                      detalhe: resumoItem
+                    });
+                  if (!ok) return;
                   if (isNovo) ped.itens.push(feito); else ped.itens[idx] = feito;
                   // ordem oficial do catálogo, com a placa P antes da G: o que
                   // o vendedor vê aqui é o que sai no talão e no cupom
                   ped.itens = ordenarItensPed(ped.itens);
                   destaqueItem = feito.id; // só este card entra animado
                   mi.fechar(); render();
+                  // aviso curto, na cor do tipo, sem travar o trabalho
+                  toast(TIPO_INFO[item.tamanho].nomeCurto + ' ' +
+                    (isNovo ? TIPO_INFO[item.tamanho].adicionado : 'atualizad' + TIPO_INFO[item.tamanho].o) +
+                    ' com sucesso!', 'tipo-' + TIPO_CLASSE[item.tamanho]);
                 }
               }, isNovo ? 'Adicionar' : 'Salvar'))));
         }
@@ -830,6 +888,8 @@
     const meu = !p.representante_id || !ses.rep || p.representante_id === ses.rep.id;
     const podeMexer = meu || ses.papel === 'gestor';
     const vendedorDele = (DB.byId('representantes', p.representante_id) || {}).nome || 'outro vendedor';
+    // faturar no New Star: cada vendedor fatura só o que ele mesmo tirou
+    const podeNS = window.NSApp.podeFaturar(p);
     const itens = DB.all('pedido_itens').filter(i => i.pedido_id === pedidoId);
     const nomeArq = 'pedido-' + (p.numero || String(p.id).slice(0, 8)) + '.pdf';
     // ÚLTIMO passo do processo: coletar a assinatura. O botão muda de cara
@@ -895,15 +955,20 @@
         novo(null, p);
       } }, rot('lapis', 'Editar pedido (itens, prazo, devoluções)')) : null,
       (p.status === 'concluido' && !podeMexer) ? el('p', { class: 'sub aviso-outro' },
-        'Pedido de ' + vendedorDele + '. Dá para ver, imprimir e marcar como faturado; ' +
-        'editar ou excluir só ' + vendedorDele + ' ou o gestor, porque mexe na comissão dele.') : null,
-      // controle do faturamento no New Star (sistema de fora)
-      el('button', {
-        class: 'btn big btn-sec' + (p.faturado_ns ? ' laranja' : ''), onclick: () => {
-          window.NSApp.marcarFaturado(pedidoId);
+        'Pedido de ' + vendedorDele + '. Dá para ver e imprimir; editar, excluir ou faturar ' +
+        'no New Star só ' + vendedorDele + ' ou o gestor, porque mexe na comissão dele.') : null,
+      // controle do faturamento no New Star (sistema de fora).
+      // Só o vendedor que tirou o pedido fatura — quem barra é o NSApp.
+      podeNS ? el('button', {
+        class: 'btn big btn-sec btn-faturar-grande' + (p.faturado_ns ? ' feito' : ''),
+        style: '--cor-rep:' + window.NSApp.corDoRep(p.representante_id) +
+          ';--cor-rep-texto:' + window.NSApp.corTextoRep(p.representante_id),
+        onclick: async () => {
+          const ok = await window.NSApp.confirmarFaturamento(pedidoId);
+          if (!ok) return;
           mAbrir.fechar(); abrir(pedidoId);
         }
-      }, rot('notaFiscal', p.faturado_ns ? 'Faturado no New Star ✓' : 'Marcar como faturado no New Star')),
+      }, rot('notaFiscal', p.faturado_ns ? 'Faturado no New Star ✓' : 'Marcar como faturado no New Star')) : null,
       // observação do pedido: fica no vermelho, perto de imprimir e assinar,
       // para ninguém entregar a mercadoria sem ler o que foi combinado
       (p.observacoes || '').trim() ? el('button', {
