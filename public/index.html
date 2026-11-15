@@ -532,23 +532,26 @@ body.destravando{opacity:.999}
 .modal-pendente .btn-link{color:#8a3b06}
 @media (prefers-reduced-motion:reduce){.pend-selo{animation:none}}
 /* Botão de faturar no New Star: o botão INTEIRO é pintado com a cor do
-   vendedor dono do pedido (Gustavo laranja, Denilson roxo). Já faturado fica
-   na mesma cor, porém lavado e contornado, para dar para diferenciar de longe. */
+   vendedor dono do pedido (Gustavo laranja vivo, Denilson roxo vivo).
+   Pendente e já faturado saem na MESMA cor cheia, sem desbotar: quem diz se
+   já foi é o texto e o ✓, mais o anel claro em volta do que já está faturado. */
 .btn-mini.btn-faturar{background:var(--cor-rep,var(--laranja));
   color:var(--cor-rep-texto,#fff);border:1px solid transparent;font-weight:800}
 .btn-mini.btn-faturar svg{color:var(--cor-rep-texto,#fff)}
-.btn-mini.btn-faturar.feito{background:color-mix(in srgb,var(--cor-rep,var(--laranja)) 16%,#fff);
-  color:var(--cor-rep,var(--laranja));border:2px solid var(--cor-rep,var(--laranja))}
-.btn-mini.btn-faturar.feito svg{color:var(--cor-rep,var(--laranja))}
+.btn-mini.btn-faturar.feito{background:var(--cor-rep,var(--laranja));
+  color:var(--cor-rep-texto,#fff);border:2px solid var(--cor-rep,var(--laranja));
+  box-shadow:inset 0 0 0 2px rgba(255,255,255,.65)}
+.btn-mini.btn-faturar.feito svg{color:var(--cor-rep-texto,#fff)}
 .btn-mini.btn-faturar.travado{background:var(--branco,#fff);color:var(--cor-rep,var(--borda));
   border:1.5px dashed var(--cor-rep,var(--borda));font-size:.72rem;opacity:.75}
 .btn-mini.btn-faturar.travado svg{color:var(--cor-rep,var(--borda))}
 .btn.btn-faturar-grande{background:var(--cor-rep,var(--laranja));
   color:var(--cor-rep-texto,#fff);border:2px solid transparent;font-weight:800}
 .btn.btn-faturar-grande svg{color:var(--cor-rep-texto,#fff)}
-.btn.btn-faturar-grande.feito{background:color-mix(in srgb,var(--cor-rep,var(--laranja)) 16%,#fff);
-  color:var(--cor-rep,var(--laranja));border:2px solid var(--cor-rep,var(--laranja))}
-.btn.btn-faturar-grande.feito svg{color:var(--cor-rep,var(--laranja))}
+.btn.btn-faturar-grande.feito{background:var(--cor-rep,var(--laranja));
+  color:var(--cor-rep-texto,#fff);border:2px solid var(--cor-rep,var(--laranja));
+  box-shadow:inset 0 0 0 3px rgba(255,255,255,.65)}
+.btn.btn-faturar-grande.feito svg{color:var(--cor-rep-texto,#fff)}
 .card-export{background:var(--vidro);border:1px solid var(--borda);border-left:4px solid var(--az2);
   border-radius:var(--r-md);padding:13px 15px;box-shadow:var(--sombra-1)}
 .sub-aviso{display:flex;align-items:center;gap:6px;font-size:.8rem;font-weight:700;color:#b3212b}

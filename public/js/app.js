@@ -1868,14 +1868,18 @@
               const meu = podeFaturar(p);
               const cor = corDoRep(p.representante_id);
               const btn = el('button', {
-                class: 'btn-mini grow btn-faturar' + (p.faturado_ns ? ' feito' : '') + (meu ? '' : ' travado'),
+                // já faturado sai sempre na cor cheia do dono, mesmo sendo de
+                // outro vendedor: o apagado é só para o que ainda falta faturar
+                // e não é meu (aí nem adianta tentar).
+                class: 'btn-mini grow btn-faturar' + (p.faturado_ns ? ' feito' : '') +
+                  (p.faturado_ns || meu ? '' : ' travado'),
                 style: '--cor-rep:' + cor + ';--cor-rep-texto:' + corTextoRep(p.representante_id),
                 title: meu ? 'Marcar como faturado no New Star' : motivoNaoFatura(p),
                 onclick: () => {
                   if (!meu) return toast(motivoNaoFatura(p), 'erro');
                   confirmarFaturamento(p.id, render);
                 }
-              }, rot('notaFiscal', p.faturado_ns ? 'Faturado' : (meu ? 'Marcar faturado' : 'Só ' + (nomeDoRep(p.representante_id) || 'o dono') + ' fatura')));
+              }, rot('notaFiscal', p.faturado_ns ? 'Faturado ✓' : (meu ? 'Marcar faturado' : 'Só ' + (nomeDoRep(p.representante_id) || 'o dono') + ' fatura')));
               return btn;
             })(),
             temObs ? el('button', {
